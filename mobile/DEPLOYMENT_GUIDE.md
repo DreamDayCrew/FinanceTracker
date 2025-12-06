@@ -69,21 +69,16 @@ npx eas build -p android --profile preview
 
 Once complete, download the APK from the link provided and install on your Android device.
 
-### Option B: Local APK Build (Requires Android Studio)
+### Important: Managed Workflow
 
-If you have Android Studio installed:
+This project uses **Expo Managed Workflow** - do NOT include `android/` or `ios/` folders in your project. EAS Build generates them automatically in the cloud.
 
+If you have `android/` or `ios/` folders, delete them:
 ```bash
-# Generate native android folder
-npx expo prebuild --platform android
-
-# Build APK
-cd android
-./gradlew assembleRelease
-
-# APK location:
-# android/app/build/outputs/apk/release/app-release.apk
+rm -rf android ios
 ```
+
+Then run EAS build as shown in Option A above.
 
 ---
 
