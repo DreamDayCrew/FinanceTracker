@@ -1,62 +1,155 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, decimal, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, decimal, timestamp, integer, boolean, serial } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Expense categories
-export const EXPENSE_CATEGORIES = [
-  "Groceries",
-  "Transport",
-  "Dining",
-  "Shopping",
-  "Entertainment",
-  "Bills",
-  "Health",
-  "Education",
-  "Travel",
-  "Other"
-] as const;
+// Users table (for PIN/biometric authentication)
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().default("User"),
+  pinHash: varchar("pin_hash", { length: 255 }),
+  biometricEnabled: boolean("biometric_enabled").default(false),
+  theme: varchar("theme", { length: 10 }).default("light"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 
-export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number];
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
 
-// Expenses table
-export const expenses = pgTable("expenses", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
-  category: text("category").notNull(),
-  description: text("description"),
-  date: timestamp("date").notNull().defaultNow(),
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+
+// Accounts (bank accounts & credit cards)
+export const accounts = pgTable("accounts", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  name: varchar("name", { length: 100 }).notNull(),
+  type: varchar("type", { length: 20 }).notNull(), // 'bank' or 'credit_card'
+  bankName: varchar("bank_name", { length: 100 }),
+  accountNumber: varchar("account_number", { length: 50 }),
+  balance: decimal("balance", { precision: 12, scale: 2 }).default("0"),
+  creditLimit: decimal("credit_limit", { precision: 12, scale: 2 }), // only for credit cards
+  icon: varchar("icon", { length: 50 }),
+  color: varchar("color", { length: 20 }),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const accountsRelations = relations(accounts, ({ one, many }) => ({
+  user: one(users, { fields: [accounts.userId], references: [users.id] }),
+  transactions: many(transactions),
+}));
+
+export const insertAccountSchema = createInsertSchema(accounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Account name is required"),
+  type: z.enum(["bank", "credit_card"]),
+  balance: z.string().optional(),
+  creditLimit: z.string().optional(),
+});
+
+export type InsertAccount = z.infer<typeof insertAccountSchema>;
+export type Account = typeof accounts.$inferSelect;
+
+// Categories for transactions
+export const categories = pgTable("categories", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 50 }).notNull().unique(),
+  icon: varchar("icon", { length: 50 }),
+  color: varchar("color", { length: 20 }),
+  type: varchar("type", { length: 20 }).default("expense"), // 'expense', 'income', 'transfer'
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertExpenseSchema = createInsertSchema(expenses).omit({
+export const insertCategorySchema = createInsertSchema(categories).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertCategory = z.infer<typeof insertCategorySchema>;
+export type Category = typeof categories.$inferSelect;
+
+// Default categories list
+export const DEFAULT_CATEGORIES = [
+  { name: "Groceries", icon: "shopping-cart", color: "#4CAF50", type: "expense" },
+  { name: "Transport", icon: "car", color: "#2196F3", type: "expense" },
+  { name: "Dining", icon: "utensils", color: "#FF9800", type: "expense" },
+  { name: "Shopping", icon: "shopping-bag", color: "#E91E63", type: "expense" },
+  { name: "Entertainment", icon: "film", color: "#9C27B0", type: "expense" },
+  { name: "Bills", icon: "file-text", color: "#607D8B", type: "expense" },
+  { name: "Health", icon: "heart", color: "#F44336", type: "expense" },
+  { name: "Education", icon: "book", color: "#3F51B5", type: "expense" },
+  { name: "Travel", icon: "plane", color: "#00BCD4", type: "expense" },
+  { name: "Salary", icon: "briefcase", color: "#4CAF50", type: "income" },
+  { name: "Investment", icon: "trending-up", color: "#8BC34A", type: "income" },
+  { name: "Transfer", icon: "repeat", color: "#795548", type: "transfer" },
+  { name: "Other", icon: "more-horizontal", color: "#9E9E9E", type: "expense" },
+] as const;
+
+// Transactions (from SMS parsing or manual entry)
+export const transactions = pgTable("transactions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  accountId: integer("account_id").references(() => accounts.id),
+  categoryId: integer("category_id").references(() => categories.id),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  type: varchar("type", { length: 20 }).notNull(), // 'debit', 'credit'
+  description: text("description"),
+  merchant: varchar("merchant", { length: 200 }),
+  referenceNumber: varchar("reference_number", { length: 100 }),
+  transactionDate: timestamp("transaction_date").notNull(),
+  smsId: integer("sms_id"),
+  isRecurring: boolean("is_recurring").default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const transactionsRelations = relations(transactions, ({ one }) => ({
+  user: one(users, { fields: [transactions.userId], references: [users.id] }),
+  account: one(accounts, { fields: [transactions.accountId], references: [accounts.id] }),
+  category: one(categories, { fields: [transactions.categoryId], references: [categories.id] }),
+}));
+
+export const insertTransactionSchema = createInsertSchema(transactions).omit({
   id: true,
   createdAt: true,
 }).extend({
   amount: z.string().min(1, "Amount is required"),
-  category: z.string().min(1, "Category is required"),
-  date: z.string().optional(),
-  description: z.string().optional(),
+  type: z.enum(["debit", "credit"]),
+  transactionDate: z.string().optional(),
 });
 
-export type InsertExpense = z.infer<typeof insertExpenseSchema>;
-export type Expense = typeof expenses.$inferSelect;
+export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
+export type Transaction = typeof transactions.$inferSelect;
 
-// Budgets table
+// Budgets (monthly category budgets)
 export const budgets = pgTable("budgets", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  category: text("category").notNull(),
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  categoryId: integer("category_id").references(() => categories.id),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
-  month: integer("month").notNull(), // 1-12
+  month: integer("month").notNull(),
   year: integer("year").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+export const budgetsRelations = relations(budgets, ({ one }) => ({
+  user: one(users, { fields: [budgets.userId], references: [users.id] }),
+  category: one(categories, { fields: [budgets.categoryId], references: [categories.id] }),
+}));
 
 export const insertBudgetSchema = createInsertSchema(budgets).omit({
   id: true,
   createdAt: true,
 }).extend({
-  category: z.string().min(1, "Category is required"),
   amount: z.string().min(1, "Budget amount is required"),
   month: z.number().min(1).max(12),
   year: z.number().min(2020),
@@ -65,27 +158,79 @@ export const insertBudgetSchema = createInsertSchema(budgets).omit({
 export type InsertBudget = z.infer<typeof insertBudgetSchema>;
 export type Budget = typeof budgets.$inferSelect;
 
-// Bills/Subscriptions table
-export const bills = pgTable("bills", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
+// Scheduled Payments (recurring payments with reminders)
+export const scheduledPayments = pgTable("scheduled_payments", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  name: varchar("name", { length: 200 }).notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
-  dueDate: integer("due_date").notNull(), // Day of month (1-31)
-  category: text("category").notNull(),
-  isRecurring: integer("is_recurring").notNull().default(1), // 1 for true, 0 for false
+  dueDate: integer("due_date").notNull(), // day of month (1-31)
+  categoryId: integer("category_id").references(() => categories.id),
+  status: varchar("status", { length: 20 }).default("active"), // 'active', 'inactive'
+  notes: text("notes"),
+  lastNotifiedAt: timestamp("last_notified_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const scheduledPaymentsRelations = relations(scheduledPayments, ({ one }) => ({
+  user: one(users, { fields: [scheduledPayments.userId], references: [users.id] }),
+  category: one(categories, { fields: [scheduledPayments.categoryId], references: [categories.id] }),
+}));
+
+export const insertScheduledPaymentSchema = createInsertSchema(scheduledPayments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastNotifiedAt: true,
+}).extend({
+  name: z.string().min(1, "Payment name is required"),
+  amount: z.string().min(1, "Amount is required"),
+  dueDate: z.number().min(1).max(31),
+  status: z.enum(["active", "inactive"]).optional(),
+});
+
+export type InsertScheduledPayment = z.infer<typeof insertScheduledPaymentSchema>;
+export type ScheduledPayment = typeof scheduledPayments.$inferSelect;
+
+// SMS Logs (for tracking parsed messages)
+export const smsLogs = pgTable("sms_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  sender: varchar("sender", { length: 50 }),
+  message: text("message").notNull(),
+  receivedAt: timestamp("received_at").notNull(),
+  isParsed: boolean("is_parsed").default(false),
+  transactionId: integer("transaction_id").references(() => transactions.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertBillSchema = createInsertSchema(bills).omit({
+export const smsLogsRelations = relations(smsLogs, ({ one }) => ({
+  user: one(users, { fields: [smsLogs.userId], references: [users.id] }),
+  transaction: one(transactions, { fields: [smsLogs.transactionId], references: [transactions.id] }),
+}));
+
+export const insertSmsLogSchema = createInsertSchema(smsLogs).omit({
   id: true,
   createdAt: true,
-}).extend({
-  name: z.string().min(1, "Bill name is required"),
-  amount: z.string().min(1, "Amount is required"),
-  dueDate: z.number().min(1).max(31),
-  category: z.string().min(1, "Category is required"),
-  isRecurring: z.number().optional(),
 });
 
-export type InsertBill = z.infer<typeof insertBillSchema>;
-export type Bill = typeof bills.$inferSelect;
+export type InsertSmsLog = z.infer<typeof insertSmsLogSchema>;
+export type SmsLog = typeof smsLogs.$inferSelect;
+
+// Extended transaction type with relations
+export type TransactionWithRelations = Transaction & {
+  account?: Account | null;
+  category?: Category | null;
+};
+
+// Dashboard analytics types
+export type DashboardStats = {
+  totalSpentToday: number;
+  totalSpentMonth: number;
+  monthlyExpensesByCategory: { categoryId: number; categoryName: string; total: number; color: string }[];
+  budgetUsage: { categoryId: number; categoryName: string; spent: number; budget: number; percentage: number }[];
+  nextScheduledPayment: ScheduledPayment | null;
+  lastTransactions: TransactionWithRelations[];
+  upcomingBills: ScheduledPayment[];
+};
