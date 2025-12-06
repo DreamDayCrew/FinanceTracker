@@ -17,6 +17,13 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   {
+    icon: 'scan-outline',
+    title: 'Scan SMS',
+    subtitle: 'Parse bank SMS to add transaction',
+    route: 'ScanSMS',
+    color: '#3b82f6',
+  },
+  {
     icon: 'pie-chart-outline',
     title: 'Plan Budget',
     subtitle: 'Set monthly spending limits',
@@ -66,7 +73,7 @@ export default function MoreScreen() {
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>My Tracker v1.0.0</Text>
+        <Text style={styles.footerText}>My Tracker v1.0.2</Text>
         <Text style={styles.footerSubtext}>Personal Finance Manager</Text>
       </View>
     </View>

@@ -17,6 +17,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import AddAccountScreen from './src/screens/AddAccountScreen';
 import AddBudgetScreen from './src/screens/AddBudgetScreen';
 import AddScheduledPaymentScreen from './src/screens/AddScheduledPaymentScreen';
+import ScanSMSScreen from './src/screens/ScanSMSScreen';
 
 import { COLORS } from './src/lib/utils';
 
@@ -37,6 +38,7 @@ export type MoreStackParamList = {
   ScheduledPayments: undefined;
   AddScheduledPayment: undefined;
   Settings: undefined;
+  ScanSMS: undefined;
 };
 
 export type RootStackParamList = {
@@ -98,6 +100,11 @@ function MoreStackNavigator() {
         name="Settings" 
         component={SettingsScreen}
         options={{ title: 'Settings' }}
+      />
+      <MoreStack.Screen 
+        name="ScanSMS" 
+        component={ScanSMSScreen}
+        options={{ title: 'Scan SMS' }}
       />
     </MoreStack.Navigator>
   );
