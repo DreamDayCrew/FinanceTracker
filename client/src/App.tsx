@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BottomNav } from "@/components/bottom-nav";
 import { FabButton } from "@/components/fab-button";
+import { AppHeader } from "@/components/app-header";
 import Dashboard from "@/pages/dashboard";
 import Accounts from "@/pages/accounts";
 import Transactions from "@/pages/transactions";
@@ -33,15 +34,19 @@ function Router() {
 
 function AppShell() {
   const [location] = useLocation();
-  const hideNavigation = location === "/add-transaction" || location === "/settings";
+  const isSubPage = location === "/add-transaction" || location === "/settings" || 
+                    location === "/budgets" || location === "/scheduled-payments";
+  const showFab = location === "/" || location === "/accounts" || location === "/transactions";
+  const showHeader = !isSubPage;
 
   return (
     <div className="min-h-screen bg-background">
+      {showHeader && <AppHeader />}
       <div className="max-w-2xl mx-auto">
         <Router />
       </div>
-      {!hideNavigation && <FabButton />}
-      {!hideNavigation && <BottomNav />}
+      {showFab && <FabButton />}
+      {!isSubPage && <BottomNav />}
     </div>
   );
 }

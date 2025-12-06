@@ -39,7 +39,12 @@ export default function Budgets() {
   });
 
   const { data: budgets = [], isLoading } = useQuery<Budget[]>({
-    queryKey: ["/api/budgets", { month: currentMonth, year: currentYear }],
+    queryKey: ["/api/budgets", currentMonth, currentYear],
+    queryFn: async () => {
+      const res = await fetch(`/api/budgets?month=${currentMonth}&year=${currentYear}`);
+      if (!res.ok) throw new Error("Failed to fetch budgets");
+      return res.json();
+    },
   });
 
   const { data: categories = [] } = useQuery<Category[]>({
@@ -72,7 +77,7 @@ export default function Budgets() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/budgets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budgets", currentMonth, currentYear] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       setIsDialogOpen(false);
       setFormData({ categoryId: "", amount: "", month: currentMonth, year: currentYear });
@@ -88,7 +93,7 @@ export default function Budgets() {
       await apiRequest("DELETE", `/api/budgets/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/budgets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budgets", currentMonth, currentYear] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       toast({ title: "Budget deleted" });
     },
