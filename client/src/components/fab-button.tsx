@@ -8,8 +8,7 @@ export function FabButton() {
   return (
     <Button
       size="icon"
-      className="fixed right-4 z-40 w-14 h-14 rounded-full shadow-lg hover:shadow-xl transition-shadow"
-      style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
+      className="fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full shadow-lg hover:shadow-xl transition-shadow"
       onClick={() => setLocation("/add-transaction")}
       data-testid="fab-add-transaction"
     >
