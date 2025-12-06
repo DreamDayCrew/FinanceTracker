@@ -43,6 +43,7 @@ A React Native mobile version of the Personal Finance Tracker app, built with Ex
 
 ## Running the App
 
+### On Android Phone (Recommended)
 1. Start the Expo development server:
    ```bash
    npm start
@@ -52,19 +53,34 @@ A React Native mobile version of the Personal Finance Tracker app, built with Ex
 
 3. The app will connect to your backend API
 
-## Building for Production
+### On Web Browser
+```bash
+npm run web
+# or: npx expo start --web
+```
+Opens at `http://localhost:8081`
 
-### Using EAS Build (Recommended)
+> **Note:** The web version uses Metro bundler. If you see JSON output at the root URL, ensure you're running with `--web` flag.
+
+## Building APK for Testing
+
+### Quick APK via EAS (No Android Studio Required)
 ```bash
 npm install -g eas-cli
-eas login
-eas build --platform android --profile preview
+npx eas login
+npm run build:apk
+# or: npx eas build -p android --profile preview
 ```
 
-### Local APK Build
+Download the APK from the link provided (takes 10-15 minutes to build).
+
+### Production Build (AAB for Play Store)
 ```bash
-npx expo run:android
+npm run build:aab
+# or: npx eas build -p android --profile production
 ```
+
+See **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** for detailed deployment instructions.
 
 ## Features
 
