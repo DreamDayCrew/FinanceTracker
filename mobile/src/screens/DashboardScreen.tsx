@@ -54,7 +54,7 @@ export default function DashboardScreen() {
             data.budgetUsage.slice(0, 3).map((budget) => (
               <View key={budget.categoryId} style={styles.budgetItem}>
                 <View style={styles.budgetHeader}>
-                  <Text style={styles.budgetName}>{budget.name}</Text>
+                  <Text style={styles.budgetName}>{budget.categoryName}</Text>
                   <Text style={styles.budgetAmount}>
                     {formatCurrency(budget.spent)} / {formatCurrency(budget.budget)}
                   </Text>
@@ -85,17 +85,17 @@ export default function DashboardScreen() {
           )}
         </View>
 
-        {data?.upcomingPayment && (
+        {data?.nextScheduledPayment && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Upcoming Payment</Text>
             <View style={styles.paymentCard}>
               <View>
-                <Text style={styles.paymentName}>{data.upcomingPayment.name}</Text>
+                <Text style={styles.paymentName}>{data.nextScheduledPayment.name}</Text>
                 <Text style={styles.paymentDue}>
-                  Due: {data.upcomingPayment.dueDate}{getOrdinalSuffix(data.upcomingPayment.dueDate)} of each month
+                  Due: {data.nextScheduledPayment.dueDate}{getOrdinalSuffix(data.nextScheduledPayment.dueDate)} of each month
                 </Text>
               </View>
-              <Text style={styles.paymentAmount}>{formatCurrency(data.upcomingPayment.amount)}</Text>
+              <Text style={styles.paymentAmount}>{formatCurrency(data.nextScheduledPayment.amount)}</Text>
             </View>
           </View>
         )}
@@ -107,8 +107,8 @@ export default function DashboardScreen() {
               <Text style={styles.viewAll}>View All</Text>
             </TouchableOpacity>
           </View>
-          {data?.recentTransactions && data.recentTransactions.length > 0 ? (
-            data.recentTransactions.map((transaction) => (
+          {data?.lastTransactions && data.lastTransactions.length > 0 ? (
+            data.lastTransactions.map((transaction) => (
               <View key={transaction.id} style={styles.transactionItem}>
                 <View style={styles.transactionInfo}>
                   <Text style={styles.transactionMerchant}>

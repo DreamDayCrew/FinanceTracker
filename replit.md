@@ -54,7 +54,7 @@ Personal Finance Tracker is a comprehensive expense tracking application designe
 
 ## Technical Stack
 
-### Frontend
+### Web Frontend (React PWA)
 - **React 18** with TypeScript
 - **Wouter** for lightweight routing
 - **TanStack Query (React Query v5)** for data fetching and caching
@@ -64,6 +64,14 @@ Personal Finance Tracker is a comprehensive expense tracking application designe
 - **React Hook Form** with Zod validation
 - **Mobile-first responsive design**
 - **Dark/Light theme support**
+
+### Mobile App (React Native)
+- **React Native** with Expo SDK 50
+- **React Navigation** (bottom tabs + stack)
+- **TanStack Query** for data fetching
+- **TypeScript** for type safety
+- Located in `mobile/` folder
+- See `mobile/README.md` for setup instructions
 
 ### Backend
 - **Express.js** server

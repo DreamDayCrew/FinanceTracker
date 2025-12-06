@@ -10,7 +10,7 @@ export default function AddAccountScreen() {
   const navigation = useNavigation();
   const queryClient = useQueryClient();
   
-  const [type, setType] = useState<'bank_account' | 'credit_card'>('bank_account');
+  const [type, setType] = useState<'bank' | 'credit_card'>('bank');
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
@@ -54,15 +54,15 @@ export default function AddAccountScreen() {
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.typeSelector}>
         <TouchableOpacity
-          style={[styles.typeButton, type === 'bank_account' && styles.typeButtonActive]}
-          onPress={() => setType('bank_account')}
+          style={[styles.typeButton, type === 'bank' && styles.typeButtonActive]}
+          onPress={() => setType('bank')}
         >
           <Ionicons 
             name="business-outline" 
             size={24} 
-            color={type === 'bank_account' ? '#fff' : COLORS.primary} 
+            color={type === 'bank' ? '#fff' : COLORS.primary} 
           />
-          <Text style={[styles.typeText, type === 'bank_account' && styles.typeTextActive]}>
+          <Text style={[styles.typeText, type === 'bank' && styles.typeTextActive]}>
             Bank Account
           </Text>
         </TouchableOpacity>
@@ -85,7 +85,7 @@ export default function AddAccountScreen() {
         <Text style={styles.label}>Account Name</Text>
         <TextInput
           style={styles.input}
-          placeholder={type === 'bank_account' ? 'e.g., HDFC Savings' : 'e.g., ICICI Credit Card'}
+          placeholder={type === 'bank' ? 'e.g., HDFC Savings' : 'e.g., ICICI Credit Card'}
           placeholderTextColor={COLORS.textMuted}
           value={name}
           onChangeText={setName}
@@ -94,7 +94,7 @@ export default function AddAccountScreen() {
 
       <View style={styles.field}>
         <Text style={styles.label}>
-          {type === 'bank_account' ? 'Current Balance' : 'Available Credit'}
+          {type === 'bank' ? 'Current Balance' : 'Available Credit'}
         </Text>
         <View style={styles.amountInputContainer}>
           <Text style={styles.currencyPrefix}>₹</Text>

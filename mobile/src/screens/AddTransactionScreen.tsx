@@ -153,7 +153,7 @@ export default function AddTransactionScreen() {
                 onPress={() => setSelectedAccountId(account.id)}
               >
                 <Ionicons 
-                  name={account.type === 'bank_account' ? 'business-outline' : 'card-outline'} 
+                  name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
                   size={14} 
                   color={selectedAccountId === account.id ? '#fff' : COLORS.textMuted}
                   style={{ marginRight: 4 }}

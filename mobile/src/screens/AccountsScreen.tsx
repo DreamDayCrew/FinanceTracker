@@ -42,7 +42,7 @@ export default function AccountsScreen() {
     );
   };
 
-  const bankAccounts = accounts?.filter(a => a.type === 'bank_account') || [];
+  const bankAccounts = accounts?.filter(a => a.type === 'bank') || [];
   const creditCards = accounts?.filter(a => a.type === 'credit_card') || [];
 
   if (isLoading) {
