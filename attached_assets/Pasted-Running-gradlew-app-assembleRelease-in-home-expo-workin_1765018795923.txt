@@ -1,0 +1,54 @@
+Running 'gradlew :app:assembleRelease' in /home/expo/workingdir/build/mobile/android
+Welcome to Gradle 8.3!
+Here are the highlights of this release:
+- Faster Java compilation
+ - Reduced memory usage
+ - Support for running on Java 20
+For more details see https://docs.gradle.org/8.3/release-notes.html
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.3/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build
+> Configure project :
+Path for java installation '/usr/lib/jvm/openjdk-17' (Common Linux Locations) does not contain a java executable
+> Task :gradle-plugin:pluginDescriptors
+> Task :gradle-plugin:processResources
+> Task :gradle-plugin:compileKotlin
+> Task :gradle-plugin:compileJava NO-SOURCE
+> Task :gradle-plugin:classes
+> Task :gradle-plugin:jar
+> Task :gradle-plugin:inspectClassesForKotlinIC
+FAILURE: Build completed with 2 failures.
+1:
+Task failed with an exception.
+-----------
+* Where:
+Script '/home/expo/workingdir/build/mobile/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle' line: 377
+* What went wrong:
+A problem occurred evaluating project ':expo'.
+>
+A problem occurred configuring project ':expo-constants'.
+>
+Failed to notify project evaluation listener.
+> compileSdkVersion is not specified. Please add it to build.gradle
+      > Could not get unknown property 'release' for SoftwareComponent container of type org.gradle.api.internal.component.DefaultSoftwareComponentContainer.
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+==============================================================================
+2: Task failed with an exception.
+-----------
+* What went wrong:
+A problem occurred configuring project ':expo'.
+> Failed to notify project evaluation listener.
+   > compileSdkVersion is not specified. Please add it to build.gradle
+   > Could not get unknown property 'release' for SoftwareComponent container of type org.gradle.api.internal.component.DefaultSoftwareComponentContainer.
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+==============================================================================
+BUILD FAILED in 1m 12s
+5 actionable tasks: 5 executed
+Error: Gradle build failed with unknown error. See logs for the "Run gradlew" phase for more information.
