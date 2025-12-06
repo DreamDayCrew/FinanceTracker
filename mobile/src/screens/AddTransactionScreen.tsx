@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +17,10 @@ export default function AddTransactionScreen() {
   const [description, setDescription] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  
+  const [showSmsModal, setShowSmsModal] = useState(false);
+  const [smsText, setSmsText] = useState('');
+  const [isParsing, setIsParsing] = useState(false);
 
   const { data: categories } = useQuery({
     queryKey: ['categories'],
@@ -41,6 +45,43 @@ export default function AddTransactionScreen() {
     },
   });
 
+  const handleParseSms = async () => {
+    if (!smsText.trim()) {
+      Alert.alert('Error', 'Please paste your bank SMS');
+      return;
+    }
+
+    setIsParsing(true);
+    try {
+      const result = await api.parseSms(smsText);
+      
+      if (result.success && result.transaction) {
+        queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+        setShowSmsModal(false);
+        setSmsText('');
+        Alert.alert('Success', 'Transaction added from SMS!', [
+          { text: 'OK', onPress: () => navigation.goBack() }
+        ]);
+      } else if (result.parsed) {
+        setAmount(result.parsed.amount.toString());
+        setType(result.parsed.type);
+        if (result.parsed.merchant) setMerchant(result.parsed.merchant);
+        if (result.parsed.description) setDescription(result.parsed.description);
+        setShowSmsModal(false);
+        setSmsText('');
+        Alert.alert('Parsed!', 'SMS data extracted. Please review and save.');
+      } else {
+        Alert.alert('Could Not Parse', result.message || 'Unable to extract transaction from this SMS. Please enter manually.');
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to parse SMS';
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
   const handleSubmit = () => {
     if (!amount || parseFloat(amount) <= 0) {
       Alert.alert('Error', 'Please enter a valid amount');
@@ -55,7 +96,6 @@ export default function AddTransactionScreen() {
       categoryId: selectedCategoryId,
       accountId: selectedAccountId,
       transactionDate: new Date().toISOString(),
-      smsHash: null,
     });
   };
 
@@ -65,6 +105,12 @@ export default function AddTransactionScreen() {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <TouchableOpacity style={styles.smsButton} onPress={() => setShowSmsModal(true)}>
+        <Ionicons name="chatbox-ellipses-outline" size={20} color={COLORS.primary} />
+        <Text style={styles.smsButtonText}>Paste Bank SMS</Text>
+        <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
+      </TouchableOpacity>
+
       <View style={styles.typeSelector}>
         <TouchableOpacity
           style={[styles.typeButton, type === 'debit' && styles.typeButtonActive]}
@@ -183,6 +229,54 @@ export default function AddTransactionScreen() {
       </TouchableOpacity>
 
       <View style={{ height: 40 }} />
+
+      <Modal
+        visible={showSmsModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowSmsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Paste Bank SMS</Text>
+              <TouchableOpacity onPress={() => setShowSmsModal(false)}>
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalDescription}>
+              Copy a transaction SMS from your bank and paste it below. We'll automatically extract the transaction details.
+            </Text>
+
+            <TextInput
+              style={styles.smsInput}
+              placeholder="Paste your bank SMS here...&#10;&#10;Example:&#10;Rs.500.00 debited from A/c XX1234 on 06-Dec-24. UPI/123456789. If not done by u, call 1800-XXX-XXXX"
+              placeholderTextColor={COLORS.textMuted}
+              multiline
+              numberOfLines={6}
+              value={smsText}
+              onChangeText={setSmsText}
+              textAlignVertical="top"
+            />
+
+            <TouchableOpacity 
+              style={[styles.parseButton, isParsing && styles.parseButtonDisabled]} 
+              onPress={handleParseSms}
+              disabled={isParsing}
+            >
+              {isParsing ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="scan-outline" size={20} color="#fff" />
+                  <Text style={styles.parseButtonText}>Parse SMS</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -192,6 +286,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
     padding: 16,
+  },
+  smsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    gap: 8,
+  },
+  smsButtonText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    color: COLORS.primary,
   },
   typeSelector: {
     flexDirection: 'row',
@@ -294,6 +403,61 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   submitButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  modalDescription: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  smsInput: {
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 15,
+    color: COLORS.text,
+    minHeight: 150,
+    marginBottom: 16,
+  },
+  parseButton: {
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  parseButtonDisabled: {
+    opacity: 0.7,
+  },
+  parseButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',

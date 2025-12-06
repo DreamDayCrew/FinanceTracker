@@ -80,6 +80,24 @@ export const api = {
     apiRequest<{ categoryId: number | null }>('/api/transactions/suggest-category', { 
       method: 'POST', body: JSON.stringify({ description }) 
     }),
+
+  parseSms: (message: string, sender?: string) => 
+    apiRequest<{
+      success: boolean;
+      transaction?: Transaction;
+      parsed?: {
+        amount: number;
+        type: 'debit' | 'credit';
+        merchant?: string;
+        description?: string;
+        referenceNumber?: string;
+        date?: string;
+      };
+      message?: string;
+    }>('/api/parse-sms', { 
+      method: 'POST', 
+      body: JSON.stringify({ message, sender, receivedAt: new Date().toISOString() }) 
+    }),
 };
 
 export { API_BASE_URL };
