@@ -3,15 +3,15 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../lib/utils';
-import { RootStackParamList } from '../../App';
+import { MoreStackParamList } from '../../App';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type NavigationProp = NativeStackNavigationProp<MoreStackParamList>;
 
 interface MenuItem {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle: string;
-  route: keyof RootStackParamList;
+  route: keyof MoreStackParamList;
   color: string;
 }
 
@@ -44,6 +44,8 @@ export default function MoreScreen() {
 
   return (
     <View style={styles.container}>
+      <Text style={styles.header}>More</Text>
+      
       <View style={styles.menuList}>
         {menuItems.map((item) => (
           <TouchableOpacity
@@ -76,6 +78,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
     padding: 16,
+  },
+  header: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 20,
+    marginTop: 50,
   },
   menuList: {
     gap: 8,

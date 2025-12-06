@@ -23,21 +23,26 @@ import { COLORS } from './src/lib/utils';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5,
-      retry: 2,
+      staleTime: 1000 * 60 * 2,
+      retry: 3,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     },
   },
 });
 
-export type RootStackParamList = {
-  Main: undefined;
-  AddTransaction: undefined;
-  AddAccount: undefined;
+export type MoreStackParamList = {
+  MoreMenu: undefined;
   Budgets: undefined;
   AddBudget: undefined;
   ScheduledPayments: undefined;
   AddScheduledPayment: undefined;
   Settings: undefined;
+};
+
+export type RootStackParamList = {
+  Main: undefined;
+  AddTransaction: undefined;
+  AddAccount: undefined;
 };
 
 export type TabParamList = {
@@ -47,8 +52,56 @@ export type TabParamList = {
   More: undefined;
 };
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
+const RootStack = createNativeStackNavigator<RootStackParamList>();
+const MoreStack = createNativeStackNavigator<MoreStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
+
+function MoreStackNavigator() {
+  return (
+    <MoreStack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: COLORS.background,
+        },
+        headerTintColor: COLORS.text,
+        headerTitleStyle: {
+          fontWeight: '600',
+        },
+      }}
+    >
+      <MoreStack.Screen 
+        name="MoreMenu" 
+        component={MoreScreen}
+        options={{ headerShown: false }}
+      />
+      <MoreStack.Screen 
+        name="Budgets" 
+        component={BudgetsScreen}
+        options={{ title: 'Plan Budget' }}
+      />
+      <MoreStack.Screen 
+        name="AddBudget" 
+        component={AddBudgetScreen}
+        options={{ title: 'Add Budget' }}
+      />
+      <MoreStack.Screen 
+        name="ScheduledPayments" 
+        component={ScheduledPaymentsScreen}
+        options={{ title: 'Scheduled Payments' }}
+      />
+      <MoreStack.Screen 
+        name="AddScheduledPayment" 
+        component={AddScheduledPaymentScreen}
+        options={{ title: 'Add Payment' }}
+      />
+      <MoreStack.Screen 
+        name="Settings" 
+        component={SettingsScreen}
+        options={{ title: 'Settings' }}
+      />
+    </MoreStack.Navigator>
+  );
+}
 
 function TabNavigator() {
   return (
@@ -103,8 +156,8 @@ function TabNavigator() {
       />
       <Tab.Screen 
         name="More" 
-        component={MoreScreen}
-        options={{ title: 'More' }}
+        component={MoreStackNavigator}
+        options={{ title: 'More', headerShown: false }}
       />
     </Tab.Navigator>
   );
@@ -115,7 +168,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <NavigationContainer>
-          <Stack.Navigator
+          <RootStack.Navigator
             screenOptions={{
               headerStyle: {
                 backgroundColor: COLORS.background,
@@ -126,47 +179,22 @@ export default function App() {
               },
             }}
           >
-            <Stack.Screen 
+            <RootStack.Screen 
               name="Main" 
               component={TabNavigator} 
               options={{ headerShown: false }}
             />
-            <Stack.Screen 
+            <RootStack.Screen 
               name="AddTransaction" 
               component={AddTransactionScreen}
-              options={{ title: 'Add Transaction' }}
+              options={{ title: 'Add Transaction', presentation: 'modal' }}
             />
-            <Stack.Screen 
+            <RootStack.Screen 
               name="AddAccount" 
               component={AddAccountScreen}
-              options={{ title: 'Add Account' }}
+              options={{ title: 'Add Account', presentation: 'modal' }}
             />
-            <Stack.Screen 
-              name="Budgets" 
-              component={BudgetsScreen}
-              options={{ title: 'Plan Budget' }}
-            />
-            <Stack.Screen 
-              name="AddBudget" 
-              component={AddBudgetScreen}
-              options={{ title: 'Add Budget' }}
-            />
-            <Stack.Screen 
-              name="ScheduledPayments" 
-              component={ScheduledPaymentsScreen}
-              options={{ title: 'Scheduled Payments' }}
-            />
-            <Stack.Screen 
-              name="AddScheduledPayment" 
-              component={AddScheduledPaymentScreen}
-              options={{ title: 'Add Payment' }}
-            />
-            <Stack.Screen 
-              name="Settings" 
-              component={SettingsScreen}
-              options={{ title: 'Settings' }}
-            />
-          </Stack.Navigator>
+          </RootStack.Navigator>
         </NavigationContainer>
         <StatusBar style="auto" />
       </SafeAreaProvider>

@@ -1,42 +1,67 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { useNavigation } from '@react-navigation/native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigation, CompositeNavigationProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../lib/api';
 import { formatCurrency, formatDate, COLORS, getOrdinalSuffix } from '../lib/utils';
-import { RootStackParamList } from '../../App';
+import { RootStackParamList, TabParamList } from '../../App';
 import { FABButton } from '../components/FABButton';
+import { useState, useCallback } from 'react';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type NavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<TabParamList, 'Dashboard'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 export default function DashboardScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
   
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard'],
     queryFn: api.getDashboard,
   });
 
-  if (isLoading) {
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
+
+  if (isLoading && !data) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
       </View>
     );
   }
 
-  if (error) {
+  if (error && !data) {
     return (
       <View style={styles.centered}>
+        <Ionicons name="cloud-offline-outline" size={48} color={COLORS.textMuted} />
         <Text style={styles.errorText}>Failed to load dashboard</Text>
+        <Text style={styles.errorSubtext}>Check your internet connection</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
+        }
+      >
         <View style={styles.summaryCards}>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Today</Text>
@@ -76,7 +101,7 @@ export default function DashboardScreen() {
           ) : (
             <TouchableOpacity 
               style={styles.emptyCard}
-              onPress={() => navigation.navigate('Budgets')}
+              onPress={() => navigation.navigate('More')}
             >
               <Ionicons name="pie-chart-outline" size={32} color={COLORS.textMuted} />
               <Text style={styles.emptyText}>No budgets set</Text>
@@ -103,7 +128,7 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Transactions</Text>
-            <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Transactions')}>
+            <TouchableOpacity onPress={() => navigation.navigate('Transactions')}>
               <Text style={styles.viewAll}>View All</Text>
             </TouchableOpacity>
           </View>
@@ -153,10 +178,34 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: COLORS.textMuted,
+    fontSize: 14,
   },
   errorText: {
-    color: COLORS.danger,
+    color: COLORS.text,
     fontSize: 16,
+    fontWeight: '600',
+    marginTop: 12,
+  },
+  errorSubtext: {
+    color: COLORS.textMuted,
+    fontSize: 14,
+    marginTop: 4,
+  },
+  retryButton: {
+    marginTop: 16,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
   },
   summaryCards: {
     flexDirection: 'row',

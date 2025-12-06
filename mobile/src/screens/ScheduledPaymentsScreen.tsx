@@ -5,10 +5,10 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../lib/api';
 import { formatCurrency, COLORS, getOrdinalSuffix } from '../lib/utils';
-import { RootStackParamList } from '../../App';
+import { MoreStackParamList } from '../../App';
 import type { ScheduledPayment } from '../lib/types';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type NavigationProp = NativeStackNavigationProp<MoreStackParamList>;
 
 export default function ScheduledPaymentsScreen() {
   const navigation = useNavigation<NavigationProp>();
