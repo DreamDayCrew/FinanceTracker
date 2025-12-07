@@ -63,6 +63,9 @@ This builds an APK in Expo's cloud servers - no Android Studio needed!
 # Login to Expo
 npx eas login
 
+# Build locally 
+eas build --local --platform android
+
 # Build APK (takes 10-15 minutes)
 npx eas build -p android --profile preview
 ```
