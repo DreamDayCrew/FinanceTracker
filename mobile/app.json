@@ -2,7 +2,7 @@
   "expo": {
     "name": "My Tracker",
     "slug": "finance-tracker",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -14,6 +14,11 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "permissions": [
+      "READ_SMS",
+      "RECEIVE_SMS",
+      "SEND_SMS"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.mytracker.finance"
@@ -23,7 +28,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#16a34a"
       },
-      "package": "com.mytracker.finance"
+      "package": "com.mytracker.finance",
+      "permissions": ["READ_SMS", "RECEIVE_SMS", "SEND_SMS"]
     },
     "web": {
       "favicon": "./assets/favicon.png",
