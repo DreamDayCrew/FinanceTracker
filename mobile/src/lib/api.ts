@@ -1,7 +1,11 @@
 import type { 
   Account, Category, Transaction, Budget, ScheduledPayment, 
   User, DashboardData, InsertAccount, InsertTransaction, 
-  InsertBudget, InsertScheduledPayment 
+  InsertBudget, InsertScheduledPayment,
+  SavingsGoal, SavingsContribution, InsertSavingsGoal, InsertSavingsContribution,
+  SalaryProfile, SalaryCycle, InsertSalaryProfile,
+  Loan, LoanInstallment, InsertLoan,
+  CardDetails, InsertCardDetails
 } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
@@ -97,6 +101,63 @@ export const api = {
     }>('/api/parse-sms', { 
       method: 'POST', 
       body: JSON.stringify({ message, sender, receivedAt: new Date().toISOString() }) 
+    }),
+
+  getSavingsGoals: () => apiRequest<SavingsGoal[]>('/api/savings-goals'),
+  createSavingsGoal: (data: InsertSavingsGoal) => 
+    apiRequest<SavingsGoal>('/api/savings-goals', { method: 'POST', body: JSON.stringify(data) }),
+  updateSavingsGoal: (id: number, data: Partial<InsertSavingsGoal>) => 
+    apiRequest<SavingsGoal>(`/api/savings-goals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteSavingsGoal: (id: number) => 
+    apiRequest<void>(`/api/savings-goals/${id}`, { method: 'DELETE' }),
+  getContributions: (goalId: number) => 
+    apiRequest<SavingsContribution[]>(`/api/savings-goals/${goalId}/contributions`),
+  addContribution: (goalId: number, data: Omit<InsertSavingsContribution, 'savingsGoalId'>) => 
+    apiRequest<SavingsContribution>(`/api/savings-goals/${goalId}/contributions`, { 
+      method: 'POST', body: JSON.stringify(data) 
+    }),
+
+  getSalaryProfiles: () => apiRequest<SalaryProfile[]>('/api/salary-profiles'),
+  createSalaryProfile: (data: InsertSalaryProfile) => 
+    apiRequest<SalaryProfile>('/api/salary-profiles', { method: 'POST', body: JSON.stringify(data) }),
+  updateSalaryProfile: (id: number, data: Partial<InsertSalaryProfile>) => 
+    apiRequest<SalaryProfile>(`/api/salary-profiles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteSalaryProfile: (id: number) => 
+    apiRequest<void>(`/api/salary-profiles/${id}`, { method: 'DELETE' }),
+  getSalaryCycles: (profileId: number) => 
+    apiRequest<SalaryCycle[]>(`/api/salary-profiles/${profileId}/cycles`),
+  getNextPaydays: (profileId: number, count?: number) => 
+    apiRequest<string[]>(`/api/salary-profiles/${profileId}/next-paydays${count ? `?count=${count}` : ''}`),
+
+  getLoans: () => apiRequest<Loan[]>('/api/loans'),
+  getLoan: (id: number) => apiRequest<Loan>(`/api/loans/${id}`),
+  createLoan: (data: InsertLoan) => 
+    apiRequest<Loan>('/api/loans', { method: 'POST', body: JSON.stringify(data) }),
+  updateLoan: (id: number, data: Partial<InsertLoan>) => 
+    apiRequest<Loan>(`/api/loans/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteLoan: (id: number) => 
+    apiRequest<void>(`/api/loans/${id}`, { method: 'DELETE' }),
+  getLoanInstallments: (loanId: number) => 
+    apiRequest<LoanInstallment[]>(`/api/loans/${loanId}/installments`),
+  updateInstallment: (loanId: number, installmentId: number, data: Partial<LoanInstallment>) => 
+    apiRequest<LoanInstallment>(`/api/loans/${loanId}/installments/${installmentId}`, { 
+      method: 'PATCH', body: JSON.stringify(data) 
+    }),
+  generateInstallments: (loanId: number) => 
+    apiRequest<LoanInstallment[]>(`/api/loans/${loanId}/generate-installments`, { method: 'POST' }),
+
+  getCardDetails: (accountId: number) => 
+    apiRequest<CardDetails | null>(`/api/accounts/${accountId}/card-details`),
+  saveCardDetails: (accountId: number, data: Omit<InsertCardDetails, 'accountId'>) => 
+    apiRequest<CardDetails>(`/api/accounts/${accountId}/card-details`, { 
+      method: 'POST', body: JSON.stringify(data) 
+    }),
+  deleteCardDetails: (accountId: number) => 
+    apiRequest<void>(`/api/accounts/${accountId}/card-details`, { method: 'DELETE' }),
+
+  verifyPin: (pin: string) => 
+    apiRequest<{ valid: boolean; message?: string }>('/api/user/verify-pin', { 
+      method: 'POST', body: JSON.stringify({ pin }) 
     }),
 };
 

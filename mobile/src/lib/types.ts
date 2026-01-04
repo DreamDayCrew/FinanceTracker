@@ -126,3 +126,151 @@ export interface InsertScheduledPayment {
   status?: 'active' | 'inactive';
   notes?: string | null;
 }
+
+export interface SavingsGoal {
+  id: number;
+  userId: number | null;
+  name: string;
+  targetAmount: string;
+  currentAmount: string;
+  targetDate: string | null;
+  icon: string | null;
+  color: string | null;
+  status: 'active' | 'completed' | 'cancelled';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavingsContribution {
+  id: number;
+  savingsGoalId: number;
+  amount: string;
+  contributionDate: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface SalaryProfile {
+  id: number;
+  userId: number | null;
+  employerName: string;
+  monthlySalary: string;
+  payDay: number;
+  payDayRule: 'exact' | 'before_weekend' | 'after_weekend' | 'last_working_day';
+  accountId: number | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SalaryCycle {
+  id: number;
+  salaryProfileId: number;
+  expectedDate: string;
+  actualDate: string | null;
+  expectedAmount: string;
+  actualAmount: string | null;
+  status: 'pending' | 'received' | 'delayed' | 'missed';
+  notes: string | null;
+  transactionId: number | null;
+  createdAt: string;
+}
+
+export interface Loan {
+  id: number;
+  userId: number | null;
+  name: string;
+  loanType: 'home_loan' | 'personal_loan' | 'credit_card_loan' | 'item_emi';
+  principalAmount: string;
+  interestRate: string;
+  tenureMonths: number;
+  emiAmount: string;
+  startDate: string;
+  endDate: string | null;
+  accountId: number | null;
+  lenderName: string | null;
+  loanAccountNumber: string | null;
+  status: 'active' | 'closed' | 'defaulted';
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoanInstallment {
+  id: number;
+  loanId: number;
+  installmentNumber: number;
+  dueDate: string;
+  emiAmount: string;
+  principalComponent: string;
+  interestComponent: string;
+  status: 'pending' | 'paid' | 'overdue' | 'partially_paid';
+  paidDate: string | null;
+  paidAmount: string | null;
+  transactionId: number | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface CardDetails {
+  id: number;
+  accountId: number;
+  cardNumber: string;
+  cardHolderName: string;
+  expiryMonth: number;
+  expiryYear: number;
+  cardType: 'visa' | 'mastercard' | 'rupay' | 'amex' | 'other';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InsertSavingsGoal {
+  name: string;
+  targetAmount: string;
+  currentAmount?: string;
+  targetDate?: string | null;
+  icon?: string | null;
+  color?: string | null;
+  status?: 'active' | 'completed' | 'cancelled';
+}
+
+export interface InsertSavingsContribution {
+  savingsGoalId: number;
+  amount: string;
+  contributionDate?: string;
+  notes?: string | null;
+}
+
+export interface InsertSalaryProfile {
+  employerName: string;
+  monthlySalary: string;
+  payDay: number;
+  payDayRule?: 'exact' | 'before_weekend' | 'after_weekend' | 'last_working_day';
+  accountId?: number | null;
+  isActive?: boolean;
+}
+
+export interface InsertLoan {
+  name: string;
+  loanType: 'home_loan' | 'personal_loan' | 'credit_card_loan' | 'item_emi';
+  principalAmount: string;
+  interestRate: string;
+  tenureMonths: number;
+  emiAmount: string;
+  startDate: string;
+  endDate?: string | null;
+  accountId?: number | null;
+  lenderName?: string | null;
+  loanAccountNumber?: string | null;
+  status?: 'active' | 'closed' | 'defaulted';
+  notes?: string | null;
+}
+
+export interface InsertCardDetails {
+  accountId: number;
+  cardNumber: string;
+  cardHolderName: string;
+  expiryMonth: number;
+  expiryYear: number;
+  cardType?: 'visa' | 'mastercard' | 'rupay' | 'amex' | 'other';
+}

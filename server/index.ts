@@ -6,17 +6,23 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
-// Configure CORS
-const allowedOrigins = [
-  'http://localhost:5000',
-  'http://localhost:8081', // Expo web
-  'https://financetracker-jdqd.onrender.com'
-];
+// Configure CORS - allow all origins in development for mobile app testing
+const isDev = process.env.NODE_ENV === 'development';
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or Postman)
     if (!origin) return callback(null, true);
+    
+    // In development, allow all origins for easier mobile testing
+    if (isDev) return callback(null, true);
+    
+    // In production, restrict to known origins
+    const allowedOrigins = [
+      'http://localhost:5000',
+      'http://localhost:8081',
+      'https://financetracker-jdqd.onrender.com'
+    ];
     
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
