@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { api } from '../lib/api';
 
 interface AuthContextType {
@@ -13,16 +13,37 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTH_STATE_KEY = '@auth_unlocked';
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLocked, setIsLocked] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [hasPin, setHasPin] = useState(false);
+  const appState = useRef(AppState.currentState);
+  const hasPinRef = useRef(false);
+
+  useEffect(() => {
+    hasPinRef.current = hasPin;
+  }, [hasPin]);
+
+  const lockApp = useCallback(() => {
+    if (hasPinRef.current) {
+      setIsLocked(true);
+    }
+  }, []);
 
   useEffect(() => {
     checkPinRequired();
-  }, []);
+
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (appState.current === 'active' && (nextAppState === 'background' || nextAppState === 'inactive')) {
+        lockApp();
+      }
+      appState.current = nextAppState;
+    });
+    
+    return () => {
+      subscription.remove();
+    };
+  }, [lockApp]);
 
   const checkPinRequired = async () => {
     try {
@@ -30,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const user = await api.getUser();
       const userHasPin = !!user?.pinHash;
       setHasPin(userHasPin);
+      hasPinRef.current = userHasPin;
       
       if (!userHasPin) {
         setIsLocked(false);
@@ -40,16 +62,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Failed to check PIN status:', error);
       setIsLocked(false);
       setHasPin(false);
+      hasPinRef.current = false;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const unlock = () => {
+  const unlock = useCallback(() => {
     setIsLocked(false);
-  };
+  }, []);
 
-  const verifyPin = async (pin: string): Promise<boolean> => {
+  const verifyPin = useCallback(async (pin: string): Promise<boolean> => {
     try {
       const result = await api.verifyPin(pin);
       if (result.valid) {
@@ -61,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('PIN verification failed:', error);
       return false;
     }
-  };
+  }, [unlock]);
 
   return (
     <AuthContext.Provider value={{ isLocked, isLoading, hasPin, unlock, checkPinRequired, verifyPin }}>

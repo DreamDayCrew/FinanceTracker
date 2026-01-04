@@ -1,11 +1,16 @@
 import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, formatCurrency } from '../lib/utils';
+import { formatCurrency, getThemedColors } from '../lib/utils';
 import { api } from '../lib/api';
 import type { Loan } from '../lib/types';
+import { useTheme } from '../contexts/ThemeContext';
+import { useMemo } from 'react';
 
 export default function LoansScreen() {
+  const { resolvedTheme } = useTheme();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+
   const { data: loans, isLoading } = useQuery<Loan[]>({
     queryKey: ['loans'],
     queryFn: () => api.getLoans(),
@@ -33,73 +38,77 @@ export default function LoansScreen() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return COLORS.primary;
-      case 'closed': return '#6b7280';
-      case 'defaulted': return '#ef4444';
-      default: return COLORS.textMuted;
+      case 'active': return colors.primary;
+      case 'closed': return colors.textMuted;
+      case 'defaulted': return colors.danger;
+      default: return colors.textMuted;
     }
   };
 
-  const renderLoan = ({ item }: { item: Loan }) => (
-    <View style={styles.loanCard}>
-      <View style={styles.loanHeader}>
-        <View style={[styles.loanIcon, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-          <Ionicons name={getLoanIcon(item.loanType)} size={24} color={getStatusColor(item.status)} />
+  const renderLoan = ({ item }: { item: Loan }) => {
+    const statusColor = getStatusColor(item.status);
+    
+    return (
+      <View style={[styles.loanCard, { backgroundColor: colors.card }]}>
+        <View style={styles.loanHeader}>
+          <View style={[styles.loanIcon, { backgroundColor: statusColor + '20' }]}>
+            <Ionicons name={getLoanIcon(item.loanType)} size={24} color={statusColor} />
+          </View>
+          <View style={styles.loanInfo}>
+            <Text style={[styles.loanName, { color: colors.text }]}>{item.name}</Text>
+            <Text style={[styles.loanType, { color: colors.textMuted }]}>{getLoanTypeLabel(item.loanType)}</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+            <Text style={[styles.statusText, { color: statusColor }]}>
+              {item.status}
+            </Text>
+          </View>
         </View>
-        <View style={styles.loanInfo}>
-          <Text style={styles.loanName}>{item.name}</Text>
-          <Text style={styles.loanType}>{getLoanTypeLabel(item.loanType)}</Text>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-            {item.status}
-          </Text>
-        </View>
-      </View>
 
-      <View style={styles.loanDetails}>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Principal</Text>
-          <Text style={styles.detailValue}>{formatCurrency(parseFloat(item.principalAmount))}</Text>
+        <View style={[styles.loanDetails, { backgroundColor: colors.background }]}>
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Principal</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>{formatCurrency(parseFloat(item.principalAmount))}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.textMuted }]}>EMI</Text>
+            <Text style={[styles.emiValue, { color: colors.primary }]}>{formatCurrency(parseFloat(item.emiAmount))}/month</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Interest Rate</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>{item.interestRate}%</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Tenure</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>{item.tenureMonths} months</Text>
+          </View>
         </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>EMI</Text>
-          <Text style={styles.emiValue}>{formatCurrency(parseFloat(item.emiAmount))}/month</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Interest Rate</Text>
-          <Text style={styles.detailValue}>{item.interestRate}%</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Tenure</Text>
-          <Text style={styles.detailValue}>{item.tenureMonths} months</Text>
-        </View>
-      </View>
 
-      {item.lenderName && (
-        <View style={styles.lenderRow}>
-          <Ionicons name="business-outline" size={14} color={COLORS.textMuted} />
-          <Text style={styles.lenderText}>{item.lenderName}</Text>
-        </View>
-      )}
-    </View>
-  );
+        {item.lenderName && (
+          <View style={styles.lenderRow}>
+            <Ionicons name="business-outline" size={14} color={colors.textMuted} />
+            <Text style={[styles.lenderText, { color: colors.textMuted }]}>{item.lenderName}</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {(!loans || loans.length === 0) ? (
         <View style={styles.emptyState}>
-          <Ionicons name="document-text-outline" size={64} color={COLORS.textMuted} />
-          <Text style={styles.emptyTitle}>No Loans</Text>
-          <Text style={styles.emptySubtitle}>Add your loans and EMIs in the web app</Text>
+          <Ionicons name="document-text-outline" size={64} color={colors.textMuted} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No Loans</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Add your loans and EMIs in the web app</Text>
         </View>
       ) : (
         <FlatList
@@ -117,20 +126,17 @@ export default function LoansScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
   },
   list: {
     padding: 16,
     gap: 12,
   },
   loanCard: {
-    backgroundColor: COLORS.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -154,11 +160,9 @@ const styles = StyleSheet.create({
   loanName: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
   },
   loanType: {
     fontSize: 12,
-    color: COLORS.textMuted,
     marginTop: 2,
   },
   statusBadge: {
@@ -172,7 +176,6 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   loanDetails: {
-    backgroundColor: COLORS.background,
     borderRadius: 8,
     padding: 12,
     gap: 8,
@@ -184,17 +187,14 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 13,
-    color: COLORS.textMuted,
   },
   detailValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.text,
   },
   emiValue: {
     fontSize: 14,
     fontWeight: '700',
-    color: COLORS.primary,
   },
   lenderRow: {
     flexDirection: 'row',
@@ -204,7 +204,6 @@ const styles = StyleSheet.create({
   },
   lenderText: {
     fontSize: 13,
-    color: COLORS.textMuted,
   },
   emptyState: {
     flex: 1,
@@ -215,12 +214,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: COLORS.text,
     marginTop: 16,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: COLORS.textMuted,
     textAlign: 'center',
     marginTop: 8,
   },

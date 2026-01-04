@@ -1,11 +1,16 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, formatCurrency } from '../lib/utils';
+import { formatCurrency, getThemedColors } from '../lib/utils';
 import { api } from '../lib/api';
 import type { SavingsGoal } from '../lib/types';
+import { useTheme } from '../contexts/ThemeContext';
+import { useMemo } from 'react';
 
 export default function SavingsGoalsScreen() {
+  const { resolvedTheme } = useTheme();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+
   const { data: goals, isLoading } = useQuery<SavingsGoal[]>({
     queryKey: ['savings-goals'],
     queryFn: () => api.getSavingsGoals(),
@@ -19,34 +24,34 @@ export default function SavingsGoalsScreen() {
 
   const renderGoal = ({ item }: { item: SavingsGoal }) => {
     const progress = getProgress(item);
-    const progressColor = progress >= 100 ? COLORS.primary : progress >= 50 ? '#f59e0b' : '#ef4444';
+    const progressColor = progress >= 100 ? colors.primary : progress >= 50 ? colors.warning : colors.danger;
 
     return (
-      <View style={styles.goalCard}>
+      <View style={[styles.goalCard, { backgroundColor: colors.card }]}>
         <View style={styles.goalHeader}>
-          <View style={[styles.goalIcon, { backgroundColor: item.color || COLORS.primary + '20' }]}>
-            <Ionicons name={(item.icon as any) || 'flag'} size={24} color={item.color || COLORS.primary} />
+          <View style={[styles.goalIcon, { backgroundColor: (item.color || colors.primary) + '20' }]}>
+            <Ionicons name={(item.icon as any) || 'flag'} size={24} color={item.color || colors.primary} />
           </View>
           <View style={styles.goalInfo}>
-            <Text style={styles.goalName}>{item.name}</Text>
-            <Text style={styles.goalStatus}>{item.status}</Text>
+            <Text style={[styles.goalName, { color: colors.text }]}>{item.name}</Text>
+            <Text style={[styles.goalStatus, { color: colors.textMuted }]}>{item.status}</Text>
           </View>
         </View>
 
         <View style={styles.progressContainer}>
-          <View style={styles.progressBar}>
+          <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
             <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: progressColor }]} />
           </View>
-          <Text style={styles.progressText}>{progress.toFixed(0)}%</Text>
+          <Text style={[styles.progressText, { color: colors.text }]}>{progress.toFixed(0)}%</Text>
         </View>
 
         <View style={styles.amountRow}>
-          <Text style={styles.currentAmount}>{formatCurrency(parseFloat(item.currentAmount))}</Text>
-          <Text style={styles.targetAmount}>of {formatCurrency(parseFloat(item.targetAmount))}</Text>
+          <Text style={[styles.currentAmount, { color: colors.primary }]}>{formatCurrency(parseFloat(item.currentAmount))}</Text>
+          <Text style={[styles.targetAmount, { color: colors.textMuted }]}>of {formatCurrency(parseFloat(item.targetAmount))}</Text>
         </View>
 
         {item.targetDate && (
-          <Text style={styles.targetDate}>
+          <Text style={[styles.targetDate, { color: colors.textMuted }]}>
             Target: {new Date(item.targetDate).toLocaleDateString()}
           </Text>
         )}
@@ -56,19 +61,19 @@ export default function SavingsGoalsScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {(!goals || goals.length === 0) ? (
         <View style={styles.emptyState}>
-          <Ionicons name="flag-outline" size={64} color={COLORS.textMuted} />
-          <Text style={styles.emptyTitle}>No Savings Goals</Text>
-          <Text style={styles.emptySubtitle}>Create goals in the web app to track them here</Text>
+          <Ionicons name="flag-outline" size={64} color={colors.textMuted} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No Savings Goals</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Create goals in the web app to track them here</Text>
         </View>
       ) : (
         <FlatList
@@ -86,20 +91,17 @@ export default function SavingsGoalsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
   },
   list: {
     padding: 16,
     gap: 12,
   },
   goalCard: {
-    backgroundColor: COLORS.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -123,11 +125,9 @@ const styles = StyleSheet.create({
   goalName: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
   },
   goalStatus: {
     fontSize: 12,
-    color: COLORS.textMuted,
     textTransform: 'capitalize',
   },
   progressContainer: {
@@ -139,7 +139,6 @@ const styles = StyleSheet.create({
   progressBar: {
     flex: 1,
     height: 8,
-    backgroundColor: COLORS.border,
     borderRadius: 4,
     overflow: 'hidden',
   },
@@ -150,7 +149,6 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 12,
     fontWeight: '600',
-    color: COLORS.text,
     width: 40,
     textAlign: 'right',
   },
@@ -162,15 +160,12 @@ const styles = StyleSheet.create({
   currentAmount: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.primary,
   },
   targetAmount: {
     fontSize: 14,
-    color: COLORS.textMuted,
   },
   targetDate: {
     fontSize: 12,
-    color: COLORS.textMuted,
     marginTop: 8,
   },
   emptyState: {
@@ -182,12 +177,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: COLORS.text,
     marginTop: 16,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: COLORS.textMuted,
     textAlign: 'center',
     marginTop: 8,
   },

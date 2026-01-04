@@ -4,16 +4,20 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../lib/api';
-import { formatCurrency, COLORS } from '../lib/utils';
+import { formatCurrency, getThemedColors } from '../lib/utils';
 import { RootStackParamList } from '../../App';
 import { FABButton } from '../components/FABButton';
 import type { Account } from '../lib/types';
+import { useTheme } from '../contexts/ThemeContext';
+import { useMemo } from 'react';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function AccountsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const queryClient = useQueryClient();
+  const { resolvedTheme } = useTheme();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: ['accounts'],
@@ -47,46 +51,46 @@ export default function AccountsScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bank Accounts</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Bank Accounts</Text>
           {bankAccounts.length > 0 ? (
             bankAccounts.map((account) => (
               <TouchableOpacity 
                 key={account.id} 
-                style={styles.accountCard}
+                style={[styles.accountCard, { backgroundColor: colors.card }]}
                 onLongPress={() => handleDelete(account)}
               >
-                <View style={styles.accountIcon}>
-                  <Ionicons name="business-outline" size={24} color={COLORS.primary} />
+                <View style={[styles.accountIcon, { backgroundColor: colors.primary + '20' }]}>
+                  <Ionicons name="business-outline" size={24} color={colors.primary} />
                 </View>
                 <View style={styles.accountInfo}>
-                  <Text style={styles.accountName}>{account.name}</Text>
+                  <Text style={[styles.accountName, { color: colors.text }]}>{account.name}</Text>
                   {account.accountNumber && (
-                    <Text style={styles.accountNumber}>****{account.accountNumber}</Text>
+                    <Text style={[styles.accountNumber, { color: colors.textMuted }]}>****{account.accountNumber}</Text>
                   )}
                 </View>
-                <Text style={styles.accountBalance}>{formatCurrency(account.balance)}</Text>
+                <Text style={[styles.accountBalance, { color: colors.primary }]}>{formatCurrency(account.balance)}</Text>
               </TouchableOpacity>
             ))
           ) : (
-            <View style={styles.emptyCard}>
-              <Ionicons name="business-outline" size={32} color={COLORS.textMuted} />
-              <Text style={styles.emptyText}>No bank accounts</Text>
+            <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+              <Ionicons name="business-outline" size={32} color={colors.textMuted} />
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>No bank accounts</Text>
             </View>
           )}
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Credit Cards</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Credit Cards</Text>
           {creditCards.length > 0 ? (
             creditCards.map((account) => {
               const used = parseFloat(account.creditLimit || '0') - parseFloat(account.balance);
@@ -97,28 +101,28 @@ export default function AccountsScreen() {
               return (
                 <TouchableOpacity 
                   key={account.id} 
-                  style={styles.accountCard}
+                  style={[styles.accountCard, { backgroundColor: colors.card }]}
                   onLongPress={() => handleDelete(account)}
                 >
-                  <View style={[styles.accountIcon, { backgroundColor: '#fef2f2' }]}>
-                    <Ionicons name="card-outline" size={24} color={COLORS.danger} />
+                  <View style={[styles.accountIcon, { backgroundColor: colors.danger + '20' }]}>
+                    <Ionicons name="card-outline" size={24} color={colors.danger} />
                   </View>
                   <View style={styles.accountInfo}>
-                    <Text style={styles.accountName}>{account.name}</Text>
+                    <Text style={[styles.accountName, { color: colors.text }]}>{account.name}</Text>
                     {account.accountNumber && (
-                      <Text style={styles.accountNumber}>****{account.accountNumber}</Text>
+                      <Text style={[styles.accountNumber, { color: colors.textMuted }]}>****{account.accountNumber}</Text>
                     )}
                     <View style={styles.creditInfo}>
-                      <Text style={styles.creditText}>
+                      <Text style={[styles.creditText, { color: colors.textMuted }]}>
                         {formatCurrency(account.balance)} available of {formatCurrency(account.creditLimit || 0)}
                       </Text>
-                      <View style={styles.creditBar}>
+                      <View style={[styles.creditBar, { backgroundColor: colors.border }]}>
                         <View 
                           style={[
                             styles.creditFill, 
                             { 
                               width: `${Math.min(usedPercent, 100)}%`,
-                              backgroundColor: usedPercent > 80 ? COLORS.danger : COLORS.warning
+                              backgroundColor: usedPercent > 80 ? colors.danger : colors.warning
                             }
                           ]} 
                         />
@@ -129,9 +133,9 @@ export default function AccountsScreen() {
               );
             })
           ) : (
-            <View style={styles.emptyCard}>
-              <Ionicons name="card-outline" size={32} color={COLORS.textMuted} />
-              <Text style={styles.emptyText}>No credit cards</Text>
+            <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+              <Ionicons name="card-outline" size={32} color={colors.textMuted} />
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>No credit cards</Text>
             </View>
           )}
         </View>
@@ -147,7 +151,6 @@ export default function AccountsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   scrollView: {
     flex: 1,
@@ -164,13 +167,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: COLORS.text,
     marginBottom: 12,
   },
   accountCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.card,
     padding: 16,
     borderRadius: 12,
     marginBottom: 8,
@@ -179,7 +180,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#f0fdf4',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -190,29 +190,24 @@ const styles = StyleSheet.create({
   accountName: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
   },
   accountNumber: {
     fontSize: 13,
-    color: COLORS.textMuted,
     marginTop: 2,
   },
   accountBalance: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.primary,
   },
   creditInfo: {
     marginTop: 8,
   },
   creditText: {
     fontSize: 12,
-    color: COLORS.textMuted,
     marginBottom: 4,
   },
   creditBar: {
     height: 4,
-    backgroundColor: COLORS.border,
     borderRadius: 2,
     overflow: 'hidden',
   },
@@ -221,14 +216,12 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   emptyCard: {
-    backgroundColor: COLORS.card,
     padding: 24,
     borderRadius: 12,
     alignItems: 'center',
   },
   emptyText: {
     fontSize: 15,
-    color: COLORS.textMuted,
     marginTop: 8,
   },
 });

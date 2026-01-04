@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../lib/api';
-import { formatCurrency, formatDate, COLORS } from '../lib/utils';
+import { formatCurrency, formatDate, getThemedColors } from '../lib/utils';
 import { RootStackParamList } from '../../App';
 import { FABButton } from '../components/FABButton';
 import type { Transaction } from '../lib/types';
+import { useTheme } from '../contexts/ThemeContext';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -17,6 +18,8 @@ export default function TransactionsScreen() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'credit' | 'debit'>('all');
+  const { resolvedTheme } = useTheme();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
 
   const { data: transactions, isLoading } = useQuery({
     queryKey: ['transactions'],
@@ -59,21 +62,21 @@ export default function TransactionsScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.searchContainer}>
-        <View style={styles.searchBox}>
-          <Ionicons name="search" size={20} color={COLORS.textMuted} />
+        <View style={[styles.searchBox, { backgroundColor: colors.card }]}>
+          <Ionicons name="search" size={20} color={colors.textMuted} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.text }]}
             placeholder="Search transactions..."
-            placeholderTextColor={COLORS.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={search}
             onChangeText={setSearch}
           />
@@ -84,10 +87,16 @@ export default function TransactionsScreen() {
         {(['all', 'credit', 'debit'] as const).map((f) => (
           <TouchableOpacity
             key={f}
-            style={[styles.filterButton, filter === f && styles.filterButtonActive]}
+            style={[
+              styles.filterButton, 
+              { backgroundColor: filter === f ? colors.primary : colors.card }
+            ]}
             onPress={() => setFilter(f)}
           >
-            <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>
+            <Text style={[
+              styles.filterText, 
+              { color: filter === f ? '#ffffff' : colors.textMuted }
+            ]}>
               {f === 'all' ? 'All' : f === 'credit' ? 'Income' : 'Expense'}
             </Text>
           </TouchableOpacity>
@@ -99,41 +108,41 @@ export default function TransactionsScreen() {
           filteredTransactions.map((transaction) => (
             <TouchableOpacity
               key={transaction.id}
-              style={styles.transactionItem}
+              style={[styles.transactionItem, { backgroundColor: colors.card }]}
               onLongPress={() => handleDelete(transaction)}
             >
               <View style={[
                 styles.transactionIcon,
-                { backgroundColor: transaction.type === 'credit' ? '#f0fdf4' : '#fef2f2' }
+                { backgroundColor: transaction.type === 'credit' ? colors.primary + '20' : colors.danger + '20' }
               ]}>
                 <Ionicons 
                   name={transaction.type === 'credit' ? 'arrow-down' : 'arrow-up'} 
                   size={20} 
-                  color={transaction.type === 'credit' ? COLORS.primary : COLORS.danger}
+                  color={transaction.type === 'credit' ? colors.primary : colors.danger}
                 />
               </View>
               <View style={styles.transactionInfo}>
-                <Text style={styles.transactionMerchant}>
+                <Text style={[styles.transactionMerchant, { color: colors.text }]}>
                   {transaction.merchant || transaction.category?.name || 'Transaction'}
                 </Text>
-                <Text style={styles.transactionCategory}>
+                <Text style={[styles.transactionCategory, { color: colors.textMuted }]}>
                   {transaction.category?.name} {transaction.account && `• ${transaction.account.name}`}
                 </Text>
-                <Text style={styles.transactionDate}>{formatDate(transaction.transactionDate)}</Text>
+                <Text style={[styles.transactionDate, { color: colors.textMuted }]}>{formatDate(transaction.transactionDate)}</Text>
               </View>
               <Text style={[
                 styles.transactionAmount,
-                { color: transaction.type === 'credit' ? COLORS.primary : COLORS.danger }
+                { color: transaction.type === 'credit' ? colors.primary : colors.danger }
               ]}>
                 {transaction.type === 'credit' ? '+' : '-'}{formatCurrency(transaction.amount)}
               </Text>
             </TouchableOpacity>
           ))
         ) : (
-          <View style={styles.emptyCard}>
-            <Ionicons name="receipt-outline" size={48} color={COLORS.textMuted} />
-            <Text style={styles.emptyText}>No transactions found</Text>
-            <Text style={styles.emptySubtext}>Tap + to add your first transaction</Text>
+          <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+            <Ionicons name="receipt-outline" size={48} color={colors.textMuted} />
+            <Text style={[styles.emptyText, { color: colors.text }]}>No transactions found</Text>
+            <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>Tap + to add your first transaction</Text>
           </View>
         )}
 
@@ -148,7 +157,6 @@ export default function TransactionsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   searchContainer: {
     padding: 16,
@@ -157,7 +165,6 @@ const styles = StyleSheet.create({
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.card,
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 44,
@@ -166,7 +173,6 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 8,
     fontSize: 16,
-    color: COLORS.text,
   },
   filterContainer: {
     flexDirection: 'row',
@@ -178,18 +184,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: COLORS.card,
-  },
-  filterButtonActive: {
-    backgroundColor: COLORS.primary,
   },
   filterText: {
     fontSize: 14,
-    color: COLORS.textMuted,
     fontWeight: '500',
-  },
-  filterTextActive: {
-    color: '#ffffff',
   },
   scrollView: {
     flex: 1,
@@ -203,7 +201,6 @@ const styles = StyleSheet.create({
   transactionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.card,
     padding: 12,
     borderRadius: 12,
     marginBottom: 8,
@@ -222,16 +219,13 @@ const styles = StyleSheet.create({
   transactionMerchant: {
     fontSize: 15,
     fontWeight: '600',
-    color: COLORS.text,
   },
   transactionCategory: {
     fontSize: 13,
-    color: COLORS.textMuted,
     marginTop: 2,
   },
   transactionDate: {
     fontSize: 12,
-    color: COLORS.textMuted,
     marginTop: 2,
   },
   transactionAmount: {
@@ -239,7 +233,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   emptyCard: {
-    backgroundColor: COLORS.card,
     padding: 40,
     borderRadius: 16,
     alignItems: 'center',
@@ -247,13 +240,11 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 17,
-    color: COLORS.text,
     fontWeight: '500',
     marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,
-    color: COLORS.textMuted,
     marginTop: 4,
   },
 });

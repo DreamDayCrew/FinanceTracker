@@ -1,9 +1,11 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../lib/utils';
+import { getThemedColors } from '../lib/utils';
 import { MoreStackParamList } from '../../App';
+import { useTheme } from '../contexts/ThemeContext';
+import { useMemo } from 'react';
 
 type NavigationProp = NativeStackNavigationProp<MoreStackParamList>;
 
@@ -28,7 +30,7 @@ const menuItems: MenuItem[] = [
     title: 'Plan Budget',
     subtitle: 'Set monthly spending limits',
     route: 'Budgets',
-    color: COLORS.primary,
+    color: '#16a34a',
   },
   {
     icon: 'calendar-outline',
@@ -69,34 +71,38 @@ const menuItems: MenuItem[] = [
 
 export default function MoreScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const { resolvedTheme } = useTheme();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>More</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Text style={[styles.header, { color: colors.text }]}>More</Text>
       
-      <View style={styles.menuList}>
-        {menuItems.map((item) => (
-          <TouchableOpacity
-            key={item.route}
-            style={styles.menuItem}
-            onPress={() => navigation.navigate(item.route)}
-          >
-            <View style={[styles.menuIcon, { backgroundColor: `${item.color}15` }]}>
-              <Ionicons name={item.icon} size={24} color={item.color} />
-            </View>
-            <View style={styles.menuInfo}>
-              <Text style={styles.menuTitle}>{item.title}</Text>
-              <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={COLORS.textMuted} />
-          </TouchableOpacity>
-        ))}
-      </View>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <View style={styles.menuList}>
+          {menuItems.map((item) => (
+            <TouchableOpacity
+              key={item.route}
+              style={[styles.menuItem, { backgroundColor: colors.card }]}
+              onPress={() => navigation.navigate(item.route)}
+            >
+              <View style={[styles.menuIcon, { backgroundColor: `${item.color}15` }]}>
+                <Ionicons name={item.icon} size={24} color={item.color} />
+              </View>
+              <View style={styles.menuInfo}>
+                <Text style={[styles.menuTitle, { color: colors.text }]}>{item.title}</Text>
+                <Text style={[styles.menuSubtitle, { color: colors.textMuted }]}>{item.subtitle}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+        </View>
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>My Tracker v1.0.5</Text>
-        <Text style={styles.footerSubtext}>Personal Finance Manager</Text>
-      </View>
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: colors.textMuted }]}>My Tracker v1.0.5</Text>
+          <Text style={[styles.footerSubtext, { color: colors.textMuted }]}>Personal Finance Manager</Text>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -104,15 +110,16 @@ export default function MoreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
     padding: 16,
   },
   header: {
     fontSize: 28,
     fontWeight: '700',
-    color: COLORS.text,
     marginBottom: 20,
     marginTop: 50,
+  },
+  scrollView: {
+    flex: 1,
   },
   menuList: {
     gap: 8,
@@ -120,7 +127,6 @@ const styles = StyleSheet.create({
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.card,
     padding: 16,
     borderRadius: 12,
   },
@@ -138,28 +144,21 @@ const styles = StyleSheet.create({
   menuTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
   },
   menuSubtitle: {
     fontSize: 13,
-    color: COLORS.textMuted,
     marginTop: 2,
   },
   footer: {
-    position: 'absolute',
-    bottom: 100,
-    left: 0,
-    right: 0,
     alignItems: 'center',
+    paddingVertical: 40,
   },
   footerText: {
     fontSize: 14,
-    color: COLORS.textMuted,
     fontWeight: '500',
   },
   footerSubtext: {
     fontSize: 12,
-    color: COLORS.textMuted,
     marginTop: 2,
   },
 });

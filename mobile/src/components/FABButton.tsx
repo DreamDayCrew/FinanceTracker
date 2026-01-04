@@ -1,6 +1,8 @@
 import { TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../lib/utils';
+import { getThemedColors } from '../lib/utils';
+import { useTheme } from '../contexts/ThemeContext';
+import { useMemo } from 'react';
 
 interface FABButtonProps {
   onPress: () => void;
@@ -8,8 +10,15 @@ interface FABButtonProps {
 }
 
 export function FABButton({ onPress, icon = 'add' }: FABButtonProps) {
+  const { resolvedTheme } = useTheme();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+
   return (
-    <TouchableOpacity style={styles.fab} onPress={onPress} activeOpacity={0.8}>
+    <TouchableOpacity 
+      style={[styles.fab, { backgroundColor: colors.primary }]} 
+      onPress={onPress} 
+      activeOpacity={0.8}
+    >
       <Ionicons name={icon} size={28} color="#ffffff" />
     </TouchableOpacity>
   );
@@ -23,7 +32,6 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',

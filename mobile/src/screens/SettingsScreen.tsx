@@ -1,14 +1,19 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Switch, Alert, TextInput, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../lib/api';
-import { COLORS } from '../lib/utils';
+import { getThemedColors } from '../lib/utils';
+import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function SettingsScreen() {
   const queryClient = useQueryClient();
   const [showPinModal, setShowPinModal] = useState(false);
   const [pin, setPin] = useState('');
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { checkPinRequired } = useAuth();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
 
   const { data: user } = useQuery({
     queryKey: ['user'],
@@ -26,9 +31,10 @@ export default function SettingsScreen() {
     mutationFn: api.setPin,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user'] });
+      checkPinRequired();
       setShowPinModal(false);
       setPin('');
-      Alert.alert('Success', 'PIN has been set');
+      Alert.alert('Success', 'PIN has been set. Next time you open the app, you will be asked to enter your PIN.');
     },
     onError: () => {
       Alert.alert('Error', 'Failed to set PIN');
@@ -39,6 +45,7 @@ export default function SettingsScreen() {
     mutationFn: api.resetPin,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user'] });
+      checkPinRequired();
       Alert.alert('Success', 'PIN has been removed');
     },
   });
@@ -63,8 +70,20 @@ export default function SettingsScreen() {
   };
 
   const toggleDarkMode = () => {
-    const newTheme = user?.theme === 'dark' ? 'light' : 'dark';
-    updateUserMutation.mutate({ theme: newTheme });
+    const newTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+  };
+
+  const handleSystemTheme = () => {
+    if (theme !== 'system') {
+      setTheme('system');
+    }
+  };
+
+  const getThemeLabel = () => {
+    if (theme === 'dark') return 'Dark theme';
+    if (theme === 'light') return 'Light theme';
+    return `Auto (${resolvedTheme})`;
   };
 
   const toggleBiometric = () => {
@@ -72,75 +91,95 @@ export default function SettingsScreen() {
   };
 
   const hasPin = !!user?.pinHash;
+  const isSystemTheme = theme === 'system';
 
   return (
-    <View style={styles.container}>
-      <View style={styles.section}>
-        <View style={styles.settingRow}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Appearance</Text>
+      <View style={[styles.section, { backgroundColor: colors.card }]}>
+        <View style={[styles.settingRow, { borderBottomColor: colors.border }]}>
           <View style={styles.settingInfo}>
-            <Ionicons name="moon-outline" size={22} color={COLORS.text} />
+            <Ionicons name="moon-outline" size={22} color={colors.text} />
             <View>
-              <Text style={styles.settingTitle}>Dark Mode</Text>
-              <Text style={styles.settingSubtitle}>Switch between light and dark theme</Text>
+              <Text style={[styles.settingTitle, { color: colors.text }]}>Dark Mode</Text>
+              <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>{getThemeLabel()}</Text>
             </View>
           </View>
           <Switch
-            value={user?.theme === 'dark'}
+            value={resolvedTheme === 'dark'}
             onValueChange={toggleDarkMode}
-            trackColor={{ false: COLORS.border, true: `${COLORS.primary}80` }}
-            thumbColor={user?.theme === 'dark' ? COLORS.primary : COLORS.textMuted}
+            trackColor={{ false: colors.border, true: `${colors.primary}80` }}
+            thumbColor={resolvedTheme === 'dark' ? colors.primary : colors.textMuted}
           />
         </View>
+        <TouchableOpacity 
+          style={[styles.settingRowButton, isSystemTheme && { opacity: 0.6 }]}
+          onPress={handleSystemTheme}
+          activeOpacity={isSystemTheme ? 1 : 0.7}
+        >
+          <View style={styles.settingInfo}>
+            <Ionicons name="phone-portrait-outline" size={22} color={colors.text} />
+            <View>
+              <Text style={[styles.settingTitle, { color: colors.text }]}>Auto (System)</Text>
+              <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Follow device settings</Text>
+            </View>
+          </View>
+          {isSystemTheme ? (
+            <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+          ) : (
+            <Ionicons name="ellipse-outline" size={22} color={colors.textMuted} />
+          )}
+        </TouchableOpacity>
       </View>
 
-      <Text style={styles.sectionTitle}>Security</Text>
-      <View style={styles.section}>
-        <View style={styles.settingRow}>
+      <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Security</Text>
+      <View style={[styles.section, { backgroundColor: colors.card }]}>
+        <View style={[styles.settingRow, { borderBottomColor: colors.border }]}>
           <View style={styles.settingInfo}>
-            <Ionicons name="key-outline" size={22} color={COLORS.text} />
+            <Ionicons name="key-outline" size={22} color={colors.text} />
             <View>
-              <Text style={styles.settingTitle}>PIN Lock</Text>
-              <Text style={styles.settingSubtitle}>Protect app with 4-digit PIN</Text>
+              <Text style={[styles.settingTitle, { color: colors.text }]}>PIN Lock</Text>
+              <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Protect app with 4-digit PIN</Text>
             </View>
           </View>
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={[styles.actionButton, { backgroundColor: colors.background, borderColor: colors.border }]}
             onPress={hasPin ? handleRemovePin : () => setShowPinModal(true)}
           >
-            <Text style={styles.actionButtonText}>
+            <Text style={[styles.actionButtonText, { color: colors.text }]}>
               {hasPin ? 'Remove' : 'Set PIN'}
             </Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.settingRow}>
+        <View style={styles.settingRowLast}>
           <View style={styles.settingInfo}>
-            <Ionicons name="finger-print-outline" size={22} color={COLORS.text} />
+            <Ionicons name="finger-print-outline" size={22} color={colors.text} />
             <View>
-              <Text style={styles.settingTitle}>Biometric Login</Text>
-              <Text style={styles.settingSubtitle}>Use fingerprint to unlock</Text>
+              <Text style={[styles.settingTitle, { color: colors.text }]}>Biometric Login</Text>
+              <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Use fingerprint to unlock</Text>
             </View>
           </View>
           <Switch
             value={user?.biometricEnabled || false}
             onValueChange={toggleBiometric}
-            trackColor={{ false: COLORS.border, true: `${COLORS.primary}80` }}
-            thumbColor={user?.biometricEnabled ? COLORS.primary : COLORS.textMuted}
+            trackColor={{ false: colors.border, true: `${colors.primary}80` }}
+            thumbColor={user?.biometricEnabled ? colors.primary : colors.textMuted}
           />
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Data</Text>
-      <View style={styles.section}>
+      <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Data</Text>
+      <View style={[styles.section, { backgroundColor: colors.card }]}>
         <TouchableOpacity style={styles.settingRowButton}>
           <View style={styles.settingInfo}>
-            <Ionicons name="download-outline" size={22} color={COLORS.text} />
+            <Ionicons name="download-outline" size={22} color={colors.text} />
             <View>
-              <Text style={styles.settingTitle}>Export Data</Text>
-              <Text style={styles.settingSubtitle}>Download your transactions</Text>
+              <Text style={[styles.settingTitle, { color: colors.text }]}>Export Data</Text>
+              <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Download your transactions</Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={COLORS.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -151,28 +190,28 @@ export default function SettingsScreen() {
         onRequestClose={() => setShowPinModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Set PIN</Text>
-            <Text style={styles.modalSubtitle}>Enter a 4-digit PIN</Text>
+          <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Set PIN</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>Enter a 4-digit PIN</Text>
             <TextInput
-              style={styles.pinInput}
+              style={[styles.pinInput, { backgroundColor: colors.card, color: colors.text }]}
               keyboardType="numeric"
               maxLength={4}
               secureTextEntry
               value={pin}
               onChangeText={setPin}
               placeholder="****"
-              placeholderTextColor={COLORS.textMuted}
+              placeholderTextColor={colors.textMuted}
             />
             <View style={styles.modalButtons}>
               <TouchableOpacity 
-                style={styles.modalButtonCancel}
+                style={[styles.modalButtonCancel, { backgroundColor: colors.card }]}
                 onPress={() => { setShowPinModal(false); setPin(''); }}
               >
-                <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                <Text style={[styles.modalButtonCancelText, { color: colors.text }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.modalButtonConfirm}
+                style={[styles.modalButtonConfirm, { backgroundColor: colors.primary }]}
                 onPress={handleSetPin}
               >
                 <Text style={styles.modalButtonConfirmText}>Set PIN</Text>
@@ -188,21 +227,18 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
     padding: 16,
   },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.textMuted,
-    marginTop: 24,
+    marginTop: 8,
     marginBottom: 8,
     marginLeft: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   section: {
-    backgroundColor: COLORS.card,
     borderRadius: 12,
     overflow: 'hidden',
   },
@@ -212,7 +248,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+  },
+  settingRowLast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
   },
   settingRowButton: {
     flexDirection: 'row',
@@ -229,24 +270,19 @@ const styles = StyleSheet.create({
   settingTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: COLORS.text,
   },
   settingSubtitle: {
     fontSize: 13,
-    color: COLORS.textMuted,
     marginTop: 2,
   },
   actionButton: {
-    backgroundColor: COLORS.background,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: COLORS.border,
   },
   actionButtonText: {
     fontSize: 14,
-    color: COLORS.text,
     fontWeight: '500',
   },
   modalOverlay: {
@@ -256,7 +292,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: COLORS.background,
     borderRadius: 16,
     padding: 24,
     width: '80%',
@@ -265,12 +300,10 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: COLORS.text,
     marginBottom: 8,
   },
   modalSubtitle: {
     fontSize: 14,
-    color: COLORS.textMuted,
     marginBottom: 24,
   },
   pinInput: {
@@ -280,9 +313,7 @@ const styles = StyleSheet.create({
     letterSpacing: 16,
     width: '100%',
     padding: 16,
-    backgroundColor: COLORS.card,
     borderRadius: 12,
-    color: COLORS.text,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -293,19 +324,16 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 14,
     borderRadius: 8,
-    backgroundColor: COLORS.card,
     alignItems: 'center',
   },
   modalButtonCancelText: {
     fontSize: 16,
     fontWeight: '500',
-    color: COLORS.text,
   },
   modalButtonConfirm: {
     flex: 1,
     padding: 14,
     borderRadius: 8,
-    backgroundColor: COLORS.primary,
     alignItems: 'center',
   },
   modalButtonConfirmText: {

@@ -1,11 +1,16 @@
 import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, formatCurrency } from '../lib/utils';
+import { formatCurrency, getThemedColors } from '../lib/utils';
 import { api } from '../lib/api';
 import type { SalaryProfile } from '../lib/types';
+import { useTheme } from '../contexts/ThemeContext';
+import { useMemo } from 'react';
 
 export default function SalaryScreen() {
+  const { resolvedTheme } = useTheme();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+
   const { data: profiles, isLoading } = useQuery<SalaryProfile[]>({
     queryKey: ['salary-profiles'],
     queryFn: () => api.getSalaryProfiles(),
@@ -22,17 +27,17 @@ export default function SalaryScreen() {
   };
 
   const renderProfile = ({ item }: { item: SalaryProfile }) => (
-    <View style={styles.profileCard}>
+    <View style={[styles.profileCard, { backgroundColor: colors.card }]}>
       <View style={styles.profileHeader}>
-        <View style={styles.profileIcon}>
-          <Ionicons name="briefcase" size={24} color={COLORS.primary} />
+        <View style={[styles.profileIcon, { backgroundColor: colors.primary + '20' }]}>
+          <Ionicons name="briefcase" size={24} color={colors.primary} />
         </View>
         <View style={styles.profileInfo}>
-          <Text style={styles.employerName}>{item.employerName}</Text>
-          <Text style={styles.salaryAmount}>{formatCurrency(parseFloat(item.monthlySalary))}/month</Text>
+          <Text style={[styles.employerName, { color: colors.text }]}>{item.employerName}</Text>
+          <Text style={[styles.salaryAmount, { color: colors.primary }]}>{formatCurrency(parseFloat(item.monthlySalary))}/month</Text>
         </View>
-        <View style={[styles.statusBadge, item.isActive ? styles.activeBadge : styles.inactiveBadge]}>
-          <Text style={[styles.statusText, item.isActive ? styles.activeText : styles.inactiveText]}>
+        <View style={[styles.statusBadge, { backgroundColor: item.isActive ? colors.primary + '20' : colors.textMuted + '20' }]}>
+          <Text style={[styles.statusText, { color: item.isActive ? colors.primary : colors.textMuted }]}>
             {item.isActive ? 'Active' : 'Inactive'}
           </Text>
         </View>
@@ -40,12 +45,12 @@ export default function SalaryScreen() {
 
       <View style={styles.detailsRow}>
         <View style={styles.detailItem}>
-          <Ionicons name="calendar-outline" size={16} color={COLORS.textMuted} />
-          <Text style={styles.detailText}>Pay day: {item.payDay}</Text>
+          <Ionicons name="calendar-outline" size={16} color={colors.textMuted} />
+          <Text style={[styles.detailText, { color: colors.textMuted }]}>Pay day: {item.payDay}</Text>
         </View>
         <View style={styles.detailItem}>
-          <Ionicons name="time-outline" size={16} color={COLORS.textMuted} />
-          <Text style={styles.detailText}>{getPayDayRuleLabel(item.payDayRule)}</Text>
+          <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+          <Text style={[styles.detailText, { color: colors.textMuted }]}>{getPayDayRuleLabel(item.payDayRule)}</Text>
         </View>
       </View>
     </View>
@@ -53,19 +58,19 @@ export default function SalaryScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {(!profiles || profiles.length === 0) ? (
         <View style={styles.emptyState}>
-          <Ionicons name="briefcase-outline" size={64} color={COLORS.textMuted} />
-          <Text style={styles.emptyTitle}>No Salary Profiles</Text>
-          <Text style={styles.emptySubtitle}>Add your salary details in the web app</Text>
+          <Ionicons name="briefcase-outline" size={64} color={colors.textMuted} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No Salary Profiles</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Add your salary details in the web app</Text>
         </View>
       ) : (
         <FlatList
@@ -83,20 +88,17 @@ export default function SalaryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
   },
   list: {
     padding: 16,
     gap: 12,
   },
   profileCard: {
-    backgroundColor: COLORS.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -110,7 +112,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: COLORS.primary + '20',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -121,12 +122,10 @@ const styles = StyleSheet.create({
   employerName: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
   },
   salaryAmount: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.primary,
     marginTop: 2,
   },
   statusBadge: {
@@ -134,21 +133,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 12,
   },
-  activeBadge: {
-    backgroundColor: COLORS.primary + '20',
-  },
-  inactiveBadge: {
-    backgroundColor: COLORS.textMuted + '20',
-  },
   statusText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  activeText: {
-    color: COLORS.primary,
-  },
-  inactiveText: {
-    color: COLORS.textMuted,
   },
   detailsRow: {
     flexDirection: 'row',
@@ -161,7 +148,6 @@ const styles = StyleSheet.create({
   },
   detailText: {
     fontSize: 13,
-    color: COLORS.textMuted,
   },
   emptyState: {
     flex: 1,
@@ -172,12 +158,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: COLORS.text,
     marginTop: 16,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: COLORS.textMuted,
     textAlign: 'center',
     marginTop: 8,
   },
