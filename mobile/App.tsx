@@ -1,10 +1,11 @@
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { View, ActivityIndicator } from 'react-native';
 
 import DashboardScreen from './src/screens/DashboardScreen';
 import AccountsScreen from './src/screens/AccountsScreen';
@@ -21,8 +22,11 @@ import ScanSMSScreen from './src/screens/ScanSMSScreen';
 import SavingsGoalsScreen from './src/screens/SavingsGoalsScreen';
 import SalaryScreen from './src/screens/SalaryScreen';
 import LoansScreen from './src/screens/LoansScreen';
+import PinLockScreen from './src/screens/PinLockScreen';
 
-import { COLORS } from './src/lib/utils';
+import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import { getThemedColors, COLORS } from './src/lib/utils';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,13 +69,16 @@ const MoreStack = createNativeStackNavigator<MoreStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
 function MoreStackNavigator() {
+  const { resolvedTheme } = useTheme();
+  const colors = getThemedColors(resolvedTheme);
+  
   return (
     <MoreStack.Navigator
       screenOptions={{
         headerStyle: {
-          backgroundColor: COLORS.background,
+          backgroundColor: colors.background,
         },
-        headerTintColor: COLORS.text,
+        headerTintColor: colors.text,
         headerTitleStyle: {
           fontWeight: '600',
         },
@@ -132,6 +139,9 @@ function MoreStackNavigator() {
 }
 
 function TabNavigator() {
+  const { resolvedTheme } = useTheme();
+  const colors = getThemedColors(resolvedTheme);
+  
   return (
     <Tab.Navigator
       screenOptions={({ route }: { route: { name: keyof TabParamList } }) => ({
@@ -150,18 +160,18 @@ function TabNavigator() {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.textMuted,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
-          backgroundColor: COLORS.background,
-          borderTopColor: COLORS.border,
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
           paddingBottom: 5,
           height: 60,
         },
         headerStyle: {
-          backgroundColor: COLORS.background,
+          backgroundColor: colors.background,
         },
-        headerTintColor: COLORS.text,
+        headerTintColor: colors.text,
         headerTitleStyle: {
           fontWeight: '600',
         },
@@ -191,40 +201,88 @@ function TabNavigator() {
   );
 }
 
+function MainApp() {
+  const { resolvedTheme } = useTheme();
+  const { isLocked, isLoading } = useAuth();
+  const colors = getThemedColors(resolvedTheme);
+  
+  const navigationTheme = resolvedTheme === 'dark' ? {
+    ...DarkTheme,
+    colors: {
+      ...DarkTheme.colors,
+      primary: colors.primary,
+      background: colors.background,
+      card: colors.card,
+      text: colors.text,
+      border: colors.border,
+    },
+  } : {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      primary: colors.primary,
+      background: colors.background,
+      card: colors.card,
+      text: colors.text,
+      border: colors.border,
+    },
+  };
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (isLocked) {
+    return <PinLockScreen />;
+  }
+
+  return (
+    <NavigationContainer theme={navigationTheme}>
+      <RootStack.Navigator
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: colors.background,
+          },
+          headerTintColor: colors.text,
+          headerTitleStyle: {
+            fontWeight: '600',
+          },
+        }}
+      >
+        <RootStack.Screen 
+          name="Main" 
+          component={TabNavigator} 
+          options={{ headerShown: false }}
+        />
+        <RootStack.Screen 
+          name="AddTransaction" 
+          component={AddTransactionScreen}
+          options={{ title: 'Add Transaction', presentation: 'modal' }}
+        />
+        <RootStack.Screen 
+          name="AddAccount" 
+          component={AddAccountScreen}
+          options={{ title: 'Add Account', presentation: 'modal' }}
+        />
+      </RootStack.Navigator>
+    </NavigationContainer>
+  );
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
-        <NavigationContainer>
-          <RootStack.Navigator
-            screenOptions={{
-              headerStyle: {
-                backgroundColor: COLORS.background,
-              },
-              headerTintColor: COLORS.text,
-              headerTitleStyle: {
-                fontWeight: '600',
-              },
-            }}
-          >
-            <RootStack.Screen 
-              name="Main" 
-              component={TabNavigator} 
-              options={{ headerShown: false }}
-            />
-            <RootStack.Screen 
-              name="AddTransaction" 
-              component={AddTransactionScreen}
-              options={{ title: 'Add Transaction', presentation: 'modal' }}
-            />
-            <RootStack.Screen 
-              name="AddAccount" 
-              component={AddAccountScreen}
-              options={{ title: 'Add Account', presentation: 'modal' }}
-            />
-          </RootStack.Navigator>
-        </NavigationContainer>
-        <StatusBar style="auto" />
+        <ThemeProvider>
+          <AuthProvider>
+            <MainApp />
+            <StatusBar style="auto" />
+          </AuthProvider>
+        </ThemeProvider>
       </SafeAreaProvider>
     </QueryClientProvider>
   );
