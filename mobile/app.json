@@ -14,11 +14,6 @@
     "assetBundlePatterns": [
       "**/*"
     ],
-    "permissions": [
-      "READ_SMS",
-      "RECEIVE_SMS",
-      "SEND_SMS"
-    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.mytracker.finance"
@@ -28,16 +23,16 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#16a34a"
       },
-      "package": "com.mytracker.finance",
-      "permissions": ["READ_SMS", "RECEIVE_SMS", "SEND_SMS"]
+      "package": "com.mytracker.finance"
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
+    "owner": "kumudhaglory94",
     "extra": {
       "eas": {
-        "projectId": "739426fe-dbee-403b-9475-38febc609978"
+        "projectId": "4f51698b-55ca-49d7-a430-c6fda213e82a"
       }
     }
   }
