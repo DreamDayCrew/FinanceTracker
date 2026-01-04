@@ -44,3 +44,18 @@ export const COLORS = {
   warning: '#f59e0b',
   success: '#16a34a',
 };
+
+export function getThemedColors(theme: 'light' | 'dark') {
+  return {
+    primary: COLORS.primary,
+    primaryDark: COLORS.primaryDark,
+    background: theme === 'dark' ? COLORS.backgroundDark : COLORS.background,
+    card: theme === 'dark' ? COLORS.cardDark : COLORS.card,
+    text: theme === 'dark' ? COLORS.textDark : COLORS.text,
+    textMuted: theme === 'dark' ? COLORS.textMutedDark : COLORS.textMuted,
+    border: theme === 'dark' ? COLORS.borderDark : COLORS.border,
+    danger: COLORS.danger,
+    warning: COLORS.warning,
+    success: COLORS.success,
+  };
+}
