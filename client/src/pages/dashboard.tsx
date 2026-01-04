@@ -8,10 +8,22 @@ import {
   Receipt,
   AlertCircle,
   ArrowDownLeft,
-  ArrowUpRight
+  ArrowUpRight,
+  Landmark
 } from "lucide-react";
 import { Link } from "wouter";
 import type { DashboardStats, TransactionWithRelations, ScheduledPayment } from "@shared/schema";
+
+interface LoanSummary {
+  totalLoans: number;
+  totalOutstanding: number;
+  totalEmiThisMonth: number;
+  nextEmiDue: {
+    loanName: string;
+    amount: string;
+    dueDate: string;
+  } | null;
+}
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -32,6 +44,10 @@ function formatDate(date: Date | string): string {
 export default function Dashboard() {
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard"],
+  });
+
+  const { data: loanSummary } = useQuery<LoanSummary>({
+    queryKey: ["/api/loan-summary"],
   });
 
   const currentMonth = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
@@ -162,6 +178,43 @@ export default function Dashboard() {
                 {formatCurrency(parseFloat(stats.nextScheduledPayment.amount))}
               </p>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {loanSummary && loanSummary.totalLoans > 0 && (
+        <Card data-testid="card-loan-summary">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Landmark className="w-4 h-4" />
+              Loans & EMI
+            </CardTitle>
+            <Link href="/loans" className="text-xs text-primary">Manage</Link>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Outstanding</p>
+                <p className="text-lg font-semibold" data-testid="text-loan-outstanding">
+                  {formatCurrency(loanSummary.totalOutstanding)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Monthly EMI</p>
+                <p className="text-lg font-semibold text-destructive" data-testid="text-loan-emi">
+                  {formatCurrency(loanSummary.totalEmiThisMonth)}
+                </p>
+              </div>
+            </div>
+            {loanSummary.nextEmiDue && (
+              <p className="text-xs text-muted-foreground mt-2 pt-2 border-t">
+                Next EMI due: {new Date(loanSummary.nextEmiDue.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} 
+                <span className="ml-1">({loanSummary.nextEmiDue.loanName})</span>
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              {loanSummary.totalLoans} active loan{loanSummary.totalLoans !== 1 ? 's' : ''}
+            </p>
           </CardContent>
         </Card>
       )}
