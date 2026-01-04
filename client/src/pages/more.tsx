@@ -7,7 +7,8 @@ import {
   ChevronRight,
   Wallet,
   Target,
-  Banknote
+  Banknote,
+  Landmark
 } from "lucide-react";
 
 export default function More() {
@@ -43,6 +44,14 @@ export default function More() {
       path: "/salary",
       testId: "link-salary",
       color: "bg-purple-500"
+    },
+    { 
+      icon: Landmark, 
+      label: "Loans & EMIs", 
+      description: "Track loans and repayments",
+      path: "/loans",
+      testId: "link-loans",
+      color: "bg-red-500"
     },
     { 
       icon: Settings, 
