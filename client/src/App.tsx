@@ -1,11 +1,14 @@
+import { useState, useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 import { BottomNav } from "@/components/bottom-nav";
 import { FabButton } from "@/components/fab-button";
 import { AppHeader } from "@/components/app-header";
+import { LockScreen } from "@/components/lock-screen";
 import Dashboard from "@/pages/dashboard";
 import Accounts from "@/pages/accounts";
 import Transactions from "@/pages/transactions";
@@ -18,6 +21,18 @@ import Salary from "@/pages/salary";
 import Loans from "@/pages/loans";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
+import type { User } from "@shared/schema";
+
+function useThemeInit() {
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, []);
+}
 
 function Router() {
   return (
@@ -40,12 +55,53 @@ function Router() {
 
 function AppShell() {
   const [location] = useLocation();
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [hadPinOnLoad, setHadPinOnLoad] = useState<boolean | null>(null);
+  
+  useThemeInit();
+  
+  const { data: user, isLoading: userLoading, isError, refetch } = useQuery<User>({
+    queryKey: ["/api/user"],
+    retry: 3,
+    retryDelay: 1000,
+  });
+  
+  useEffect(() => {
+    if (user && hadPinOnLoad === null) {
+      setHadPinOnLoad(!!user.pinHash);
+    }
+  }, [user, hadPinOnLoad]);
+  
+  const hasPinSet = !!user?.pinHash;
   const isSubPage = location === "/add-transaction" || location === "/settings" || 
                     location === "/budgets" || location === "/scheduled-payments" ||
                     location === "/savings-goals" || location === "/salary" ||
                     location === "/loans";
   const showFab = location === "/" || location === "/accounts" || location === "/transactions";
   const showHeader = !isSubPage;
+
+  if (userLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-6">
+        <p className="text-destructive text-center">Unable to connect. Please check your connection.</p>
+        <Button onClick={() => refetch()} data-testid="button-retry">
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  if ((hasPinSet || hadPinOnLoad) && !isUnlocked) {
+    return <LockScreen onUnlock={() => setIsUnlocked(true)} />;
+  }
 
   return (
     <div className="min-h-screen bg-background">

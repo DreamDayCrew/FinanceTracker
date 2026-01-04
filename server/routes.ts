@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { 
   insertAccountSchema, 
@@ -730,13 +731,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/user/set-pin", async (req, res) => {
     try {
       const { pin } = req.body;
-      if (!pin || pin.length !== 4) {
+      if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
         res.status(400).json({ error: "PIN must be 4 digits" });
         return;
       }
-      // Simple hash for demo (in production, use bcrypt)
-      const pinHash = Buffer.from(pin).toString('base64');
-      const user = await storage.updateUser(1, { pinHash });
+      const pinHash = await bcrypt.hash(pin, 10);
+      await storage.updateUser(1, { pinHash });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to set PIN" });
@@ -746,13 +746,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/user/verify-pin", async (req, res) => {
     try {
       const { pin } = req.body;
+      if (!pin) {
+        res.json({ valid: false, message: "PIN required" });
+        return;
+      }
       const user = await storage.getUser(1);
       if (!user || !user.pinHash) {
         res.json({ valid: false, message: "No PIN set" });
         return;
       }
-      const pinHash = Buffer.from(pin).toString('base64');
-      res.json({ valid: pinHash === user.pinHash });
+      const valid = await bcrypt.compare(pin, user.pinHash);
+      res.json({ valid });
     } catch (error) {
       res.status(500).json({ error: "Failed to verify PIN" });
     }

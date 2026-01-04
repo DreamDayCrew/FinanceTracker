@@ -207,15 +207,15 @@ export default function Settings() {
             <CardContent className="py-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3">
-                  <Fingerprint className="w-5 h-5" />
+                  <Fingerprint className="w-5 h-5 text-muted-foreground" />
                   <div>
-                    <p className="font-medium">Biometric Login</p>
-                    <p className="text-xs text-muted-foreground">Use fingerprint to unlock</p>
+                    <p className="font-medium text-muted-foreground">Biometric Login</p>
+                    <p className="text-xs text-muted-foreground">Available in native app only</p>
                   </div>
                 </div>
                 <Switch
-                  checked={user?.biometricEnabled || false}
-                  onCheckedChange={(checked) => updateUserMutation.mutate({ biometricEnabled: checked })}
+                  checked={false}
+                  disabled={true}
                   data-testid="switch-biometric"
                 />
               </div>
