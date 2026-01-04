@@ -9,10 +9,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, ChevronLeft, ChevronRight, PieChart } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Budget, Category, TransactionWithRelations } from "@shared/schema";
+
+interface BudgetSummary {
+  month: number;
+  year: number;
+  totalBudget: number;
+  totalSpent: number;
+  totalRemaining: number;
+  categories: {
+    budgetId: number;
+    categoryId: number;
+    categoryName: string;
+    categoryIcon: string;
+    categoryColor: string;
+    budgetAmount: number;
+    spentAmount: number;
+    remainingAmount: number;
+    percentage: number;
+  }[];
+}
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -23,26 +42,54 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
 export default function Budgets() {
   const [, setLocation] = useLocation();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const { toast } = useToast();
-  
-  const currentMonth = new Date().getMonth() + 1;
-  const currentYear = new Date().getFullYear();
   
   const [formData, setFormData] = useState({
     categoryId: "",
     amount: "",
-    month: currentMonth,
-    year: currentYear,
+    month: selectedMonth,
+    year: selectedYear,
   });
 
+  const goToPreviousMonth = () => {
+    if (selectedMonth === 1) {
+      setSelectedMonth(12);
+      setSelectedYear(selectedYear - 1);
+    } else {
+      setSelectedMonth(selectedMonth - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (selectedMonth === 12) {
+      setSelectedMonth(1);
+      setSelectedYear(selectedYear + 1);
+    } else {
+      setSelectedMonth(selectedMonth + 1);
+    }
+  };
+
   const { data: budgets = [], isLoading } = useQuery<Budget[]>({
-    queryKey: ["/api/budgets", currentMonth, currentYear],
+    queryKey: ["/api/budgets", selectedMonth, selectedYear],
     queryFn: async () => {
-      const res = await fetch(`/api/budgets?month=${currentMonth}&year=${currentYear}`);
+      const res = await fetch(`/api/budgets?month=${selectedMonth}&year=${selectedYear}`);
       if (!res.ok) throw new Error("Failed to fetch budgets");
+      return res.json();
+    },
+  });
+
+  const { data: budgetSummary } = useQuery<BudgetSummary>({
+    queryKey: ["/api/budget-summary", selectedMonth, selectedYear],
+    queryFn: async () => {
+      const res = await fetch(`/api/budget-summary?month=${selectedMonth}&year=${selectedYear}`);
+      if (!res.ok) throw new Error("Failed to fetch budget summary");
       return res.json();
     },
   });
@@ -59,8 +106,8 @@ export default function Budgets() {
     .filter(tx => {
       const txDate = new Date(tx.transactionDate);
       return tx.type === 'debit' && 
-        txDate.getMonth() + 1 === currentMonth && 
-        txDate.getFullYear() === currentYear;
+        txDate.getMonth() + 1 === selectedMonth && 
+        txDate.getFullYear() === selectedYear;
     })
     .reduce((acc, tx) => {
       const catId = tx.categoryId || 0;
@@ -73,14 +120,17 @@ export default function Budgets() {
       const response = await apiRequest("POST", "/api/budgets", {
         ...data,
         categoryId: parseInt(data.categoryId),
+        month: selectedMonth,
+        year: selectedYear,
       });
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/budgets", currentMonth, currentYear] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budgets", selectedMonth, selectedYear] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budget-summary", selectedMonth, selectedYear] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       setIsDialogOpen(false);
-      setFormData({ categoryId: "", amount: "", month: currentMonth, year: currentYear });
+      setFormData({ categoryId: "", amount: "", month: selectedMonth, year: selectedYear });
       toast({ title: "Budget created" });
     },
     onError: () => {
@@ -93,7 +143,8 @@ export default function Budgets() {
       await apiRequest("DELETE", `/api/budgets/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/budgets", currentMonth, currentYear] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budgets", selectedMonth, selectedYear] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budget-summary", selectedMonth, selectedYear] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       toast({ title: "Budget deleted" });
     },
@@ -106,7 +157,9 @@ export default function Budgets() {
   const existingCategoryIds = budgets.map(b => b.categoryId);
   const availableCategories = expenseCategories.filter(c => !existingCategoryIds.includes(c.id));
 
-  const monthName = new Date(currentYear, currentMonth - 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const totalBudget = budgetSummary?.totalBudget || 0;
+  const totalSpent = budgetSummary?.totalSpent || 0;
+  const overallPercentage = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
 
   if (isLoading) {
     return (
@@ -126,8 +179,7 @@ export default function Budgets() {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-lg font-semibold">Plan Budget</h1>
-            <p className="text-xs text-muted-foreground">{monthName}</p>
+            <h1 className="text-lg font-semibold">Budget Planner</h1>
           </div>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -174,7 +226,37 @@ export default function Budgets() {
         </Dialog>
       </div>
 
-      <div className="flex-1 p-4 space-y-3">
+      <div className="flex-1 p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" size="icon" onClick={goToPreviousMonth}>
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
+          <h2 className="font-semibold">{MONTH_NAMES[selectedMonth - 1]} {selectedYear}</h2>
+          <Button variant="ghost" size="icon" onClick={goToNextMonth}>
+            <ChevronRight className="w-5 h-5" />
+          </Button>
+        </div>
+
+        {budgets.length > 0 && (
+          <Card className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white">
+            <CardContent className="py-4">
+              <div className="flex items-center gap-3 mb-3">
+                <PieChart className="w-8 h-8" />
+                <div>
+                  <p className="text-sm opacity-90">Total Budget</p>
+                  <p className="text-2xl font-bold">{formatCurrency(totalBudget)}</p>
+                </div>
+              </div>
+              <div className="flex justify-between text-sm mb-2">
+                <span>Spent: {formatCurrency(totalSpent)}</span>
+                <span>Remaining: {formatCurrency(totalBudget - totalSpent)}</span>
+              </div>
+              <Progress value={Math.min(overallPercentage, 100)} className="h-2 bg-white/30" />
+              <p className="text-xs mt-1 opacity-75">{overallPercentage}% of budget used</p>
+            </CardContent>
+          </Card>
+        )}
+
         {budgets.length > 0 ? (
           budgets.map((budget) => {
             const category = categories.find(c => c.id === budget.categoryId);

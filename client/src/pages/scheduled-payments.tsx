@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,10 +11,24 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, Plus, Trash2, Calendar, Bell } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ArrowLeft, Plus, Trash2, Calendar, Bell, Check, Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
 import type { ScheduledPayment, Category } from "@shared/schema";
+
+interface PaymentOccurrence {
+  id: number;
+  scheduledPaymentId: number;
+  month: number;
+  year: number;
+  dueDate: string;
+  status: string;
+  paidAt: string | null;
+  scheduledPayment?: ScheduledPayment;
+}
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -25,9 +39,21 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+const FREQUENCY_OPTIONS = [
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Every 3 Months" },
+  { value: "half_yearly", label: "Every 6 Months" },
+  { value: "yearly", label: "Yearly" },
+];
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
 export default function ScheduledPayments() {
   const [, setLocation] = useLocation();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("checklist");
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const { toast } = useToast();
   
   const [formData, setFormData] = useState({
@@ -35,6 +61,8 @@ export default function ScheduledPayments() {
     amount: "",
     dueDate: 1,
     categoryId: "",
+    frequency: "monthly",
+    startMonth: new Date().getMonth() + 1,
     notes: "",
     status: "active" as "active" | "inactive",
   });
@@ -47,20 +75,65 @@ export default function ScheduledPayments() {
     queryKey: ["/api/categories"],
   });
 
+  const { data: occurrences = [], refetch: refetchOccurrences } = useQuery<PaymentOccurrence[]>({
+    queryKey: ["/api/payment-occurrences", currentMonth, currentYear],
+    queryFn: async () => {
+      const res = await fetch(`/api/payment-occurrences?month=${currentMonth}&year=${currentYear}`);
+      return res.json();
+    },
+  });
+
+  const generateOccurrencesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/payment-occurrences/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: currentMonth, year: currentYear }),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchOccurrences();
+    },
+  });
+
+  useEffect(() => {
+    if (payments.length > 0 && occurrences.length === 0) {
+      generateOccurrencesMutation.mutate();
+    }
+  }, [payments, currentMonth, currentYear]);
+
+  const updateOccurrenceMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      const res = await fetch(`/api/payment-occurrences/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      refetchOccurrences();
+      toast({ title: variables.status === "paid" ? "Marked as paid!" : "Status updated" });
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const response = await apiRequest("POST", "/api/scheduled-payments", {
         ...data,
         categoryId: data.categoryId ? parseInt(data.categoryId) : null,
+        startMonth: data.frequency !== "monthly" ? data.startMonth : null,
       });
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduled-payments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      generateOccurrencesMutation.mutate();
       setIsDialogOpen(false);
-      setFormData({ name: "", amount: "", dueDate: 1, categoryId: "", notes: "", status: "active" });
-      toast({ title: "Scheduled payment added" });
+      setFormData({ name: "", amount: "", dueDate: 1, categoryId: "", frequency: "monthly", startMonth: new Date().getMonth() + 1, notes: "", status: "active" });
+      toast({ title: "Payment added" });
     },
     onError: () => {
       toast({ title: "Failed to add payment", variant: "destructive" });
@@ -88,6 +161,7 @@ export default function ScheduledPayments() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduled-payments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      refetchOccurrences();
       toast({ title: "Payment deleted" });
     },
     onError: () => {
@@ -95,10 +169,31 @@ export default function ScheduledPayments() {
     },
   });
 
-  const today = new Date().getDate();
+  const goToPreviousMonth = () => {
+    if (currentMonth === 1) {
+      setCurrentMonth(12);
+      setCurrentYear(currentYear - 1);
+    } else {
+      setCurrentMonth(currentMonth - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (currentMonth === 12) {
+      setCurrentMonth(1);
+      setCurrentYear(currentYear + 1);
+    } else {
+      setCurrentMonth(currentMonth + 1);
+    }
+  };
+
   const activePayments = payments.filter(p => p.status === "active");
-  const inactivePayments = payments.filter(p => p.status === "inactive");
   const totalMonthly = activePayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+  
+  const paidOccurrences = occurrences.filter(o => o.status === "paid");
+  const pendingOccurrences = occurrences.filter(o => o.status === "pending");
+  const totalPaid = paidOccurrences.reduce((sum, o) => sum + parseFloat(o.scheduledPayment?.amount || "0"), 0);
+  const totalPending = pendingOccurrences.reduce((sum, o) => sum + parseFloat(o.scheduledPayment?.amount || "0"), 0);
 
   if (isLoading) {
     return (
@@ -118,8 +213,8 @@ export default function ScheduledPayments() {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-lg font-semibold">Scheduled Payments</h1>
-            <p className="text-xs text-muted-foreground">Total: {formatCurrency(totalMonthly)}/month</p>
+            <h1 className="text-lg font-semibold">Bills & EMIs</h1>
+            <p className="text-xs text-muted-foreground">{activePayments.length} active payments</p>
           </div>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -129,7 +224,7 @@ export default function ScheduledPayments() {
               Add
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add Scheduled Payment</DialogTitle>
               <DialogDescription>Set up a recurring payment reminder</DialogDescription>
@@ -140,7 +235,7 @@ export default function ScheduledPayments() {
                 <Input
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Maid Salary, Netflix"
+                  placeholder="e.g., Maid Salary, Netflix, Water Tax"
                   data-testid="input-payment-name"
                 />
               </div>
@@ -155,13 +250,41 @@ export default function ScheduledPayments() {
                 />
               </div>
               <div>
+                <Label>Frequency</Label>
+                <Select value={formData.frequency} onValueChange={(v) => setFormData({ ...formData, frequency: v })}>
+                  <SelectTrigger data-testid="select-frequency">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FREQUENCY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {formData.frequency !== "monthly" && (
+                <div>
+                  <Label>Starting Month</Label>
+                  <Select value={formData.startMonth.toString()} onValueChange={(v) => setFormData({ ...formData, startMonth: parseInt(v) })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MONTH_NAMES.map((name, i) => (
+                        <SelectItem key={i + 1} value={(i + 1).toString()}>{name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div>
                 <Label>Due Date (Day of Month)</Label>
                 <Select value={formData.dueDate.toString()} onValueChange={(v) => setFormData({ ...formData, dueDate: parseInt(v) })}>
                   <SelectTrigger data-testid="select-due-date">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                    {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
                       <SelectItem key={day} value={day.toString()}>{day}</SelectItem>
                     ))}
                   </SelectContent>
@@ -198,33 +321,148 @@ export default function ScheduledPayments() {
         </Dialog>
       </div>
 
-      <div className="flex-1 p-4 space-y-4">
-        {/* Active Payments */}
-        {activePayments.length > 0 && (
-          <div>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
-              <Bell className="w-4 h-4" />
-              Active Payments ({activePayments.length})
-            </h2>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
+        <TabsList className="w-full justify-start px-4 pt-2">
+          <TabsTrigger value="checklist" className="flex-1">This Month</TabsTrigger>
+          <TabsTrigger value="manage" className="flex-1">All Payments</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="checklist" className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <Button variant="ghost" size="icon" onClick={goToPreviousMonth}>
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
+            <h2 className="font-semibold">{MONTH_NAMES[currentMonth - 1]} {currentYear}</h2>
+            <Button variant="ghost" size="icon" onClick={goToNextMonth}>
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Card className="bg-green-50 dark:bg-green-950/30 border-green-200">
+              <CardContent className="py-3 text-center">
+                <p className="text-xs text-muted-foreground">Paid</p>
+                <p className="text-lg font-bold text-green-600">{formatCurrency(totalPaid)}</p>
+                <p className="text-xs text-muted-foreground">{paidOccurrences.length} items</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-orange-50 dark:bg-orange-950/30 border-orange-200">
+              <CardContent className="py-3 text-center">
+                <p className="text-xs text-muted-foreground">Pending</p>
+                <p className="text-lg font-bold text-orange-600">{formatCurrency(totalPending)}</p>
+                <p className="text-xs text-muted-foreground">{pendingOccurrences.length} items</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {occurrences.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                <Clock className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p>No payments due this month</p>
+                <Button 
+                  variant="outline" 
+                  className="mt-4"
+                  onClick={() => generateOccurrencesMutation.mutate()}
+                >
+                  Generate Checklist
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
             <div className="space-y-2">
-              {activePayments.map((payment) => {
-                const category = categories.find(c => c.id === payment.categoryId);
-                const isDueSoon = payment.dueDate >= today && payment.dueDate <= today + 7;
-                const isPastDue = payment.dueDate < today;
+              {occurrences.map((occurrence) => {
+                const payment = occurrence.scheduledPayment;
+                const isPaid = occurrence.status === "paid";
+                const category = categories.find(c => c.id === payment?.categoryId);
+                const dueDate = new Date(occurrence.dueDate);
+                const isPastDue = !isPaid && dueDate < new Date();
 
                 return (
-                  <Card key={payment.id} className={isDueSoon ? "border-yellow-500/50" : isPastDue ? "border-red-500/50" : ""} data-testid={`card-payment-${payment.id}`}>
+                  <Card 
+                    key={occurrence.id} 
+                    className={`transition-all ${isPaid ? "opacity-60 bg-muted/30" : isPastDue ? "border-red-500/50" : ""}`}
+                  >
+                    <CardContent className="py-3">
+                      <div className="flex items-center gap-3">
+                        <Checkbox
+                          checked={isPaid}
+                          onCheckedChange={(checked) => {
+                            updateOccurrenceMutation.mutate({
+                              id: occurrence.id,
+                              status: checked ? "paid" : "pending",
+                            });
+                          }}
+                          className="h-6 w-6"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className={`font-medium ${isPaid ? "line-through text-muted-foreground" : ""}`}>
+                              {payment?.name}
+                            </p>
+                            {isPastDue && <Badge variant="destructive" className="text-xs">Overdue</Badge>}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Due {format(dueDate, "d MMM")}
+                            {category && ` • ${category.name}`}
+                            {payment?.frequency && payment.frequency !== "monthly" && (
+                              <span className="ml-1 text-primary">
+                                • {FREQUENCY_OPTIONS.find(f => f.value === payment.frequency)?.label}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <p className={`font-semibold ${isPaid ? "text-muted-foreground" : "text-destructive"}`}>
+                          {formatCurrency(parseFloat(payment?.amount || "0"))}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="manage" className="p-4 space-y-4">
+          <Card className="bg-gradient-to-r from-orange-500 to-red-500 text-white">
+            <CardContent className="py-4">
+              <p className="text-sm opacity-90">Total Monthly Commitment</p>
+              <p className="text-2xl font-bold">{formatCurrency(totalMonthly)}</p>
+            </CardContent>
+          </Card>
+
+          {payments.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Calendar className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-4">No scheduled payments yet</p>
+                <Button onClick={() => setIsDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Your First Payment
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {payments.map((payment) => {
+                const category = categories.find(c => c.id === payment.categoryId);
+                const isActive = payment.status === "active";
+
+                return (
+                  <Card key={payment.id} className={!isActive ? "opacity-60" : ""}>
                     <CardContent className="py-4">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium">{payment.name}</p>
-                            {isDueSoon && <Badge variant="secondary" className="text-yellow-600">Due Soon</Badge>}
-                            {isPastDue && <Badge variant="destructive">Past Due</Badge>}
+                            <Badge variant="secondary" className="text-xs">
+                              {FREQUENCY_OPTIONS.find(f => f.value === (payment.frequency || "monthly"))?.label}
+                            </Badge>
                           </div>
-                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                            <Calendar className="w-3 h-3" />
-                            Due on {payment.dueDate}th of every month
+                          <p className="text-xs text-muted-foreground mt-1">
+                            <Calendar className="w-3 h-3 inline mr-1" />
+                            Due on {payment.dueDate}th
                             {category && ` • ${category.name}`}
                           </p>
                           {payment.notes && (
@@ -232,19 +470,17 @@ export default function ScheduledPayments() {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <p className="font-semibold text-destructive">{formatCurrency(parseFloat(payment.amount))}</p>
+                          <p className="font-semibold">{formatCurrency(parseFloat(payment.amount))}</p>
                           <div className="flex flex-col items-center gap-1">
                             <Switch
-                              checked={payment.status === "active"}
+                              checked={isActive}
                               onCheckedChange={(checked) => updateMutation.mutate({ id: payment.id, status: checked ? "active" : "inactive" })}
-                              data-testid={`switch-payment-${payment.id}`}
                             />
                             <Button 
                               size="icon" 
                               variant="ghost" 
                               className="h-6 w-6 text-muted-foreground hover:text-destructive"
                               onClick={() => deleteMutation.mutate(payment.id)}
-                              data-testid={`button-delete-payment-${payment.id}`}
                             >
                               <Trash2 className="w-3 h-3" />
                             </Button>
@@ -256,53 +492,9 @@ export default function ScheduledPayments() {
                 );
               })}
             </div>
-          </div>
-        )}
-
-        {/* Inactive Payments */}
-        {inactivePayments.length > 0 && (
-          <div>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">
-              Inactive ({inactivePayments.length})
-            </h2>
-            <div className="space-y-2">
-              {inactivePayments.map((payment) => (
-                <Card key={payment.id} className="opacity-60" data-testid={`card-payment-inactive-${payment.id}`}>
-                  <CardContent className="py-3 flex items-center justify-between gap-2">
-                    <div>
-                      <p className="font-medium">{payment.name}</p>
-                      <p className="text-xs text-muted-foreground">Due on {payment.dueDate}th</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm text-muted-foreground">{formatCurrency(parseFloat(payment.amount))}</p>
-                      <Switch
-                        checked={false}
-                        onCheckedChange={() => updateMutation.mutate({ id: payment.id, status: "active" })}
-                        data-testid={`switch-payment-inactive-${payment.id}`}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {payments.length === 0 && (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Calendar className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground mb-4">No scheduled payments yet</p>
-              <p className="text-sm text-muted-foreground mb-4">Add recurring payments like rent, salaries, or subscriptions to get reminders</p>
-              <Button onClick={() => setIsDialogOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Your First Payment
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

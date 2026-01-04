@@ -13,6 +13,8 @@ import AddTransaction from "@/pages/add-transaction";
 import More from "@/pages/more";
 import Budgets from "@/pages/budgets";
 import ScheduledPayments from "@/pages/scheduled-payments";
+import SavingsGoals from "@/pages/savings-goals";
+import Salary from "@/pages/salary";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
@@ -26,6 +28,8 @@ function Router() {
       <Route path="/more" component={More} />
       <Route path="/budgets" component={Budgets} />
       <Route path="/scheduled-payments" component={ScheduledPayments} />
+      <Route path="/savings-goals" component={SavingsGoals} />
+      <Route path="/salary" component={Salary} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
@@ -35,7 +39,8 @@ function Router() {
 function AppShell() {
   const [location] = useLocation();
   const isSubPage = location === "/add-transaction" || location === "/settings" || 
-                    location === "/budgets" || location === "/scheduled-payments";
+                    location === "/budgets" || location === "/scheduled-payments" ||
+                    location === "/savings-goals" || location === "/salary";
   const showFab = location === "/" || location === "/accounts" || location === "/transactions";
   const showHeader = !isSubPage;
 

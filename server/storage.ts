@@ -1,11 +1,17 @@
 import { 
   users, accounts, categories, transactions, budgets, scheduledPayments, smsLogs,
+  paymentOccurrences, savingsGoals, savingsContributions, salaryProfiles, salaryCycles,
   type User, type InsertUser,
   type Account, type InsertAccount,
   type Category, type InsertCategory,
   type Transaction, type InsertTransaction, type TransactionWithRelations,
   type Budget, type InsertBudget,
   type ScheduledPayment, type InsertScheduledPayment,
+  type PaymentOccurrence, type InsertPaymentOccurrence,
+  type SavingsGoal, type InsertSavingsGoal,
+  type SavingsContribution, type InsertSavingsContribution,
+  type SalaryProfile, type InsertSalaryProfile,
+  type SalaryCycle, type InsertSalaryCycle,
   type SmsLog, type InsertSmsLog,
   type DashboardStats,
   DEFAULT_CATEGORIES
@@ -65,6 +71,36 @@ export interface IStorage {
   // SMS Logs
   createSmsLog(smsLog: InsertSmsLog): Promise<SmsLog>;
   updateSmsLogTransaction(id: number, transactionId: number): Promise<SmsLog | undefined>;
+
+  // Payment Occurrences
+  getPaymentOccurrences(filters?: { month?: number; year?: number; scheduledPaymentId?: number }): Promise<(PaymentOccurrence & { scheduledPayment?: ScheduledPayment })[]>;
+  getPaymentOccurrence(id: number): Promise<PaymentOccurrence | undefined>;
+  createPaymentOccurrence(occurrence: InsertPaymentOccurrence): Promise<PaymentOccurrence>;
+  updatePaymentOccurrence(id: number, data: Partial<InsertPaymentOccurrence>): Promise<PaymentOccurrence | undefined>;
+  generatePaymentOccurrencesForMonth(month: number, year: number): Promise<PaymentOccurrence[]>;
+
+  // Savings Goals
+  getAllSavingsGoals(userId?: number): Promise<SavingsGoal[]>;
+  getSavingsGoal(id: number): Promise<SavingsGoal | undefined>;
+  createSavingsGoal(goal: InsertSavingsGoal): Promise<SavingsGoal>;
+  updateSavingsGoal(id: number, goal: Partial<InsertSavingsGoal>): Promise<SavingsGoal | undefined>;
+  deleteSavingsGoal(id: number): Promise<boolean>;
+
+  // Savings Contributions
+  getSavingsContributions(goalId: number): Promise<SavingsContribution[]>;
+  createSavingsContribution(contribution: InsertSavingsContribution): Promise<SavingsContribution>;
+  deleteSavingsContribution(id: number): Promise<boolean>;
+
+  // Salary Profiles
+  getSalaryProfile(userId?: number): Promise<SalaryProfile | undefined>;
+  createSalaryProfile(profile: InsertSalaryProfile): Promise<SalaryProfile>;
+  updateSalaryProfile(id: number, profile: Partial<InsertSalaryProfile>): Promise<SalaryProfile | undefined>;
+
+  // Salary Cycles
+  getSalaryCycles(profileId: number, limit?: number): Promise<SalaryCycle[]>;
+  getSalaryCycle(id: number): Promise<SalaryCycle | undefined>;
+  createSalaryCycle(cycle: InsertSalaryCycle): Promise<SalaryCycle>;
+  updateSalaryCycle(id: number, cycle: Partial<InsertSalaryCycle>): Promise<SalaryCycle | undefined>;
 
   // Dashboard Analytics
   getDashboardStats(userId?: number): Promise<DashboardStats>;
@@ -456,6 +492,270 @@ export class DatabaseStorage implements IStorage {
       lastTransactions,
       upcomingBills,
     };
+  }
+
+  // Payment Occurrences
+  async getPaymentOccurrences(filters?: { month?: number; year?: number; scheduledPaymentId?: number }): Promise<(PaymentOccurrence & { scheduledPayment?: ScheduledPayment })[]> {
+    const conditions = [];
+    
+    if (filters?.month) {
+      conditions.push(eq(paymentOccurrences.month, filters.month));
+    }
+    if (filters?.year) {
+      conditions.push(eq(paymentOccurrences.year, filters.year));
+    }
+    if (filters?.scheduledPaymentId) {
+      conditions.push(eq(paymentOccurrences.scheduledPaymentId, filters.scheduledPaymentId));
+    }
+
+    const results = await db.select({
+      id: paymentOccurrences.id,
+      scheduledPaymentId: paymentOccurrences.scheduledPaymentId,
+      month: paymentOccurrences.month,
+      year: paymentOccurrences.year,
+      dueDate: paymentOccurrences.dueDate,
+      status: paymentOccurrences.status,
+      paidAt: paymentOccurrences.paidAt,
+      paidAmount: paymentOccurrences.paidAmount,
+      notes: paymentOccurrences.notes,
+      createdAt: paymentOccurrences.createdAt,
+      scheduledPayment: scheduledPayments,
+    })
+    .from(paymentOccurrences)
+    .leftJoin(scheduledPayments, eq(paymentOccurrences.scheduledPaymentId, scheduledPayments.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(paymentOccurrences.dueDate);
+
+    return results as (PaymentOccurrence & { scheduledPayment?: ScheduledPayment })[];
+  }
+
+  async getPaymentOccurrence(id: number): Promise<PaymentOccurrence | undefined> {
+    const [occurrence] = await db.select().from(paymentOccurrences).where(eq(paymentOccurrences.id, id));
+    return occurrence || undefined;
+  }
+
+  async createPaymentOccurrence(occurrence: InsertPaymentOccurrence): Promise<PaymentOccurrence> {
+    const [newOccurrence] = await db.insert(paymentOccurrences).values({
+      ...occurrence,
+      dueDate: occurrence.dueDate ? new Date(occurrence.dueDate) : new Date(),
+    }).returning();
+    return newOccurrence;
+  }
+
+  async updatePaymentOccurrence(id: number, data: Partial<InsertPaymentOccurrence>): Promise<PaymentOccurrence | undefined> {
+    const updateData: any = { ...data };
+    if (data.status === 'paid' && !data.paidAt) {
+      updateData.paidAt = new Date();
+    }
+    const [updated] = await db.update(paymentOccurrences)
+      .set(updateData)
+      .where(eq(paymentOccurrences.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async generatePaymentOccurrencesForMonth(month: number, year: number): Promise<PaymentOccurrence[]> {
+    const allPayments = await this.getAllScheduledPayments();
+    const activePayments = allPayments.filter(p => p.status === 'active');
+    const generatedOccurrences: PaymentOccurrence[] = [];
+
+    for (const payment of activePayments) {
+      const frequency = payment.frequency || 'monthly';
+      const startMonth = payment.startMonth;
+
+      let shouldCreate = false;
+      switch (frequency) {
+        case 'monthly':
+          shouldCreate = true;
+          break;
+        case 'quarterly':
+          if (startMonth) {
+            const quarterMonths = [startMonth];
+            for (let i = 1; i < 4; i++) {
+              quarterMonths.push(((startMonth - 1 + i * 3) % 12) + 1);
+            }
+            shouldCreate = quarterMonths.includes(month);
+          } else {
+            shouldCreate = [1, 4, 7, 10].includes(month);
+          }
+          break;
+        case 'half_yearly':
+          if (startMonth) {
+            shouldCreate = month === startMonth || month === ((startMonth + 5) % 12) + 1;
+          } else {
+            shouldCreate = month === 1 || month === 7;
+          }
+          break;
+        case 'yearly':
+          shouldCreate = startMonth ? month === startMonth : month === 1;
+          break;
+        case 'one_time':
+          shouldCreate = false;
+          break;
+        default:
+          shouldCreate = true;
+      }
+
+      if (shouldCreate) {
+        const existing = await db.select().from(paymentOccurrences)
+          .where(and(
+            eq(paymentOccurrences.scheduledPaymentId, payment.id),
+            eq(paymentOccurrences.month, month),
+            eq(paymentOccurrences.year, year)
+          ));
+
+        if (existing.length === 0) {
+          const dueDay = Math.min(payment.dueDate, new Date(year, month, 0).getDate());
+          const dueDateObj = new Date(year, month - 1, dueDay);
+          const [newOccurrence] = await db.insert(paymentOccurrences).values({
+            scheduledPaymentId: payment.id,
+            month,
+            year,
+            dueDate: dueDateObj,
+            status: 'pending',
+          }).returning();
+          generatedOccurrences.push(newOccurrence);
+        }
+      }
+    }
+
+    return generatedOccurrences;
+  }
+
+  // Savings Goals
+  async getAllSavingsGoals(userId?: number): Promise<SavingsGoal[]> {
+    if (userId) {
+      return db.select().from(savingsGoals).where(eq(savingsGoals.userId, userId)).orderBy(desc(savingsGoals.createdAt));
+    }
+    return db.select().from(savingsGoals).orderBy(desc(savingsGoals.createdAt));
+  }
+
+  async getSavingsGoal(id: number): Promise<SavingsGoal | undefined> {
+    const [goal] = await db.select().from(savingsGoals).where(eq(savingsGoals.id, id));
+    return goal || undefined;
+  }
+
+  async createSavingsGoal(goal: InsertSavingsGoal): Promise<SavingsGoal> {
+    const [newGoal] = await db.insert(savingsGoals).values(goal).returning();
+    return newGoal;
+  }
+
+  async updateSavingsGoal(id: number, goal: Partial<InsertSavingsGoal>): Promise<SavingsGoal | undefined> {
+    const [updated] = await db.update(savingsGoals)
+      .set({ ...goal, updatedAt: new Date() })
+      .where(eq(savingsGoals.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteSavingsGoal(id: number): Promise<boolean> {
+    await db.delete(savingsContributions).where(eq(savingsContributions.savingsGoalId, id));
+    const result = await db.delete(savingsGoals).where(eq(savingsGoals.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Savings Contributions
+  async getSavingsContributions(goalId: number): Promise<SavingsContribution[]> {
+    return db.select().from(savingsContributions)
+      .where(eq(savingsContributions.savingsGoalId, goalId))
+      .orderBy(desc(savingsContributions.contributedAt));
+  }
+
+  async createSavingsContribution(contribution: InsertSavingsContribution): Promise<SavingsContribution> {
+    const [newContribution] = await db.insert(savingsContributions).values({
+      ...contribution,
+      contributedAt: contribution.contributedAt ? new Date(contribution.contributedAt) : new Date(),
+    }).returning();
+
+    const goal = await this.getSavingsGoal(contribution.savingsGoalId);
+    if (goal) {
+      const currentAmount = parseFloat(goal.currentAmount || '0');
+      const addAmount = parseFloat(contribution.amount);
+      await this.updateSavingsGoal(goal.id, {
+        currentAmount: (currentAmount + addAmount).toFixed(2),
+      });
+    }
+
+    return newContribution;
+  }
+
+  async deleteSavingsContribution(id: number): Promise<boolean> {
+    const contribution = await db.select().from(savingsContributions).where(eq(savingsContributions.id, id));
+    if (contribution.length > 0) {
+      const goal = await this.getSavingsGoal(contribution[0].savingsGoalId);
+      if (goal) {
+        const currentAmount = parseFloat(goal.currentAmount || '0');
+        const subtractAmount = parseFloat(contribution[0].amount);
+        await this.updateSavingsGoal(goal.id, {
+          currentAmount: Math.max(0, currentAmount - subtractAmount).toFixed(2),
+        });
+      }
+    }
+    const result = await db.delete(savingsContributions).where(eq(savingsContributions.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Salary Profiles
+  async getSalaryProfile(userId?: number): Promise<SalaryProfile | undefined> {
+    if (userId) {
+      const [profile] = await db.select().from(salaryProfiles).where(eq(salaryProfiles.userId, userId));
+      return profile || undefined;
+    }
+    const [profile] = await db.select().from(salaryProfiles).limit(1);
+    return profile || undefined;
+  }
+
+  async createSalaryProfile(profile: InsertSalaryProfile): Promise<SalaryProfile> {
+    const [newProfile] = await db.insert(salaryProfiles).values(profile).returning();
+    return newProfile;
+  }
+
+  async updateSalaryProfile(id: number, profile: Partial<InsertSalaryProfile>): Promise<SalaryProfile | undefined> {
+    const [updated] = await db.update(salaryProfiles)
+      .set({ ...profile, updatedAt: new Date() })
+      .where(eq(salaryProfiles.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  // Salary Cycles
+  async getSalaryCycles(profileId: number, limit?: number): Promise<SalaryCycle[]> {
+    let query = db.select().from(salaryCycles)
+      .where(eq(salaryCycles.salaryProfileId, profileId))
+      .orderBy(desc(salaryCycles.year), desc(salaryCycles.month))
+      .$dynamic();
+    
+    if (limit) {
+      query = query.limit(limit);
+    }
+    
+    return query;
+  }
+
+  async getSalaryCycle(id: number): Promise<SalaryCycle | undefined> {
+    const [cycle] = await db.select().from(salaryCycles).where(eq(salaryCycles.id, id));
+    return cycle || undefined;
+  }
+
+  async createSalaryCycle(cycle: InsertSalaryCycle): Promise<SalaryCycle> {
+    const [newCycle] = await db.insert(salaryCycles).values({
+      ...cycle,
+      expectedPayDate: cycle.expectedPayDate ? new Date(cycle.expectedPayDate) : new Date(),
+      actualPayDate: cycle.actualPayDate ? new Date(cycle.actualPayDate) : undefined,
+    }).returning();
+    return newCycle;
+  }
+
+  async updateSalaryCycle(id: number, cycle: Partial<InsertSalaryCycle>): Promise<SalaryCycle | undefined> {
+    const updateData: any = { ...cycle };
+    if (cycle.actualPayDate) {
+      updateData.actualPayDate = new Date(cycle.actualPayDate);
+    }
+    const [updated] = await db.update(salaryCycles)
+      .set(updateData)
+      .where(eq(salaryCycles.id, id))
+      .returning();
+    return updated || undefined;
   }
 }
 

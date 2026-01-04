@@ -5,31 +5,52 @@ import {
   Calendar, 
   Settings, 
   ChevronRight,
-  Wallet
+  Wallet,
+  Target,
+  Banknote
 } from "lucide-react";
 
 export default function More() {
   const menuItems = [
     { 
       icon: PieChart, 
-      label: "Plan Budget", 
-      description: "Set monthly spending limits",
+      label: "Budget Planner", 
+      description: "Track spending by category",
       path: "/budgets",
-      testId: "link-budgets"
+      testId: "link-budgets",
+      color: "bg-blue-500"
     },
     { 
       icon: Calendar, 
-      label: "Scheduled Payments", 
-      description: "Manage recurring payments",
+      label: "Bills & EMIs", 
+      description: "Monthly payment checklist",
       path: "/scheduled-payments",
-      testId: "link-scheduled-payments"
+      testId: "link-scheduled-payments",
+      color: "bg-orange-500"
+    },
+    { 
+      icon: Target, 
+      label: "Savings Goals", 
+      description: "Track goals & travels",
+      path: "/savings-goals",
+      testId: "link-savings-goals",
+      color: "bg-green-500"
+    },
+    { 
+      icon: Banknote, 
+      label: "Salary & Income", 
+      description: "Configure your payday",
+      path: "/salary",
+      testId: "link-salary",
+      color: "bg-purple-500"
     },
     { 
       icon: Settings, 
       label: "Settings", 
       description: "Theme, export, security",
       path: "/settings",
-      testId: "link-settings"
+      testId: "link-settings",
+      color: "bg-gray-500"
     },
   ];
 
@@ -60,8 +81,8 @@ export default function More() {
             <Link key={item.path} href={item.path}>
               <Card className="hover-elevate cursor-pointer" data-testid={item.testId}>
                 <CardContent className="py-4 flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                    <Icon className="w-5 h-5 text-foreground" />
+                  <div className={`w-10 h-10 rounded-full ${item.color || 'bg-muted'} flex items-center justify-center`}>
+                    <Icon className="w-5 h-5 text-white" />
                   </div>
                   <div className="flex-1">
                     <p className="font-medium">{item.label}</p>

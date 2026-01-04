@@ -6,10 +6,16 @@ import {
   insertTransactionSchema, 
   insertBudgetSchema, 
   insertScheduledPaymentSchema,
+  insertPaymentOccurrenceSchema,
+  insertSavingsGoalSchema,
+  insertSavingsContributionSchema,
+  insertSalaryProfileSchema,
+  insertSalaryCycleSchema,
   insertSmsLogSchema,
   insertCategorySchema
 } from "@shared/schema";
 import { suggestCategory, parseSmsMessage } from "./openai";
+import { getPaydayForMonth, getNextPaydays } from "./salaryUtils";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Seed default categories on startup
@@ -257,6 +263,310 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error) {
       res.status(500).json({ error: "Failed to delete scheduled payment" });
+    }
+  });
+
+  // ========== Payment Occurrences (Monthly Checklist) ==========
+  app.get("/api/payment-occurrences", async (req, res) => {
+    try {
+      const { month, year } = req.query;
+      const filters: any = {};
+      if (month) filters.month = parseInt(month as string);
+      if (year) filters.year = parseInt(year as string);
+
+      const occurrences = await storage.getPaymentOccurrences(filters);
+      res.json(occurrences);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch payment occurrences" });
+    }
+  });
+
+  app.post("/api/payment-occurrences/generate", async (req, res) => {
+    try {
+      const { month, year } = req.body;
+      if (!month || !year) {
+        res.status(400).json({ error: "Month and year are required" });
+        return;
+      }
+      const occurrences = await storage.generatePaymentOccurrencesForMonth(month, year);
+      res.json(occurrences);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate payment occurrences" });
+    }
+  });
+
+  app.patch("/api/payment-occurrences/:id", async (req, res) => {
+    try {
+      const occurrence = await storage.updatePaymentOccurrence(parseInt(req.params.id), req.body);
+      if (occurrence) {
+        res.json(occurrence);
+      } else {
+        res.status(404).json({ error: "Payment occurrence not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update payment occurrence" });
+    }
+  });
+
+  // ========== Savings Goals ==========
+  app.get("/api/savings-goals", async (_req, res) => {
+    try {
+      const goals = await storage.getAllSavingsGoals();
+      res.json(goals);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch savings goals" });
+    }
+  });
+
+  app.get("/api/savings-goals/:id", async (req, res) => {
+    try {
+      const goal = await storage.getSavingsGoal(parseInt(req.params.id));
+      if (goal) {
+        res.json(goal);
+      } else {
+        res.status(404).json({ error: "Savings goal not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch savings goal" });
+    }
+  });
+
+  app.post("/api/savings-goals", async (req, res) => {
+    try {
+      const validatedData = insertSavingsGoalSchema.parse(req.body);
+      const goal = await storage.createSavingsGoal(validatedData);
+      res.status(201).json(goal);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid savings goal data" });
+    }
+  });
+
+  app.patch("/api/savings-goals/:id", async (req, res) => {
+    try {
+      const goal = await storage.updateSavingsGoal(parseInt(req.params.id), req.body);
+      if (goal) {
+        res.json(goal);
+      } else {
+        res.status(404).json({ error: "Savings goal not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update savings goal" });
+    }
+  });
+
+  app.delete("/api/savings-goals/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteSavingsGoal(parseInt(req.params.id));
+      if (deleted) {
+        res.status(204).send();
+      } else {
+        res.status(404).json({ error: "Savings goal not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete savings goal" });
+    }
+  });
+
+  // ========== Savings Contributions ==========
+  app.get("/api/savings-goals/:goalId/contributions", async (req, res) => {
+    try {
+      const contributions = await storage.getSavingsContributions(parseInt(req.params.goalId));
+      res.json(contributions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch contributions" });
+    }
+  });
+
+  app.post("/api/savings-goals/:goalId/contributions", async (req, res) => {
+    try {
+      const validatedData = insertSavingsContributionSchema.parse({
+        ...req.body,
+        savingsGoalId: parseInt(req.params.goalId),
+      });
+      const contribution = await storage.createSavingsContribution(validatedData);
+      res.status(201).json(contribution);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid contribution data" });
+    }
+  });
+
+  app.delete("/api/savings-contributions/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteSavingsContribution(parseInt(req.params.id));
+      if (deleted) {
+        res.status(204).send();
+      } else {
+        res.status(404).json({ error: "Contribution not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete contribution" });
+    }
+  });
+
+  // ========== Salary Profile ==========
+  app.get("/api/salary-profile", async (_req, res) => {
+    try {
+      const profile = await storage.getSalaryProfile();
+      res.json(profile || null);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch salary profile" });
+    }
+  });
+
+  app.post("/api/salary-profile", async (req, res) => {
+    try {
+      const validatedData = insertSalaryProfileSchema.parse(req.body);
+      const profile = await storage.createSalaryProfile(validatedData);
+      res.status(201).json(profile);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid salary profile data" });
+    }
+  });
+
+  app.patch("/api/salary-profile/:id", async (req, res) => {
+    try {
+      const profile = await storage.updateSalaryProfile(parseInt(req.params.id), req.body);
+      if (profile) {
+        res.json(profile);
+      } else {
+        res.status(404).json({ error: "Salary profile not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update salary profile" });
+    }
+  });
+
+  app.get("/api/salary-profile/next-paydays", async (_req, res) => {
+    try {
+      const profile = await storage.getSalaryProfile();
+      if (!profile) {
+        res.json([]);
+        return;
+      }
+      const paydays = getNextPaydays(
+        profile.paydayRule || 'last_working_day',
+        profile.fixedDay,
+        profile.weekdayPreference,
+        6
+      );
+      res.json(paydays);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to calculate next paydays" });
+    }
+  });
+
+  // ========== Salary Cycles ==========
+  app.get("/api/salary-cycles", async (req, res) => {
+    try {
+      const profile = await storage.getSalaryProfile();
+      if (!profile) {
+        res.json([]);
+        return;
+      }
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const cycles = await storage.getSalaryCycles(profile.id, limit);
+      res.json(cycles);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch salary cycles" });
+    }
+  });
+
+  app.post("/api/salary-cycles", async (req, res) => {
+    try {
+      const profile = await storage.getSalaryProfile();
+      if (!profile) {
+        res.status(400).json({ error: "Please create a salary profile first" });
+        return;
+      }
+      const { month, year } = req.body;
+      const expectedPayDate = getPaydayForMonth(
+        year,
+        month,
+        profile.paydayRule || 'last_working_day',
+        profile.fixedDay,
+        profile.weekdayPreference
+      );
+      const validatedData = insertSalaryCycleSchema.parse({
+        ...req.body,
+        salaryProfileId: profile.id,
+        expectedPayDate: expectedPayDate.toISOString(),
+        expectedAmount: profile.monthlyAmount,
+      });
+      const cycle = await storage.createSalaryCycle(validatedData);
+      res.status(201).json(cycle);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid salary cycle data" });
+    }
+  });
+
+  app.patch("/api/salary-cycles/:id", async (req, res) => {
+    try {
+      const cycle = await storage.updateSalaryCycle(parseInt(req.params.id), req.body);
+      if (cycle) {
+        res.json(cycle);
+      } else {
+        res.status(404).json({ error: "Salary cycle not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update salary cycle" });
+    }
+  });
+
+  // ========== Budget Summary ==========
+  app.get("/api/budget-summary", async (req, res) => {
+    try {
+      const { month, year } = req.query;
+      const currentMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
+      const currentYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      const budgets = await storage.getAllBudgets({ month: currentMonth, year: currentYear });
+      const categories = await storage.getAllCategories();
+      
+      const startOfMonth = new Date(currentYear, currentMonth - 1, 1);
+      const endOfMonth = new Date(currentYear, currentMonth, 0, 23, 59, 59);
+      const transactions = await storage.getAllTransactions({
+        startDate: startOfMonth,
+        endDate: endOfMonth,
+      });
+
+      const categorySpending = new Map<number, number>();
+      for (const t of transactions.filter(t => t.type === 'debit')) {
+        if (t.categoryId) {
+          const current = categorySpending.get(t.categoryId) || 0;
+          categorySpending.set(t.categoryId, current + parseFloat(t.amount));
+        }
+      }
+
+      const summary = budgets.map(b => {
+        const category = categories.find(c => c.id === b.categoryId);
+        const spent = categorySpending.get(b.categoryId!) || 0;
+        const budgetAmount = parseFloat(b.amount);
+        return {
+          budgetId: b.id,
+          categoryId: b.categoryId,
+          categoryName: category?.name || 'Unknown',
+          categoryIcon: category?.icon,
+          categoryColor: category?.color,
+          budgetAmount,
+          spentAmount: spent,
+          remainingAmount: budgetAmount - spent,
+          percentage: budgetAmount > 0 ? Math.round((spent / budgetAmount) * 100) : 0,
+        };
+      });
+
+      const totalBudget = summary.reduce((sum, s) => sum + s.budgetAmount, 0);
+      const totalSpent = summary.reduce((sum, s) => sum + s.spentAmount, 0);
+
+      res.json({
+        month: currentMonth,
+        year: currentYear,
+        totalBudget,
+        totalSpent,
+        totalRemaining: totalBudget - totalSpent,
+        categories: summary,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch budget summary" });
     }
   });
 
