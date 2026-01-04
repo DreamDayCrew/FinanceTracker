@@ -24,16 +24,17 @@ export const insertUserSchema = createInsertSchema(users).omit({
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
-// Accounts (bank accounts & credit cards)
+// Accounts (bank accounts, credit cards, debit cards)
 export const accounts = pgTable("accounts", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
   name: varchar("name", { length: 100 }).notNull(),
-  type: varchar("type", { length: 20 }).notNull(), // 'bank' or 'credit_card'
+  type: varchar("type", { length: 20 }).notNull(), // 'bank', 'credit_card', 'debit_card'
   bankName: varchar("bank_name", { length: 100 }),
   accountNumber: varchar("account_number", { length: 50 }),
   balance: decimal("balance", { precision: 12, scale: 2 }).default("0"),
   creditLimit: decimal("credit_limit", { precision: 12, scale: 2 }), // only for credit cards
+  linkedAccountId: integer("linked_account_id"), // for debit cards - links to bank account
   icon: varchar("icon", { length: 50 }),
   color: varchar("color", { length: 20 }),
   isActive: boolean("is_active").default(true),
@@ -52,9 +53,10 @@ export const insertAccountSchema = createInsertSchema(accounts).omit({
   updatedAt: true,
 }).extend({
   name: z.string().min(1, "Account name is required"),
-  type: z.enum(["bank", "credit_card"]),
+  type: z.enum(["bank", "credit_card", "debit_card"]),
   balance: z.string().optional(),
   creditLimit: z.string().optional(),
+  linkedAccountId: z.number().optional(),
 });
 
 export type InsertAccount = z.infer<typeof insertAccountSchema>;
@@ -347,6 +349,173 @@ export const insertSalaryCycleSchema = createInsertSchema(salaryCycles).omit({
 export type InsertSalaryCycle = z.infer<typeof insertSalaryCycleSchema>;
 export type SalaryCycle = typeof salaryCycles.$inferSelect;
 
+// Loans (home loan, personal loan, credit card loan, item EMI)
+export const loans = pgTable("loans", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  accountId: integer("account_id").references(() => accounts.id), // linked account for auto-tracking
+  name: varchar("name", { length: 200 }).notNull(),
+  type: varchar("type", { length: 30 }).notNull(), // 'home_loan', 'personal_loan', 'credit_card_loan', 'item_emi'
+  lenderName: varchar("lender_name", { length: 100 }),
+  loanAccountNumber: varchar("loan_account_number", { length: 100 }), // stored encrypted
+  principalAmount: decimal("principal_amount", { precision: 14, scale: 2 }).notNull(),
+  outstandingAmount: decimal("outstanding_amount", { precision: 14, scale: 2 }).notNull(),
+  interestRate: decimal("interest_rate", { precision: 5, scale: 2 }).notNull(), // ROI in percentage
+  tenure: integer("tenure").notNull(), // in months
+  emiAmount: decimal("emi_amount", { precision: 12, scale: 2 }),
+  emiDay: integer("emi_day"), // day of month when EMI is due (1-31)
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  status: varchar("status", { length: 20 }).default("active"), // 'active', 'closed', 'defaulted'
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const loansRelations = relations(loans, ({ one, many }) => ({
+  user: one(users, { fields: [loans.userId], references: [users.id] }),
+  account: one(accounts, { fields: [loans.accountId], references: [accounts.id] }),
+  installments: many(loanInstallments),
+  components: many(loanComponents),
+}));
+
+export const insertLoanSchema = createInsertSchema(loans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Loan name is required"),
+  type: z.enum(["home_loan", "personal_loan", "credit_card_loan", "item_emi"]),
+  principalAmount: z.string().min(1, "Principal amount is required"),
+  outstandingAmount: z.string().min(1, "Outstanding amount is required"),
+  interestRate: z.string().min(1, "Interest rate is required"),
+  tenure: z.number().min(1, "Tenure is required"),
+  emiAmount: z.string().optional(),
+  emiDay: z.number().min(1).max(31).optional(),
+  status: z.enum(["active", "closed", "defaulted"]).optional(),
+});
+
+export type InsertLoan = z.infer<typeof insertLoanSchema>;
+export type Loan = typeof loans.$inferSelect;
+
+// Loan Components (for credit card EMI conversions and purchase-specific EMIs)
+export const loanComponents = pgTable("loan_components", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
+  name: varchar("name", { length: 200 }).notNull(), // e.g., "iPhone 15 Pro - 6 month EMI"
+  originalAmount: decimal("original_amount", { precision: 12, scale: 2 }).notNull(),
+  remainingAmount: decimal("remaining_amount", { precision: 12, scale: 2 }).notNull(),
+  emiAmount: decimal("emi_amount", { precision: 12, scale: 2 }).notNull(),
+  interestRate: decimal("interest_rate", { precision: 5, scale: 2 }), // may differ for CC EMIs
+  processingFee: decimal("processing_fee", { precision: 10, scale: 2 }),
+  tenure: integer("tenure").notNull(), // in months
+  remainingTenure: integer("remaining_tenure").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  transactionId: integer("transaction_id").references(() => transactions.id), // linked transaction
+  status: varchar("status", { length: 20 }).default("active"), // 'active', 'completed'
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const loanComponentsRelations = relations(loanComponents, ({ one }) => ({
+  loan: one(loans, { fields: [loanComponents.loanId], references: [loans.id] }),
+  transaction: one(transactions, { fields: [loanComponents.transactionId], references: [transactions.id] }),
+}));
+
+export const insertLoanComponentSchema = createInsertSchema(loanComponents).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  name: z.string().min(1, "Component name is required"),
+  originalAmount: z.string().min(1, "Original amount is required"),
+  remainingAmount: z.string().min(1, "Remaining amount is required"),
+  emiAmount: z.string().min(1, "EMI amount is required"),
+  interestRate: z.string().optional(),
+  processingFee: z.string().optional(),
+  tenure: z.number().min(1, "Tenure is required"),
+  remainingTenure: z.number().min(0),
+  status: z.enum(["active", "completed"]).optional(),
+});
+
+export type InsertLoanComponent = z.infer<typeof insertLoanComponentSchema>;
+export type LoanComponent = typeof loanComponents.$inferSelect;
+
+// Loan Installments (EMI schedule with principal/interest breakdown)
+export const loanInstallments = pgTable("loan_installments", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
+  loanComponentId: integer("loan_component_id").references(() => loanComponents.id), // optional - for CC EMIs
+  installmentNumber: integer("installment_number").notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  emiAmount: decimal("emi_amount", { precision: 12, scale: 2 }).notNull(),
+  principalAmount: decimal("principal_amount", { precision: 12, scale: 2 }),
+  interestAmount: decimal("interest_amount", { precision: 12, scale: 2 }),
+  status: varchar("status", { length: 20 }).default("pending"), // 'pending', 'paid', 'overdue', 'skipped'
+  paidAmount: decimal("paid_amount", { precision: 12, scale: 2 }),
+  paidDate: timestamp("paid_date"),
+  transactionId: integer("transaction_id").references(() => transactions.id), // linked payment transaction
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const loanInstallmentsRelations = relations(loanInstallments, ({ one }) => ({
+  loan: one(loans, { fields: [loanInstallments.loanId], references: [loans.id] }),
+  loanComponent: one(loanComponents, { fields: [loanInstallments.loanComponentId], references: [loanComponents.id] }),
+  transaction: one(transactions, { fields: [loanInstallments.transactionId], references: [transactions.id] }),
+}));
+
+export const insertLoanInstallmentSchema = createInsertSchema(loanInstallments).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  installmentNumber: z.number().min(1),
+  emiAmount: z.string().min(1, "EMI amount is required"),
+  principalAmount: z.string().optional(),
+  interestAmount: z.string().optional(),
+  paidAmount: z.string().optional(),
+  status: z.enum(["pending", "paid", "overdue", "skipped"]).optional(),
+});
+
+export type InsertLoanInstallment = z.infer<typeof insertLoanInstallmentSchema>;
+export type LoanInstallment = typeof loanInstallments.$inferSelect;
+
+// Card Details (encrypted storage for debit/credit cards)
+export const cardDetails = pgTable("card_details", {
+  id: serial("id").primaryKey(),
+  accountId: integer("account_id").references(() => accounts.id).notNull(),
+  cardNumber: text("card_number").notNull(), // encrypted, last 4 digits stored separately
+  lastFourDigits: varchar("last_four_digits", { length: 4 }).notNull(),
+  cardholderName: varchar("cardholder_name", { length: 100 }),
+  expiryMonth: integer("expiry_month").notNull(),
+  expiryYear: integer("expiry_year").notNull(),
+  cardType: varchar("card_type", { length: 20 }), // 'visa', 'mastercard', 'rupay', 'amex'
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+// NOTE: CVV is NOT stored for security reasons
+
+export const cardDetailsRelations = relations(cardDetails, ({ one }) => ({
+  account: one(accounts, { fields: [cardDetails.accountId], references: [accounts.id] }),
+}));
+
+export const insertCardDetailsSchema = createInsertSchema(cardDetails).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  cardNumber: z.string().min(13).max(19, "Valid card number required"),
+  lastFourDigits: z.string().length(4, "Last 4 digits required"),
+  cardholderName: z.string().optional(),
+  expiryMonth: z.number().min(1).max(12),
+  expiryYear: z.number().min(2024),
+  cardType: z.enum(["visa", "mastercard", "rupay", "amex", "other"]).optional(),
+});
+
+export type InsertCardDetails = z.infer<typeof insertCardDetailsSchema>;
+export type CardDetails = typeof cardDetails.$inferSelect;
+
 // SMS Logs (for tracking parsed messages)
 export const smsLogs = pgTable("sms_logs", {
   id: serial("id").primaryKey(),
@@ -378,6 +547,13 @@ export type TransactionWithRelations = Transaction & {
   category?: Category | null;
 };
 
+// Extended loan type with relations
+export type LoanWithRelations = Loan & {
+  account?: Account | null;
+  installments?: LoanInstallment[];
+  components?: LoanComponent[];
+};
+
 // Dashboard analytics types
 export type DashboardStats = {
   totalSpentToday: number;
@@ -387,4 +563,7 @@ export type DashboardStats = {
   nextScheduledPayment: ScheduledPayment | null;
   lastTransactions: TransactionWithRelations[];
   upcomingBills: ScheduledPayment[];
+  totalLoans?: number;
+  totalEmiThisMonth?: number;
+  nextEmiDue?: { loanName: string; amount: string; dueDate: string } | null;
 };

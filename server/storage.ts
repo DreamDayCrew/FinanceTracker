@@ -1,6 +1,7 @@
 import { 
   users, accounts, categories, transactions, budgets, scheduledPayments, smsLogs,
   paymentOccurrences, savingsGoals, savingsContributions, salaryProfiles, salaryCycles,
+  loans, loanComponents, loanInstallments, cardDetails,
   type User, type InsertUser,
   type Account, type InsertAccount,
   type Category, type InsertCategory,
@@ -12,6 +13,10 @@ import {
   type SavingsContribution, type InsertSavingsContribution,
   type SalaryProfile, type InsertSalaryProfile,
   type SalaryCycle, type InsertSalaryCycle,
+  type Loan, type InsertLoan, type LoanWithRelations,
+  type LoanComponent, type InsertLoanComponent,
+  type LoanInstallment, type InsertLoanInstallment,
+  type CardDetails, type InsertCardDetails,
   type SmsLog, type InsertSmsLog,
   type DashboardStats,
   DEFAULT_CATEGORIES
@@ -104,6 +109,33 @@ export interface IStorage {
 
   // Dashboard Analytics
   getDashboardStats(userId?: number): Promise<DashboardStats>;
+
+  // Loans
+  getAllLoans(userId?: number): Promise<LoanWithRelations[]>;
+  getLoan(id: number): Promise<LoanWithRelations | undefined>;
+  createLoan(loan: InsertLoan): Promise<Loan>;
+  updateLoan(id: number, loan: Partial<InsertLoan>): Promise<Loan | undefined>;
+  deleteLoan(id: number): Promise<boolean>;
+
+  // Loan Components
+  getLoanComponents(loanId: number): Promise<LoanComponent[]>;
+  createLoanComponent(component: InsertLoanComponent): Promise<LoanComponent>;
+  updateLoanComponent(id: number, component: Partial<InsertLoanComponent>): Promise<LoanComponent | undefined>;
+  deleteLoanComponent(id: number): Promise<boolean>;
+
+  // Loan Installments
+  getLoanInstallments(loanId: number): Promise<LoanInstallment[]>;
+  getLoanInstallment(id: number): Promise<LoanInstallment | undefined>;
+  createLoanInstallment(installment: InsertLoanInstallment): Promise<LoanInstallment>;
+  updateLoanInstallment(id: number, installment: Partial<InsertLoanInstallment>): Promise<LoanInstallment | undefined>;
+  generateLoanInstallments(loanId: number): Promise<LoanInstallment[]>;
+  markInstallmentPaid(id: number, paidAmount: string, transactionId?: number): Promise<LoanInstallment | undefined>;
+
+  // Card Details
+  getCardDetails(accountId: number): Promise<CardDetails | undefined>;
+  createCardDetails(card: InsertCardDetails): Promise<CardDetails>;
+  updateCardDetails(id: number, card: Partial<InsertCardDetails>): Promise<CardDetails | undefined>;
+  deleteCardDetails(id: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -756,6 +788,282 @@ export class DatabaseStorage implements IStorage {
       .where(eq(salaryCycles.id, id))
       .returning();
     return updated || undefined;
+  }
+
+  // Loans
+  async getAllLoans(userId?: number): Promise<LoanWithRelations[]> {
+    const conditions = [];
+    if (userId) {
+      conditions.push(eq(loans.userId, userId));
+    }
+    
+    const results = await db.select({
+      id: loans.id,
+      userId: loans.userId,
+      accountId: loans.accountId,
+      name: loans.name,
+      type: loans.type,
+      lenderName: loans.lenderName,
+      loanAccountNumber: loans.loanAccountNumber,
+      principalAmount: loans.principalAmount,
+      outstandingAmount: loans.outstandingAmount,
+      interestRate: loans.interestRate,
+      tenure: loans.tenure,
+      emiAmount: loans.emiAmount,
+      emiDay: loans.emiDay,
+      startDate: loans.startDate,
+      endDate: loans.endDate,
+      status: loans.status,
+      notes: loans.notes,
+      createdAt: loans.createdAt,
+      updatedAt: loans.updatedAt,
+      account: accounts,
+    })
+    .from(loans)
+    .leftJoin(accounts, eq(loans.accountId, accounts.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(loans.createdAt));
+
+    return results as LoanWithRelations[];
+  }
+
+  async getLoan(id: number): Promise<LoanWithRelations | undefined> {
+    const [result] = await db.select({
+      id: loans.id,
+      userId: loans.userId,
+      accountId: loans.accountId,
+      name: loans.name,
+      type: loans.type,
+      lenderName: loans.lenderName,
+      loanAccountNumber: loans.loanAccountNumber,
+      principalAmount: loans.principalAmount,
+      outstandingAmount: loans.outstandingAmount,
+      interestRate: loans.interestRate,
+      tenure: loans.tenure,
+      emiAmount: loans.emiAmount,
+      emiDay: loans.emiDay,
+      startDate: loans.startDate,
+      endDate: loans.endDate,
+      status: loans.status,
+      notes: loans.notes,
+      createdAt: loans.createdAt,
+      updatedAt: loans.updatedAt,
+      account: accounts,
+    })
+    .from(loans)
+    .leftJoin(accounts, eq(loans.accountId, accounts.id))
+    .where(eq(loans.id, id));
+
+    if (!result) return undefined;
+
+    const installments = await this.getLoanInstallments(id);
+    const components = await this.getLoanComponents(id);
+
+    return { ...result, installments, components } as LoanWithRelations;
+  }
+
+  async createLoan(loan: InsertLoan): Promise<Loan> {
+    const [newLoan] = await db.insert(loans).values({
+      ...loan,
+      startDate: loan.startDate ? new Date(loan.startDate) : new Date(),
+      endDate: loan.endDate ? new Date(loan.endDate) : undefined,
+    }).returning();
+    return newLoan;
+  }
+
+  async updateLoan(id: number, loan: Partial<InsertLoan>): Promise<Loan | undefined> {
+    const updateData: any = { ...loan, updatedAt: new Date() };
+    if (loan.startDate) {
+      updateData.startDate = new Date(loan.startDate);
+    }
+    if (loan.endDate) {
+      updateData.endDate = new Date(loan.endDate);
+    }
+    const [updated] = await db.update(loans)
+      .set(updateData)
+      .where(eq(loans.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteLoan(id: number): Promise<boolean> {
+    // Delete related installments and components first
+    await db.delete(loanInstallments).where(eq(loanInstallments.loanId, id));
+    await db.delete(loanComponents).where(eq(loanComponents.loanId, id));
+    const result = await db.delete(loans).where(eq(loans.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Loan Components
+  async getLoanComponents(loanId: number): Promise<LoanComponent[]> {
+    return db.select().from(loanComponents)
+      .where(eq(loanComponents.loanId, loanId))
+      .orderBy(desc(loanComponents.createdAt));
+  }
+
+  async createLoanComponent(component: InsertLoanComponent): Promise<LoanComponent> {
+    const [newComponent] = await db.insert(loanComponents).values({
+      ...component,
+      startDate: component.startDate ? new Date(component.startDate) : new Date(),
+      endDate: component.endDate ? new Date(component.endDate) : undefined,
+    }).returning();
+    return newComponent;
+  }
+
+  async updateLoanComponent(id: number, component: Partial<InsertLoanComponent>): Promise<LoanComponent | undefined> {
+    const updateData: any = { ...component };
+    if (component.startDate) {
+      updateData.startDate = new Date(component.startDate);
+    }
+    if (component.endDate) {
+      updateData.endDate = new Date(component.endDate);
+    }
+    const [updated] = await db.update(loanComponents)
+      .set(updateData)
+      .where(eq(loanComponents.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteLoanComponent(id: number): Promise<boolean> {
+    await db.delete(loanInstallments).where(eq(loanInstallments.loanComponentId, id));
+    const result = await db.delete(loanComponents).where(eq(loanComponents.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Loan Installments
+  async getLoanInstallments(loanId: number): Promise<LoanInstallment[]> {
+    return db.select().from(loanInstallments)
+      .where(eq(loanInstallments.loanId, loanId))
+      .orderBy(loanInstallments.installmentNumber);
+  }
+
+  async getLoanInstallment(id: number): Promise<LoanInstallment | undefined> {
+    const [installment] = await db.select().from(loanInstallments).where(eq(loanInstallments.id, id));
+    return installment || undefined;
+  }
+
+  async createLoanInstallment(installment: InsertLoanInstallment): Promise<LoanInstallment> {
+    const [newInstallment] = await db.insert(loanInstallments).values({
+      ...installment,
+      dueDate: installment.dueDate ? new Date(installment.dueDate) : new Date(),
+      paidDate: installment.paidDate ? new Date(installment.paidDate) : undefined,
+    }).returning();
+    return newInstallment;
+  }
+
+  async updateLoanInstallment(id: number, installment: Partial<InsertLoanInstallment>): Promise<LoanInstallment | undefined> {
+    const updateData: any = { ...installment };
+    if (installment.dueDate) {
+      updateData.dueDate = new Date(installment.dueDate);
+    }
+    if (installment.paidDate) {
+      updateData.paidDate = new Date(installment.paidDate);
+    }
+    const [updated] = await db.update(loanInstallments)
+      .set(updateData)
+      .where(eq(loanInstallments.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async generateLoanInstallments(loanId: number): Promise<LoanInstallment[]> {
+    const loan = await this.getLoan(loanId);
+    if (!loan || !loan.emiAmount || !loan.tenure) return [];
+
+    // Delete existing installments for this loan
+    await db.delete(loanInstallments).where(eq(loanInstallments.loanId, loanId));
+
+    const generatedInstallments: LoanInstallment[] = [];
+    const startDate = new Date(loan.startDate);
+    const emiAmount = parseFloat(loan.emiAmount);
+    const principal = parseFloat(loan.principalAmount);
+    const interestRate = parseFloat(loan.interestRate) / 100 / 12; // Monthly rate
+    const emiDay = loan.emiDay || startDate.getDate();
+
+    let remainingPrincipal = principal;
+
+    for (let i = 1; i <= loan.tenure; i++) {
+      // Calculate interest and principal for this installment
+      const interestAmount = remainingPrincipal * interestRate;
+      const principalAmount = emiAmount - interestAmount;
+      remainingPrincipal = Math.max(0, remainingPrincipal - principalAmount);
+
+      // Calculate due date
+      const dueDate = new Date(startDate);
+      dueDate.setMonth(dueDate.getMonth() + i);
+      dueDate.setDate(Math.min(emiDay, new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0).getDate()));
+
+      const [newInstallment] = await db.insert(loanInstallments).values({
+        loanId,
+        installmentNumber: i,
+        dueDate,
+        emiAmount: emiAmount.toFixed(2),
+        principalAmount: principalAmount.toFixed(2),
+        interestAmount: interestAmount.toFixed(2),
+        status: 'pending',
+      }).returning();
+
+      generatedInstallments.push(newInstallment);
+    }
+
+    return generatedInstallments;
+  }
+
+  async markInstallmentPaid(id: number, paidAmount: string, transactionId?: number): Promise<LoanInstallment | undefined> {
+    const installment = await this.getLoanInstallment(id);
+    if (!installment) return undefined;
+
+    const [updated] = await db.update(loanInstallments)
+      .set({
+        status: 'paid',
+        paidAmount,
+        paidDate: new Date(),
+        transactionId,
+      })
+      .where(eq(loanInstallments.id, id))
+      .returning();
+
+    // Update loan outstanding amount
+    if (updated && installment.principalAmount) {
+      const loan = await db.select().from(loans).where(eq(loans.id, installment.loanId));
+      if (loan.length > 0) {
+        const currentOutstanding = parseFloat(loan[0].outstandingAmount);
+        const principalPaid = parseFloat(installment.principalAmount);
+        await db.update(loans)
+          .set({
+            outstandingAmount: Math.max(0, currentOutstanding - principalPaid).toFixed(2),
+            updatedAt: new Date(),
+          })
+          .where(eq(loans.id, installment.loanId));
+      }
+    }
+
+    return updated || undefined;
+  }
+
+  // Card Details
+  async getCardDetails(accountId: number): Promise<CardDetails | undefined> {
+    const [card] = await db.select().from(cardDetails).where(eq(cardDetails.accountId, accountId));
+    return card || undefined;
+  }
+
+  async createCardDetails(card: InsertCardDetails): Promise<CardDetails> {
+    const [newCard] = await db.insert(cardDetails).values(card).returning();
+    return newCard;
+  }
+
+  async updateCardDetails(id: number, card: Partial<InsertCardDetails>): Promise<CardDetails | undefined> {
+    const [updated] = await db.update(cardDetails)
+      .set({ ...card, updatedAt: new Date() })
+      .where(eq(cardDetails.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteCardDetails(id: number): Promise<boolean> {
+    const result = await db.delete(cardDetails).where(eq(cardDetails.id, id)).returning();
+    return result.length > 0;
   }
 }
 

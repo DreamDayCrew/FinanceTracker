@@ -12,7 +12,11 @@ import {
   insertSalaryProfileSchema,
   insertSalaryCycleSchema,
   insertSmsLogSchema,
-  insertCategorySchema
+  insertCategorySchema,
+  insertLoanSchema,
+  insertLoanComponentSchema,
+  insertLoanInstallmentSchema,
+  insertCardDetailsSchema
 } from "@shared/schema";
 import { suggestCategory, parseSmsMessage } from "./openai";
 import { getPaydayForMonth, getNextPaydays } from "./salaryUtils";
@@ -760,6 +764,317 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to reset PIN" });
+    }
+  });
+
+  // ========== Loans ==========
+  app.get("/api/loans", async (_req, res) => {
+    try {
+      const loans = await storage.getAllLoans();
+      res.json(loans);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch loans" });
+    }
+  });
+
+  app.get("/api/loans/:id", async (req, res) => {
+    try {
+      const loan = await storage.getLoan(parseInt(req.params.id));
+      if (loan) {
+        res.json(loan);
+      } else {
+        res.status(404).json({ error: "Loan not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch loan" });
+    }
+  });
+
+  app.post("/api/loans", async (req, res) => {
+    try {
+      const validatedData = insertLoanSchema.parse(req.body);
+      const loan = await storage.createLoan(validatedData);
+      
+      // Auto-generate installments if EMI info is provided
+      if (loan.emiAmount && loan.tenure) {
+        await storage.generateLoanInstallments(loan.id);
+      }
+      
+      res.status(201).json(loan);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid loan data" });
+    }
+  });
+
+  app.patch("/api/loans/:id", async (req, res) => {
+    try {
+      const loan = await storage.updateLoan(parseInt(req.params.id), req.body);
+      if (loan) {
+        res.json(loan);
+      } else {
+        res.status(404).json({ error: "Loan not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid loan data" });
+    }
+  });
+
+  app.delete("/api/loans/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteLoan(parseInt(req.params.id));
+      if (deleted) {
+        res.status(204).send();
+      } else {
+        res.status(404).json({ error: "Loan not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete loan" });
+    }
+  });
+
+  app.post("/api/loans/:id/generate-schedule", async (req, res) => {
+    try {
+      const installments = await storage.generateLoanInstallments(parseInt(req.params.id));
+      res.json(installments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate installments" });
+    }
+  });
+
+  // ========== Loan Components (for CC EMIs) ==========
+  app.get("/api/loans/:loanId/components", async (req, res) => {
+    try {
+      const components = await storage.getLoanComponents(parseInt(req.params.loanId));
+      res.json(components);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch loan components" });
+    }
+  });
+
+  app.post("/api/loans/:loanId/components", async (req, res) => {
+    try {
+      const validatedData = insertLoanComponentSchema.parse({
+        ...req.body,
+        loanId: parseInt(req.params.loanId)
+      });
+      const component = await storage.createLoanComponent(validatedData);
+      res.status(201).json(component);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid component data" });
+    }
+  });
+
+  app.patch("/api/loan-components/:id", async (req, res) => {
+    try {
+      const component = await storage.updateLoanComponent(parseInt(req.params.id), req.body);
+      if (component) {
+        res.json(component);
+      } else {
+        res.status(404).json({ error: "Component not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid component data" });
+    }
+  });
+
+  app.delete("/api/loan-components/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteLoanComponent(parseInt(req.params.id));
+      if (deleted) {
+        res.status(204).send();
+      } else {
+        res.status(404).json({ error: "Component not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete component" });
+    }
+  });
+
+  // ========== Loan Installments ==========
+  app.get("/api/loans/:loanId/installments", async (req, res) => {
+    try {
+      const installments = await storage.getLoanInstallments(parseInt(req.params.loanId));
+      res.json(installments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch installments" });
+    }
+  });
+
+  app.patch("/api/loan-installments/:id", async (req, res) => {
+    try {
+      const installment = await storage.updateLoanInstallment(parseInt(req.params.id), req.body);
+      if (installment) {
+        res.json(installment);
+      } else {
+        res.status(404).json({ error: "Installment not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid installment data" });
+    }
+  });
+
+  app.post("/api/loan-installments/:id/mark-paid", async (req, res) => {
+    try {
+      const { paidAmount, transactionId } = req.body;
+      const installment = await storage.markInstallmentPaid(
+        parseInt(req.params.id), 
+        paidAmount, 
+        transactionId
+      );
+      if (installment) {
+        res.json(installment);
+      } else {
+        res.status(404).json({ error: "Installment not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to mark installment as paid" });
+    }
+  });
+
+  // ========== Loan Summary ==========
+  app.get("/api/loan-summary", async (_req, res) => {
+    try {
+      const allLoans = await storage.getAllLoans();
+      const activeLoans = allLoans.filter(l => l.status === 'active');
+      
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+      
+      let totalOutstanding = 0;
+      let totalEmiThisMonth = 0;
+      let nextEmiDue: { loanName: string; amount: string; dueDate: string } | null = null;
+      
+      for (const loan of activeLoans) {
+        totalOutstanding += parseFloat(loan.outstandingAmount);
+        
+        if (loan.installments) {
+          for (const inst of loan.installments) {
+            const dueDate = new Date(inst.dueDate);
+            if (dueDate.getMonth() + 1 === currentMonth && dueDate.getFullYear() === currentYear) {
+              totalEmiThisMonth += parseFloat(inst.emiAmount);
+            }
+            
+            // Find next pending EMI
+            if (inst.status === 'pending' && dueDate >= now) {
+              if (!nextEmiDue || dueDate < new Date(nextEmiDue.dueDate)) {
+                nextEmiDue = {
+                  loanName: loan.name,
+                  amount: inst.emiAmount,
+                  dueDate: inst.dueDate.toISOString()
+                };
+              }
+            }
+          }
+        }
+      }
+      
+      res.json({
+        totalLoans: activeLoans.length,
+        totalOutstanding,
+        totalEmiThisMonth,
+        nextEmiDue
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch loan summary" });
+    }
+  });
+
+  // ========== Card Details ==========
+  app.get("/api/accounts/:accountId/card", async (req, res) => {
+    try {
+      const card = await storage.getCardDetails(parseInt(req.params.accountId));
+      if (card) {
+        // Return masked card number for security
+        res.json({
+          ...card,
+          cardNumber: `****-****-****-${card.lastFourDigits}`
+        });
+      } else {
+        res.status(404).json({ error: "Card not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch card" });
+    }
+  });
+
+  app.post("/api/accounts/:accountId/card", async (req, res) => {
+    try {
+      // Simple encryption for demo - in production use proper encryption
+      const cardNumber = req.body.cardNumber.replace(/\s/g, '');
+      const lastFourDigits = cardNumber.slice(-4);
+      
+      // Basic encryption (in production, use AES-256-GCM or similar)
+      const encryptedCardNumber = Buffer.from(cardNumber).toString('base64');
+      
+      const validatedData = insertCardDetailsSchema.parse({
+        ...req.body,
+        accountId: parseInt(req.params.accountId),
+        cardNumber: encryptedCardNumber,
+        lastFourDigits
+      });
+      
+      const card = await storage.createCardDetails(validatedData);
+      res.status(201).json({
+        ...card,
+        cardNumber: `****-****-****-${card.lastFourDigits}`
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid card data" });
+    }
+  });
+
+  app.patch("/api/cards/:id", async (req, res) => {
+    try {
+      const updateData = { ...req.body };
+      if (updateData.cardNumber) {
+        updateData.cardNumber = Buffer.from(updateData.cardNumber.replace(/\s/g, '')).toString('base64');
+        updateData.lastFourDigits = req.body.cardNumber.slice(-4);
+      }
+      
+      const card = await storage.updateCardDetails(parseInt(req.params.id), updateData);
+      if (card) {
+        res.json({
+          ...card,
+          cardNumber: `****-****-****-${card.lastFourDigits}`
+        });
+      } else {
+        res.status(404).json({ error: "Card not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid card data" });
+    }
+  });
+
+  app.delete("/api/cards/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteCardDetails(parseInt(req.params.id));
+      if (deleted) {
+        res.status(204).send();
+      } else {
+        res.status(404).json({ error: "Card not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete card" });
+    }
+  });
+
+  // Secure endpoint to get full card number (requires PIN verification in real app)
+  app.get("/api/accounts/:accountId/card/full", async (req, res) => {
+    try {
+      const card = await storage.getCardDetails(parseInt(req.params.accountId));
+      if (card) {
+        // Decrypt card number
+        const decryptedCardNumber = Buffer.from(card.cardNumber, 'base64').toString('utf8');
+        res.json({
+          ...card,
+          cardNumber: decryptedCardNumber
+        });
+      } else {
+        res.status(404).json({ error: "Card not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch card" });
     }
   });
 
