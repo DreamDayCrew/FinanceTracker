@@ -38,6 +38,27 @@ const menuItems: MenuItem[] = [
     color: '#8b5cf6',
   },
   {
+    icon: 'flag-outline',
+    title: 'Savings Goals',
+    subtitle: 'Track your savings targets',
+    route: 'SavingsGoals',
+    color: '#10b981',
+  },
+  {
+    icon: 'briefcase-outline',
+    title: 'Salary Income',
+    subtitle: 'Manage salary and paydays',
+    route: 'Salary',
+    color: '#f59e0b',
+  },
+  {
+    icon: 'document-text-outline',
+    title: 'Loans & EMI',
+    subtitle: 'Track loans and installments',
+    route: 'Loans',
+    color: '#ef4444',
+  },
+  {
     icon: 'settings-outline',
     title: 'Settings',
     subtitle: 'Theme, security, export data',

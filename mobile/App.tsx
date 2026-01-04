@@ -18,6 +18,9 @@ import AddAccountScreen from './src/screens/AddAccountScreen';
 import AddBudgetScreen from './src/screens/AddBudgetScreen';
 import AddScheduledPaymentScreen from './src/screens/AddScheduledPaymentScreen';
 import ScanSMSScreen from './src/screens/ScanSMSScreen';
+import SavingsGoalsScreen from './src/screens/SavingsGoalsScreen';
+import SalaryScreen from './src/screens/SalaryScreen';
+import LoansScreen from './src/screens/LoansScreen';
 
 import { COLORS } from './src/lib/utils';
 
@@ -37,6 +40,9 @@ export type MoreStackParamList = {
   AddBudget: undefined;
   ScheduledPayments: undefined;
   AddScheduledPayment: undefined;
+  SavingsGoals: undefined;
+  Salary: undefined;
+  Loans: undefined;
   Settings: undefined;
   ScanSMS: undefined;
 };
@@ -105,6 +111,21 @@ function MoreStackNavigator() {
         name="ScanSMS" 
         component={ScanSMSScreen}
         options={{ title: 'Scan SMS' }}
+      />
+      <MoreStack.Screen 
+        name="SavingsGoals" 
+        component={SavingsGoalsScreen}
+        options={{ title: 'Savings Goals' }}
+      />
+      <MoreStack.Screen 
+        name="Salary" 
+        component={SalaryScreen}
+        options={{ title: 'Salary Income' }}
+      />
+      <MoreStack.Screen 
+        name="Loans" 
+        component={LoansScreen}
+        options={{ title: 'Loans & EMI' }}
       />
     </MoreStack.Navigator>
   );
