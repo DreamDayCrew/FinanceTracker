@@ -7,10 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Building2, CreditCard, Trash2 } from "lucide-react";
+import { Plus, Building2, CreditCard, Trash2, Wallet, Eye, EyeOff } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Account } from "@shared/schema";
+import type { Account, CardDetails } from "@shared/schema";
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -21,8 +21,94 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+const CARD_TYPES = [
+  { value: 'visa', label: 'Visa' },
+  { value: 'mastercard', label: 'Mastercard' },
+  { value: 'rupay', label: 'RuPay' },
+  { value: 'amex', label: 'American Express' },
+  { value: 'other', label: 'Other' },
+];
+
+function CardDetailsDisplay({ accountId, onDelete }: { accountId: number; onDelete: (cardId: number, accountId: number) => void }) {
+  const [showFull, setShowFull] = useState(false);
+  
+  const { data: card, isLoading } = useQuery<CardDetails & { cardNumber: string }>({
+    queryKey: ["/api/accounts", accountId, "card"],
+    queryFn: async () => {
+      const response = await fetch(`/api/accounts/${accountId}/card`);
+      if (!response.ok) {
+        if (response.status === 404) return null;
+        throw new Error('Failed to fetch card');
+      }
+      return response.json();
+    },
+  });
+
+  const { data: fullCard, refetch: fetchFullCard } = useQuery<CardDetails & { cardNumber: string }>({
+    queryKey: ["/api/accounts", accountId, "card", "full"],
+    queryFn: async () => {
+      const response = await fetch(`/api/accounts/${accountId}/card/full`);
+      if (!response.ok) throw new Error('Failed to fetch card details');
+      return response.json();
+    },
+    enabled: false,
+  });
+
+  const toggleShowFull = async () => {
+    if (!showFull && !fullCard) {
+      await fetchFullCard();
+    }
+    setShowFull(!showFull);
+  };
+
+  if (isLoading) return <div className="text-xs text-muted-foreground">Loading card...</div>;
+  if (!card) return null;
+
+  const formatCardNumber = (num: string) => {
+    if (showFull && fullCard) {
+      return fullCard.cardNumber.replace(/(.{4})/g, '$1 ').trim();
+    }
+    return card.cardNumber;
+  };
+
+  return (
+    <div className="mt-2 pt-2 border-t flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <Wallet className="w-4 h-4 text-muted-foreground" />
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-mono">{formatCardNumber(card.cardNumber)}</span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6"
+              onClick={toggleShowFull}
+              data-testid={`button-toggle-card-${accountId}`}
+            >
+              {showFull ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {card.cardType?.toUpperCase()} {card.cardholderName ? `· ${card.cardholderName}` : ''} · Exp: {String(card.expiryMonth).padStart(2, '0')}/{card.expiryYear}
+          </p>
+        </div>
+      </div>
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={() => onDelete(card.id, accountId)}
+        data-testid={`button-delete-card-${card.id}`}
+      >
+        <Trash2 className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+}
+
 export default function Accounts() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     type: "bank" as "bank" | "credit_card",
@@ -30,6 +116,13 @@ export default function Accounts() {
     accountNumber: "",
     balance: "",
     creditLimit: "",
+  });
+  const [cardFormData, setCardFormData] = useState({
+    cardNumber: "",
+    cardholderName: "",
+    expiryMonth: "",
+    expiryYear: "",
+    cardType: "visa" as "visa" | "mastercard" | "rupay" | "amex" | "other",
   });
   const { toast } = useToast();
 
@@ -63,6 +156,49 @@ export default function Accounts() {
     },
     onError: () => {
       toast({ title: "Failed to delete account", variant: "destructive" });
+    },
+  });
+
+  const addCardMutation = useMutation({
+    mutationFn: async (data: { accountId: number; cardData: typeof cardFormData }) => {
+      const payload = {
+        cardNumber: data.cardData.cardNumber.replace(/\s/g, ''),
+        lastFourDigits: data.cardData.cardNumber.replace(/\s/g, '').slice(-4),
+        cardholderName: data.cardData.cardholderName || undefined,
+        expiryMonth: parseInt(data.cardData.expiryMonth),
+        expiryYear: parseInt(data.cardData.expiryYear),
+        cardType: data.cardData.cardType,
+      };
+      const response = await apiRequest("POST", `/api/accounts/${data.accountId}/card`, payload);
+      return response.json();
+    },
+    onSuccess: () => {
+      if (selectedAccountId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/accounts", selectedAccountId, "card"] });
+      }
+      setIsCardDialogOpen(false);
+      setCardFormData({ cardNumber: "", cardholderName: "", expiryMonth: "", expiryYear: "", cardType: "visa" });
+      setSelectedAccountId(null);
+      toast({ title: "Card added successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to add card", variant: "destructive" });
+    },
+  });
+
+  const deleteCardMutation = useMutation({
+    mutationFn: async ({ cardId, accountId }: { cardId: number; accountId: number }) => {
+      await apiRequest("DELETE", `/api/cards/${cardId}`);
+      return { accountId };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts", data.accountId, "card"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts", data.accountId, "card", "full"] });
+      toast({ title: "Card deleted" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete card", variant: "destructive" });
     },
   });
 
@@ -200,23 +336,42 @@ export default function Accounts() {
           <div className="space-y-2">
             {bankAccounts.map((account) => (
               <Card key={account.id} data-testid={`card-account-${account.id}`}>
-                <CardContent className="py-3 flex items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium">{account.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {account.bankName} {account.accountNumber ? `•• ${account.accountNumber}` : ""}
-                    </p>
+                <CardContent className="py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-medium">{account.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {account.bankName} {account.accountNumber ? `•• ${account.accountNumber}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-green-600">{formatCurrency(parseFloat(account.balance || "0"))}</p>
+                      <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        onClick={() => deleteMutation.mutate(account.id)}
+                        data-testid={`button-delete-account-${account.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-green-600">{formatCurrency(parseFloat(account.balance || "0"))}</p>
+                  <CardDetailsDisplay 
+                    accountId={account.id} 
+                    onDelete={(cardId, accountId) => deleteCardMutation.mutate({ cardId, accountId })} 
+                  />
+                  <div className="mt-2 pt-2 border-t">
                     <Button 
-                      size="icon" 
-                      variant="ghost" 
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => deleteMutation.mutate(account.id)}
-                      data-testid={`button-delete-account-${account.id}`}
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedAccountId(account.id);
+                        setIsCardDialogOpen(true);
+                      }}
+                      data-testid={`button-add-card-${account.id}`}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Plus className="w-3 h-3 mr-1" />
+                      Add Debit Card
                     </Button>
                   </div>
                 </CardContent>
@@ -283,6 +438,101 @@ export default function Accounts() {
           </Card>
         )}
       </div>
+
+      {/* Add Card Dialog */}
+      <Dialog open={isCardDialogOpen} onOpenChange={(open) => {
+        setIsCardDialogOpen(open);
+        if (!open) {
+          setSelectedAccountId(null);
+          setCardFormData({ cardNumber: "", cardholderName: "", expiryMonth: "", expiryYear: "", cardType: "visa" });
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Debit Card</DialogTitle>
+            <DialogDescription>Store your debit card details securely. CVV is never stored.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (selectedAccountId) {
+              addCardMutation.mutate({ accountId: selectedAccountId, cardData: cardFormData });
+            }
+          }} className="space-y-4">
+            <div>
+              <Label>Card Number</Label>
+              <Input 
+                value={cardFormData.cardNumber}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 16);
+                  const formatted = value.replace(/(.{4})/g, '$1 ').trim();
+                  setCardFormData({ ...cardFormData, cardNumber: formatted });
+                }}
+                placeholder="1234 5678 9012 3456"
+                data-testid="input-card-number"
+              />
+            </div>
+            <div>
+              <Label>Cardholder Name</Label>
+              <Input 
+                value={cardFormData.cardholderName}
+                onChange={(e) => setCardFormData({ ...cardFormData, cardholderName: e.target.value.toUpperCase() })}
+                placeholder="JOHN DOE"
+                data-testid="input-cardholder-name"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Expiry Month</Label>
+                <Select value={cardFormData.expiryMonth} onValueChange={(v) => setCardFormData({ ...cardFormData, expiryMonth: v })}>
+                  <SelectTrigger data-testid="select-expiry-month">
+                    <SelectValue placeholder="MM" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                      <SelectItem key={m} value={String(m)}>{String(m).padStart(2, '0')}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Expiry Year</Label>
+                <Select value={cardFormData.expiryYear} onValueChange={(v) => setCardFormData({ ...cardFormData, expiryYear: v })}>
+                  <SelectTrigger data-testid="select-expiry-year">
+                    <SelectValue placeholder="YYYY" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() + i).map(y => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Card Type</Label>
+                <Select value={cardFormData.cardType} onValueChange={(v: typeof cardFormData.cardType) => setCardFormData({ ...cardFormData, cardType: v })}>
+                  <SelectTrigger data-testid="select-card-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CARD_TYPES.map(type => (
+                      <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">For security, CVV is never stored. Card numbers are encrypted.</p>
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={addCardMutation.isPending || !cardFormData.cardNumber || !cardFormData.expiryMonth || !cardFormData.expiryYear}
+              data-testid="button-save-card"
+            >
+              {addCardMutation.isPending ? "Adding..." : "Add Card"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
