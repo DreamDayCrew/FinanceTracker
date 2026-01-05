@@ -1,30 +1,80 @@
 import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Switch } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { api } from '../lib/api';
 import { getThemedColors } from '../lib/utils';
 import { useTheme } from '../contexts/ThemeContext';
+import { MoreStackParamList } from '../../App';
+import React from 'react';
+
+type AddScheduledPaymentRouteProp = RouteProp<MoreStackParamList, 'AddScheduledPayment'>;
 
 export default function AddScheduledPaymentScreen() {
   const navigation = useNavigation();
+  const route = useRoute<AddScheduledPaymentRouteProp>();
   const queryClient = useQueryClient();
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+  
+  const paymentId = route.params?.paymentId;
+  const isEditMode = !!paymentId;
   
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [affectTransaction, setAffectTransaction] = useState(true);
+  const [affectAccountBalance, setAffectAccountBalance] = useState(true);
 
   const { data: categories } = useQuery({
     queryKey: ['categories'],
     queryFn: api.getCategories,
   });
 
-  const mutation = useMutation({
+  const { data: accounts } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: api.getAccounts,
+  });
+
+  const { data: payments } = useQuery({
+    queryKey: ['scheduled-payments'],
+    queryFn: api.getScheduledPayments,
+    enabled: isEditMode,
+  });
+
+  // Auto-select default account for new payments
+  React.useEffect(() => {
+    if (!isEditMode && accounts && !selectedAccountId) {
+      const defaultAccount = accounts.find(acc => acc.isDefault);
+      if (defaultAccount) {
+        setSelectedAccountId(defaultAccount.id);
+      }
+    }
+  }, [accounts, isEditMode, selectedAccountId]);
+
+  // Load payment data for edit mode
+  React.useEffect(() => {
+    if (isEditMode && payments) {
+      const payment = payments.find((p: any) => p.id === paymentId);
+      if (payment) {
+        setName(payment.name);
+        setAmount(payment.amount);
+        setDueDate(payment.dueDate.toString());
+        setNotes(payment.notes || '');
+        setSelectedCategoryId(payment.categoryId || null);
+        setSelectedAccountId(payment.accountId || null);
+        setAffectTransaction(payment.affectTransaction ?? true);
+        setAffectAccountBalance(payment.affectAccountBalance ?? true);
+      }
+    }
+  }, [isEditMode, payments, paymentId]);
+
+  const createMutation = useMutation({
     mutationFn: api.createScheduledPayment,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scheduled-payments'] });
@@ -46,6 +96,34 @@ export default function AddScheduledPaymentScreen() {
       });
     },
   });
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (!paymentId) throw new Error('Payment ID is required');
+      return api.updateScheduledPayment(paymentId, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      Toast.show({
+        type: 'success',
+        text1: 'Payment Updated',
+        text2: 'Scheduled payment has been updated',
+        position: 'bottom',
+      });
+      navigation.goBack();
+    },
+    onError: (error) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to update scheduled payment',
+        position: 'bottom',
+      });
+    },
+  });
+
+  const mutation = isEditMode ? updateMutation : createMutation;
 
   const handleSubmit = () => {
     if (!name.trim()) {
@@ -86,7 +164,10 @@ export default function AddScheduledPaymentScreen() {
       dueDate: dueDateNum,
       notes: notes.trim() || null,
       categoryId: selectedCategoryId,
+      accountId: selectedAccountId,
       status: 'active',
+      affectTransaction,
+      affectAccountBalance,
     });
   };
 
@@ -163,6 +244,35 @@ export default function AddScheduledPaymentScreen() {
       </View>
 
       <View style={styles.field}>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Account (optional)</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.categoryRow}>
+            {accounts?.map((account) => (
+              <TouchableOpacity
+                key={account.id}
+                style={[
+                  styles.categoryChip,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  selectedAccountId === account.id && { backgroundColor: colors.primary }
+                ]}
+                onPress={() => setSelectedAccountId(
+                  selectedAccountId === account.id ? null : account.id
+                )}
+              >
+                <Text style={[
+                  styles.categoryChipText,
+                  { color: colors.text },
+                  selectedAccountId === account.id && { color: '#fff' }
+                ]}>
+                  {account.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+
+      <View style={styles.field}>
         <Text style={[styles.label, { color: colors.textMuted }]}>Notes (optional)</Text>
         <TextInput
           style={[styles.input, styles.textArea, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
@@ -175,6 +285,44 @@ export default function AddScheduledPaymentScreen() {
         />
       </View>
 
+      <View style={styles.field}>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Transaction Options</Text>
+        {isEditMode && (
+          <View style={[styles.infoBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="information-circle-outline" size={20} color={colors.primary} style={styles.infoIcon} />
+            <Text style={[styles.infoText, { color: colors.textMuted }]}>
+              Changing these settings will only apply to future payments. Past transactions remain unchanged.
+            </Text>
+          </View>
+        )}
+        <View style={[styles.toggleContainer, { backgroundColor: colors.card }]}>
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.toggleLabel, { color: colors.text }]}>Create Transaction</Text>
+              <Text style={[styles.toggleDescription, { color: colors.textMuted }]}>Add to transaction history when paid</Text>
+            </View>
+            <Switch
+              value={affectTransaction}
+              onValueChange={setAffectTransaction}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+            />
+          </View>S
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.toggleLabel, { color: colors.text }]}>Affect Account Balance</Text>
+              <Text style={[styles.toggleDescription, { color: colors.textMuted }]}>Update account balance when paid</Text>
+            </View>
+            <Switch
+              value={affectAccountBalance}
+              onValueChange={setAffectAccountBalance}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+            />
+          </View>
+        </View>
+      </View>
+
       <TouchableOpacity 
         style={[styles.submitButton, { backgroundColor: colors.primary }, mutation.isPending && styles.submitButtonDisabled]} 
         onPress={handleSubmit}
@@ -183,7 +331,7 @@ export default function AddScheduledPaymentScreen() {
         {mutation.isPending ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.submitButtonText}>Add Payment</Text>
+          <Text style={styles.submitButtonText}>{isEditMode ? 'Update Payment' : 'Add Payment'}</Text>
         )}
       </TouchableOpacity>
 
@@ -246,6 +394,41 @@ const styles = StyleSheet.create({
   },
   categoryChipTextActive: {
     color: '#ffffff',
+  },
+  toggleContainer: {
+    borderRadius: 12,
+    padding: 16,
+    gap: 16,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  toggleDescription: {
+    fontSize: 12,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
+    alignItems: 'flex-start',
+  },
+  infoIcon: {
+    marginRight: 8,
+    marginTop: 1,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
   submitButton: {
     padding: 16,

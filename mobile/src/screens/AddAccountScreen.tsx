@@ -25,6 +25,8 @@ export default function AddAccountScreen() {
   const [balance, setBalance] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
+  const [billingDate, setBillingDate] = useState('');
+  const [isDefault, setIsDefault] = useState(false);
 
   // Fetch account data if editing
   const { data: accounts } = useQuery({
@@ -40,11 +42,15 @@ export default function AddAccountScreen() {
         setType(account.type as 'bank' | 'credit_card');
         setName(account.name);
         setBalance(account.balance);
+        setIsDefault(account.isDefault || false);
         if (account.creditLimit) {
           setCreditLimit(account.creditLimit);
         }
         if (account.accountNumber) {
           setAccountNumber(account.accountNumber);
+        }
+        if (account.billingDate) {
+          setBillingDate(account.billingDate.toString());
         }
       }
     }
@@ -130,10 +136,15 @@ export default function AddAccountScreen() {
       type,
       name: name.trim(),
       balance,
+      isDefault,
     };
 
     if (type === 'credit_card' && creditLimit) {
       accountData.creditLimit = creditLimit;
+    }
+
+    if (type === 'credit_card' && billingDate && parseInt(billingDate) >= 1 && parseInt(billingDate) <= 31) {
+      accountData.billingDate = parseInt(billingDate);
     }
 
     if (accountNumber.trim()) {
@@ -225,6 +236,24 @@ export default function AddAccountScreen() {
         </View>
       )}
 
+      {type === 'credit_card' && (
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>Billing Date (Day of Month)</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+            placeholder="e.g., 15 (for 15th of every month)"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="numeric"
+            maxLength={2}
+            value={billingDate}
+            onChangeText={setBillingDate}
+          />
+          <Text style={[styles.hint, { color: colors.textMuted }]}>
+            Enter the day (1-31) when your billing cycle starts
+          </Text>
+        </View>
+      )}
+
       <View style={styles.field}>
         <Text style={[styles.label, { color: colors.textMuted }]}>Last 4 Digits (optional)</Text>
         <TextInput
@@ -237,6 +266,25 @@ export default function AddAccountScreen() {
           onChangeText={setAccountNumber}
         />
       </View>
+
+      {type === 'bank' && (
+        <TouchableOpacity 
+          style={[styles.defaultToggle, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setIsDefault(!isDefault)}
+        >
+          <View style={styles.defaultToggleContent}>
+            <View>
+              <Text style={[styles.defaultToggleTitle, { color: colors.text }]}>Set as Default Account</Text>
+              <Text style={[styles.defaultToggleDesc, { color: colors.textMuted }]}>
+                Auto-select this account for new transactions
+              </Text>
+            </View>
+            <View style={[styles.switch, { backgroundColor: isDefault ? colors.primary : colors.border }]}>
+              <View style={[styles.switchThumb, { transform: [{ translateX: isDefault ? 20 : 2 }] }]} />
+            </View>
+          </View>
+        </TouchableOpacity>
+      )}
 
       <TouchableOpacity 
         style={[styles.submitButton, { backgroundColor: colors.primary }, isPending && styles.submitButtonDisabled]} 
@@ -311,6 +359,42 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 16,
     fontSize: 16,
+  },
+  defaultToggle: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  defaultToggleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  defaultToggleTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  defaultToggleDesc: {
+    fontSize: 12,
+  },
+  hint: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  switch: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  switchThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#fff',
   },
   submitButton: {
     padding: 16,

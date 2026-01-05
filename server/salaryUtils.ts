@@ -91,3 +91,38 @@ export function getNextPaydays(
   
   return results;
 }
+
+export function getPastPaydays(
+  rule: string,
+  fixedDay: number | null,
+  weekdayPreference: number | null,
+  count: number = 3
+): { month: number; year: number; date: Date }[] {
+  const now = new Date();
+  const results: { month: number; year: number; date: Date }[] = [];
+  
+  let currentMonth = now.getMonth(); // Start from last month (0-indexed)
+  let currentYear = now.getFullYear();
+  
+  // Go back to previous month
+  if (currentMonth === 0) {
+    currentMonth = 12;
+    currentYear--;
+  }
+  
+  for (let i = 0; i < count; i++) {
+    const payday = getPaydayForMonth(currentYear, currentMonth, rule, fixedDay, weekdayPreference);
+    results.push({
+      month: currentMonth,
+      year: currentYear,
+      date: payday,
+    });
+    currentMonth--;
+    if (currentMonth === 0) {
+      currentMonth = 12;
+      currentYear--;
+    }
+  }
+  
+  return results;
+}

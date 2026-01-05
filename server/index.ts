@@ -20,7 +20,7 @@ app.use(cors({
     // In production, restrict to known origins
     const allowedOrigins = [
       'http://localhost:5000',
-      'http://localhost:8082',
+      'http://localhost:8081','http://localhost:8082',
       'https://financetracker-jdqd.onrender.com'
     ];
     

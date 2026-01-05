@@ -1,15 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useCallback } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
+import { Swipeable } from 'react-native-gesture-handler';
 import { api } from '../lib/api';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { MoreStackParamList } from '../../App';
 import type { Budget } from '../lib/types';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSwipeSettings } from '../hooks/useSwipeSettings';
 
 type NavigationProp = NativeStackNavigationProp<MoreStackParamList>;
 
@@ -21,12 +23,26 @@ export default function BudgetsScreen() {
   const queryClient = useQueryClient();
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+  const swipeSettings = useSwipeSettings();
+  const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
+  const currentOpenSwipeable = useRef<number | null>(null);
   
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [budgetToDelete, setBudgetToDelete] = useState<Budget | null>(null);
+
+  // Close all swipeables when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Close all swipeables when leaving screen
+        swipeableRefs.current.forEach(ref => ref?.close());
+        currentOpenSwipeable.current = null;
+      };
+    }, [])
+  );
 
   const { data: budgets, isLoading } = useQuery({
     queryKey: ['budgets', month, year],
@@ -78,15 +94,162 @@ export default function BudgetsScreen() {
     },
   });
 
+
+  const handleEdit = (budget: Budget) => {
+    // Close the swipeable before navigation
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
+    }
+    navigation.navigate('AddBudget', { budgetId: budget.id });
+  };
+
   const handleDelete = (budget: Budget) => {
     setBudgetToDelete(budget);
     setIsDeleteModalOpen(true);
+    // Close the swipeable after showing modal
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
+    }
   };
 
   const confirmDelete = () => {
     if (budgetToDelete) {
       deleteMutation.mutate(budgetToDelete.id);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setIsDeleteModalOpen(false);
+    setBudgetToDelete(null);
+  };
+
+  const renderRightActions = (budget: Budget) => {
+    const action = swipeSettings.rightAction;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => action === 'edit' ? handleEdit(budget) : handleDelete(budget)}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderLeftActions = (budget: Budget) => {
+    const action = swipeSettings.leftAction;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => action === 'edit' ? handleEdit(budget) : handleDelete(budget)}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderBudgetCard = (budget: Budget) => {
+    const spent = budget.categoryId ? (categorySpending[budget.categoryId] || 0) : 0;
+    const budgetAmount = parseFloat(budget.amount);
+    const percentage = budgetAmount > 0 ? Math.min((spent / budgetAmount) * 100, 100) : 0;
+    const isOverBudget = spent > budgetAmount;
+
+    const content = (
+      <TouchableOpacity
+        style={[styles.budgetCard, { backgroundColor: colors.card }]}
+        onPress={swipeSettings.enabled ? undefined : () => {
+          if (budget.categoryId && budget.category?.name) {
+            navigation.navigate('CategoryTransactions', {
+              categoryId: budget.categoryId,
+              categoryName: budget.category.name,
+              month,
+              year,
+            });
+          }
+        }}
+        activeOpacity={0.7}
+        disabled={swipeSettings.enabled}
+      >
+        <View style={styles.budgetContent}>
+          <View style={styles.budgetHeader}>
+            <View style={[styles.categoryBadge, { backgroundColor: colors.primary + '20' }]}>
+              <Text style={[styles.categoryName, { color: colors.primary }]}>{budget.category?.name || 'Unknown Category'}</Text>
+            </View>
+            <View style={styles.budgetHeaderRight}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (budget.categoryId && budget.category?.name) {
+                    navigation.navigate('CategoryTransactions', {
+                      categoryId: budget.categoryId,
+                      categoryName: budget.category.name,
+                      month,
+                      year,
+                    });
+                  }
+                }}
+                style={[styles.viewTransactionsButton, { backgroundColor: colors.primary + '15' }]}
+              >
+                <Ionicons name="list-outline" size={16} color={colors.primary} />
+              </TouchableOpacity>
+              <Text style={[styles.budgetAmount, { color: colors.text }]}>{formatCurrency(budget.amount)}</Text>
+            </View>
+          </View>
+        </View>
+        <View style={styles.progressContainer}>
+          <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+            <View style={[
+              styles.progressFill, 
+              { 
+                width: `${percentage}%`, 
+                backgroundColor: isOverBudget ? '#ef4444' : colors.primary 
+              }
+            ]} />
+          </View>
+          <Text style={[styles.progressText, { color: isOverBudget ? '#ef4444' : colors.textMuted }]}>
+            {formatCurrency(spent)} spent {isOverBudget && '(Over budget!)'}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+
+    if (swipeSettings.enabled) {
+      return (
+        <Swipeable
+          key={budget.id}
+          ref={(ref) => {
+            if (ref) {
+              swipeableRefs.current.set(budget.id, ref);
+            } else {
+              swipeableRefs.current.delete(budget.id);
+            }
+          }}
+          renderRightActions={() => renderRightActions(budget)}
+          renderLeftActions={() => renderLeftActions(budget)}
+          onSwipeableOpen={(direction) => {
+            // Close previously opened swipeable
+            if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== budget.id) {
+              swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+            }
+            currentOpenSwipeable.current = budget.id;
+            
+            // Trigger action based on swipe direction
+            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
+            if (action === 'edit') {
+              handleEdit(budget);
+            } else {
+              handleDelete(budget);
+            }
+          }}
+        >
+          {content}
+        </Swipeable>
+      );
+    }
+
+    return <View key={budget.id}>{content}</View>;
   };
 
   const goToPreviousMonth = () => {
@@ -138,67 +301,7 @@ export default function BudgetsScreen() {
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {budgets && budgets.length > 0 ? (
-          budgets.map((budget) => {
-            const spent = budget.categoryId ? (categorySpending[budget.categoryId] || 0) : 0;
-            const budgetAmount = parseFloat(budget.amount);
-            const percentage = budgetAmount > 0 ? Math.min((spent / budgetAmount) * 100, 100) : 0;
-            const isOverBudget = spent > budgetAmount;
-            
-            return (
-            <TouchableOpacity
-              key={budget.id}
-              style={[styles.budgetCard, { backgroundColor: colors.card }]}
-              onPress={() => {
-                if (budget.categoryId && budget.category?.name) {
-                  navigation.navigate('CategoryTransactions', {
-                    categoryId: budget.categoryId,
-                    categoryName: budget.category.name,
-                    month,
-                    year,
-                  });
-                }
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.budgetContent}>
-                <View style={styles.budgetHeader}>
-                  <View style={[styles.categoryBadge, { backgroundColor: colors.primary + '20' }]}>
-                    <Text style={[styles.categoryName, { color: colors.primary }]}>{budget.category?.name || 'Unknown Category'}</Text>
-                  </View>
-                  <Text style={[styles.budgetAmount, { color: colors.text }]}>{formatCurrency(budget.amount)}</Text>
-                </View>
-                <View style={styles.budgetActions}>
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate('AddBudget', { budgetId: budget.id })}
-                    style={[styles.actionButton, { backgroundColor: colors.primary + '20' }]}
-                  >
-                    <Ionicons name="pencil" size={18} color={colors.primary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => handleDelete(budget)}
-                    style={[styles.actionButton, { backgroundColor: '#fee2e2' }]}
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-              <View style={styles.progressContainer}>
-                <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-                  <View style={[
-                    styles.progressFill, 
-                    { 
-                      width: `${percentage}%`, 
-                      backgroundColor: isOverBudget ? '#ef4444' : colors.primary 
-                    }
-                  ]} />
-                </View>
-                <Text style={[styles.progressText, { color: isOverBudget ? '#ef4444' : colors.textMuted }]}>
-                  {formatCurrency(spent)} spent {isOverBudget && '(Over budget!)'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            );
-          })
+          budgets.map((budget) => renderBudgetCard(budget))
         ) : (
           <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
             <Ionicons name="pie-chart-outline" size={48} color={colors.textMuted} />
@@ -316,6 +419,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  budgetHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  viewTransactionsButton: {
+    padding: 6,
+    borderRadius: 6,
+  },
   budgetActions: {
     flexDirection: 'row',
     gap: 8,
@@ -324,6 +436,18 @@ const styles = StyleSheet.create({
   actionButton: {
     padding: 8,
     borderRadius: 8,
+  },
+  swipeAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '600',
   },
   categoryBadge: {
     paddingHorizontal: 10,

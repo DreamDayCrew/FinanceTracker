@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { Swipeable } from 'react-native-gesture-handler';
 import Toast from 'react-native-toast-message';
 import { api } from '../lib/api';
 import { formatCurrency, getThemedColors } from '../lib/utils';
@@ -11,6 +12,7 @@ import { RootStackParamList } from '../../App';
 import { FABButton } from '../components/FABButton';
 import type { Account } from '../lib/types';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSwipeSettings } from '../hooks/useSwipeSettings';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -19,9 +21,23 @@ export default function AccountsScreen() {
   const queryClient = useQueryClient();
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+  const swipeSettings = useSwipeSettings();
   
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+  const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
+  const currentOpenSwipeable = useRef<number | null>(null);
+
+  // Close all swipeables when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Close all swipeables when leaving screen
+        swipeableRefs.current.forEach(ref => ref?.close());
+        currentOpenSwipeable.current = null;
+      };
+    }, [])
+  );
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: ['accounts'],
@@ -55,8 +71,14 @@ export default function AccountsScreen() {
   });
 
   const handleDelete = (account: Account) => {
+    console.log('handleDelete called for account:', account.name);
     setSelectedAccount(account);
     setIsDeleteModalOpen(true);
+    // Close the swipeable after showing modal
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
+    }
   };
 
   const confirmDelete = () => {
@@ -66,11 +88,202 @@ export default function AccountsScreen() {
   };
 
   const handleEdit = (account: Account) => {
+    console.log('handleEdit called for account:', account.name);
+    // Close the swipeable before navigation
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
+    }
     navigation.navigate('AddAccount', { accountId: account.id });
+  };
+
+  const handleCancelDelete = () => {
+    setIsDeleteModalOpen(false);
+    setSelectedAccount(null);
   };
 
   const bankAccounts = accounts?.filter(a => a.type === 'bank') || [];
   const creditCards = accounts?.filter(a => a.type === 'credit_card') || [];
+
+  console.log('Swipe settings:', swipeSettings);
+
+  const renderRightActions = (account: Account) => {
+    const action = swipeSettings.rightAction;
+    console.log('renderRightActions - action:', action);
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => {
+          console.log('Right swipe action pressed:', action);
+          action === 'edit' ? handleEdit(account) : handleDelete(account);
+        }}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderLeftActions = (account: Account) => {
+    const action = swipeSettings.leftAction;
+    console.log('renderLeftActions - action:', action);
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => {
+          console.log('Left swipe action pressed:', action);
+          action === 'edit' ? handleEdit(account) : handleDelete(account);
+        }}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderAccountCard = (account: Account) => {
+    const content = (
+      <TouchableOpacity 
+        style={[styles.accountCard, { backgroundColor: colors.card }]}
+        onPress={swipeSettings.enabled ? undefined : () => handleEdit(account)}
+        activeOpacity={swipeSettings.enabled ? 1 : 0.7}
+        disabled={swipeSettings.enabled}
+      >
+        <View style={[styles.accountIcon, { backgroundColor: colors.primary + '20' }]}>
+          <Ionicons name="business-outline" size={24} color={colors.primary} />
+        </View>
+        <View style={styles.accountInfo}>
+          <View style={styles.accountNameRow}>
+            <Text style={[styles.accountName, { color: colors.text }]}>{account.name}</Text>
+            {account.isDefault && (
+              <View style={[styles.defaultBadge, { backgroundColor: colors.primary + '20' }]}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+                <Text style={[styles.defaultBadgeText, { color: colors.primary }]}>Default</Text>
+              </View>
+            )}
+          </View>
+          {account.accountNumber && (
+            <Text style={[styles.accountNumber, { color: colors.textMuted }]}>****{account.accountNumber}</Text>
+          )}
+          <Text style={[styles.accountBalance, { color: colors.primary }]}>{formatCurrency(account.balance)}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+
+    if (swipeSettings.enabled) {
+      return (
+        <Swipeable
+          key={account.id}
+          ref={(ref) => {
+            if (ref) {
+              swipeableRefs.current.set(account.id, ref);
+            } else {
+              swipeableRefs.current.delete(account.id);
+            }
+          }}
+          renderRightActions={() => renderRightActions(account)}
+          renderLeftActions={() => renderLeftActions(account)}
+          onSwipeableOpen={(direction) => {
+            // Close previously opened swipeable
+            if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== account.id) {
+              swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+            }
+            currentOpenSwipeable.current = account.id;
+            
+            // Trigger action based on swipe direction
+            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
+            if (action === 'edit') {
+              handleEdit(account);
+            } else {
+              handleDelete(account);
+            }
+          }}
+        >
+          {content}
+        </Swipeable>
+      );
+    }
+
+    return <View key={account.id}>{content}</View>;
+  };
+
+  const renderCreditCard = (account: Account) => {
+    const used = parseFloat(account.creditLimit || '0') - parseFloat(account.balance);
+    const usedPercent = account.creditLimit 
+      ? (used / parseFloat(account.creditLimit)) * 100 
+      : 0;
+
+    const content = (
+      <TouchableOpacity 
+        style={[styles.accountCard, { backgroundColor: colors.card }]}
+        onPress={swipeSettings.enabled ? undefined : () => handleEdit(account)}
+        activeOpacity={swipeSettings.enabled ? 1 : 0.7}
+        disabled={swipeSettings.enabled}
+      >
+        <View style={[styles.accountIcon, { backgroundColor: colors.danger + '20' }]}>
+          <Ionicons name="card-outline" size={24} color={colors.danger} />
+        </View>
+        <View style={styles.accountInfo}>
+          <Text style={[styles.accountName, { color: colors.text }]}>{account.name}</Text>
+          {account.accountNumber && (
+            <Text style={[styles.accountNumber, { color: colors.textMuted }]}>****{account.accountNumber}</Text>
+          )}
+          <View style={styles.creditInfo}>
+            <Text style={[styles.creditText, { color: colors.textMuted }]}>
+              {formatCurrency(account.balance)} available of {formatCurrency(account.creditLimit || 0)}
+            </Text>
+            <View style={[styles.creditBar, { backgroundColor: colors.border }]}>
+              <View 
+                style={[
+                  styles.creditFill, 
+                  { 
+                    width: `${Math.min(usedPercent, 100)}%`,
+                    backgroundColor: usedPercent > 80 ? colors.danger : colors.warning
+                  }
+                ]} 
+              />
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+
+    if (swipeSettings.enabled) {
+      return (
+        <Swipeable
+          key={account.id}
+          ref={(ref) => {
+            if (ref) {
+              swipeableRefs.current.set(account.id, ref);
+            } else {
+              swipeableRefs.current.delete(account.id);
+            }
+          }}
+          renderRightActions={() => renderRightActions(account)}
+          renderLeftActions={() => renderLeftActions(account)}
+          onSwipeableOpen={(direction) => {
+            // Close previously opened swipeable
+            if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== account.id) {
+              swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+            }
+            currentOpenSwipeable.current = account.id;
+            
+            // Trigger action based on swipe direction
+            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
+            if (action === 'edit') {
+              handleEdit(account);
+            } else {
+              handleDelete(account);
+            }
+          }}
+        >
+          {content}
+        </Swipeable>
+      );
+    }
+
+    return <View key={account.id}>{content}</View>;
+  };
 
   if (isLoading) {
     return (
@@ -86,34 +299,7 @@ export default function AccountsScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Bank Accounts</Text>
           {bankAccounts.length > 0 ? (
-            bankAccounts.map((account) => (
-              <View key={account.id} style={[styles.accountCard, { backgroundColor: colors.card }]}>
-                <View style={[styles.accountIcon, { backgroundColor: colors.primary + '20' }]}>
-                  <Ionicons name="business-outline" size={24} color={colors.primary} />
-                </View>
-                <View style={styles.accountInfo}>
-                  <Text style={[styles.accountName, { color: colors.text }]}>{account.name}</Text>
-                  {account.accountNumber && (
-                    <Text style={[styles.accountNumber, { color: colors.textMuted }]}>****{account.accountNumber}</Text>
-                  )}
-                  <Text style={[styles.accountBalance, { color: colors.primary }]}>{formatCurrency(account.balance)}</Text>
-                </View>
-                <View style={styles.accountActions}>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, { backgroundColor: colors.primary + '20' }]}
-                    onPress={() => handleEdit(account)}
-                  >
-                    <Ionicons name="pencil" size={16} color={colors.primary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, { backgroundColor: '#fee2e2' }]}
-                    onPress={() => handleDelete(account)}
-                  >
-                    <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
+            bankAccounts.map((account) => renderAccountCard(account))
           ) : (
             <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
               <Ionicons name="business-outline" size={32} color={colors.textMuted} />
@@ -125,59 +311,7 @@ export default function AccountsScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Credit Cards</Text>
           {creditCards.length > 0 ? (
-            creditCards.map((account) => {
-              const used = parseFloat(account.creditLimit || '0') - parseFloat(account.balance);
-              const usedPercent = account.creditLimit 
-                ? (used / parseFloat(account.creditLimit)) * 100 
-                : 0;
-              
-              return (
-                <View 
-                  key={account.id} 
-                  style={[styles.accountCard, { backgroundColor: colors.card }]}
-                >
-                  <View style={[styles.accountIcon, { backgroundColor: colors.danger + '20' }]}>
-                    <Ionicons name="card-outline" size={24} color={colors.danger} />
-                  </View>
-                  <View style={styles.accountInfo}>
-                    <Text style={[styles.accountName, { color: colors.text }]}>{account.name}</Text>
-                    {account.accountNumber && (
-                      <Text style={[styles.accountNumber, { color: colors.textMuted }]}>****{account.accountNumber}</Text>
-                    )}
-                    <View style={styles.creditInfo}>
-                      <Text style={[styles.creditText, { color: colors.textMuted }]}>
-                        {formatCurrency(account.balance)} available of {formatCurrency(account.creditLimit || 0)}
-                      </Text>
-                      <View style={[styles.creditBar, { backgroundColor: colors.border }]}>
-                        <View 
-                          style={[
-                            styles.creditFill, 
-                            { 
-                              width: `${Math.min(usedPercent, 100)}%`,
-                              backgroundColor: usedPercent > 80 ? colors.danger : colors.warning
-                            }
-                          ]} 
-                        />
-                      </View>
-                    </View>
-                  </View>
-                  <View style={styles.accountActions}>
-                    <TouchableOpacity 
-                      style={[styles.actionButton, { backgroundColor: colors.primary + '20' }]}
-                      onPress={() => handleEdit(account)}
-                    >
-                      <Ionicons name="pencil" size={16} color={colors.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.actionButton, { backgroundColor: '#fee2e2' }]}
-                      onPress={() => handleDelete(account)}
-                    >
-                      <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })
+            creditCards.map((account) => renderCreditCard(account))
           ) : (
             <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
               <Ionicons name="card-outline" size={32} color={colors.textMuted} />
@@ -210,7 +344,7 @@ export default function AccountsScreen() {
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCancel, { backgroundColor: colors.border }]}
-                onPress={() => setIsDeleteModalOpen(false)}
+                onPress={handleCancelDelete}
                 disabled={deleteMutation.isPending}
               >
                 <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
@@ -273,8 +407,26 @@ const styles = StyleSheet.create({
   accountInfo: {
     flex: 1,
   },
+  accountNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
   accountName: {
     fontSize: 16,
+    fontWeight: '600',
+  },
+  defaultBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    gap: 4,
+  },
+  defaultBadgeText: {
+    fontSize: 11,
     fontWeight: '600',
   },
   accountNumber: {
@@ -320,6 +472,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  swipeAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,

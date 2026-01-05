@@ -33,6 +33,7 @@ export interface IStorage {
   // Accounts
   getAllAccounts(userId?: number): Promise<Account[]>;
   getAccount(id: number): Promise<Account | undefined>;
+  getDefaultAccount(): Promise<Account | undefined>;
   createAccount(account: InsertAccount): Promise<Account>;
   updateAccount(id: number, account: Partial<InsertAccount>): Promise<Account | undefined>;
   deleteAccount(id: number): Promise<boolean>;
@@ -170,12 +171,25 @@ export class DatabaseStorage implements IStorage {
     return account || undefined;
   }
 
+  async getDefaultAccount(): Promise<Account | undefined> {
+    const [account] = await db.select().from(accounts).where(eq(accounts.isDefault, true));
+    return account || undefined;
+  }
+
   async createAccount(account: InsertAccount): Promise<Account> {
+    // If setting as default, unset all other defaults
+    if (account.isDefault) {
+      await db.update(accounts).set({ isDefault: false }).where(eq(accounts.isDefault, true));
+    }
     const [newAccount] = await db.insert(accounts).values(account).returning();
     return newAccount;
   }
 
   async updateAccount(id: number, account: Partial<InsertAccount>): Promise<Account | undefined> {
+    // If setting as default, unset all other defaults
+    if (account.isDefault) {
+      await db.update(accounts).set({ isDefault: false }).where(eq(accounts.isDefault, true));
+    }
     const [updated] = await db.update(accounts).set({ ...account, updatedAt: new Date() }).where(eq(accounts.id, id)).returning();
     return updated || undefined;
   }
@@ -741,8 +755,81 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteSavingsGoal(id: number): Promise<boolean> {
+    console.log(`[deleteSavingsGoal] Starting deletion of goal ${id}`);
+    
+    // Get the goal to access account configuration
+    const [goal] = await db.select()
+      .from(savingsGoals)
+      .where(eq(savingsGoals.id, id));
+    
+    if (!goal) {
+      console.log(`[deleteSavingsGoal] Goal ${id} not found`);
+      return false;
+    }
+    
+    console.log(`[deleteSavingsGoal] Goal found: ${goal.name}, accountId: ${goal.accountId}, toAccountId: ${goal.toAccountId}`);
+    
+    // Get all contributions before deleting
+    const contributions = await db.select()
+      .from(savingsContributions)
+      .where(eq(savingsContributions.savingsGoalId, id));
+
+    console.log(`[deleteSavingsGoal] Found ${contributions.length} contributions to delete`);
+
+    // Delete all transactions associated with this goal's contributions
+    for (const contribution of contributions) {
+      console.log(`[deleteSavingsGoal] Processing contribution ${contribution.id}, amount: ${contribution.amount}`);
+      
+      // Delete transaction from accountId (debit)
+      if (contribution.accountId) {
+        const fromTransactions = await db.select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.accountId, contribution.accountId),
+              eq(transactions.savingsContributionId, contribution.id)
+            )
+          );
+        
+        console.log(`[deleteSavingsGoal] Found ${fromTransactions.length} debit transactions for contribution ${contribution.id}`);
+        
+        for (const transaction of fromTransactions) {
+          console.log(`[deleteSavingsGoal] Deleting debit transaction ${transaction.id}`);
+          // Delete transaction (this will automatically update account balance)
+          await this.deleteTransaction(transaction.id);
+        }
+      }
+      
+      // Delete transaction to toAccountId (credit)
+      if (goal.toAccountId) {
+        const toTransactions = await db.select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.accountId, goal.toAccountId),
+              eq(transactions.savingsContributionId, contribution.id)
+            )
+          );
+        
+        console.log(`[deleteSavingsGoal] Found ${toTransactions.length} credit transactions for contribution ${contribution.id}`);
+        
+        for (const transaction of toTransactions) {
+          console.log(`[deleteSavingsGoal] Deleting credit transaction ${transaction.id}`);
+          // Delete transaction (this will automatically update account balance)
+          await this.deleteTransaction(transaction.id);
+        }
+      }
+    }
+
+    console.log(`[deleteSavingsGoal] Deleting ${contributions.length} contributions`);
+    // Delete all contributions
     await db.delete(savingsContributions).where(eq(savingsContributions.savingsGoalId, id));
+    
+    console.log(`[deleteSavingsGoal] Deleting goal ${id}`);
+    // Delete the savings goal
     const result = await db.delete(savingsGoals).where(eq(savingsGoals.id, id)).returning();
+    
+    console.log(`[deleteSavingsGoal] Goal deletion complete, success: ${result.length > 0}`);
     return result.length > 0;
   }
 

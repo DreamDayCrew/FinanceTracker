@@ -1,16 +1,18 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Switch, Modal, Platform } from 'react-native';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Switch, Modal, Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Toast from 'react-native-toast-message';
+import { Swipeable } from 'react-native-gesture-handler';
 import { api } from '../lib/api';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { MoreStackParamList } from '../../App';
 import type { ScheduledPayment, PaymentOccurrence, Category, Account } from '../lib/types';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSwipeSettings } from '../hooks/useSwipeSettings';
 
 type NavigationProp = NativeStackNavigationProp<MoreStackParamList>;
 
@@ -28,16 +30,32 @@ export default function ScheduledPaymentsScreen() {
   const queryClient = useQueryClient();
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+  const swipeSettings = useSwipeSettings();
+  const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
+  const currentOpenSwipeable = useRef<number | null>(null);
   
   const [activeTab, setActiveTab] = useState<'checklist' | 'manage'>('checklist');
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+
+  // Close all swipeables when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Close all swipeables when leaving screen
+        swipeableRefs.current.forEach(ref => ref?.close());
+        currentOpenSwipeable.current = null;
+      };
+    }, [])
+  );
   
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedOccurrence, setSelectedOccurrence] = useState<PaymentOccurrence | null>(null);
   const [paymentDate, setPaymentDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [paymentToDelete, setPaymentToDelete] = useState<ScheduledPayment | null>(null);
 
   const { data: payments, isLoading, refetch: refetchPayments } = useQuery({
     queryKey: ['scheduled-payments'],
@@ -75,7 +93,13 @@ export default function ScheduledPaymentsScreen() {
   });
 
   const updateOccurrenceMutation = useMutation({
-    mutationFn: async ({ id, status, occurrence }: { id: number; status: string; occurrence?: PaymentOccurrence }) => {
+    mutationFn: async ({ id, status, occurrence, affectTransaction, affectAccountBalance }: { 
+      id: number; 
+      status: string; 
+      occurrence?: PaymentOccurrence;
+      affectTransaction?: boolean;
+      affectAccountBalance?: boolean;
+    }) => {
       // If unchecking (changing from paid to pending), delete transaction and restore account balance
       if (status === 'pending' && occurrence) {
         const payment = occurrence.scheduledPayment;
@@ -107,13 +131,22 @@ export default function ScheduledPaymentsScreen() {
         }
       }
       
-      // Update occurrence status
-      return await api.updatePaymentOccurrence(id, { status });
+      // Update occurrence status and toggles
+      const updateData: any = { status };
+      if (affectTransaction !== undefined) {
+        updateData.affectTransaction = affectTransaction;
+      }
+      if (affectAccountBalance !== undefined) {
+        updateData.affectAccountBalance = affectAccountBalance;
+      }
+      return await api.updatePaymentOccurrence(id, updateData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       refetchOccurrences();
       Toast.show({
         type: 'success',
@@ -133,31 +166,63 @@ export default function ScheduledPaymentsScreen() {
   });
 
   const markAsPaidMutation = useMutation({
-    mutationFn: async ({ occurrenceId, accountId, date }: { occurrenceId: number; accountId: number; date: string }) => {
+    mutationFn: async ({ occurrenceId, accountId, date }: { 
+      occurrenceId: number; 
+      accountId: number; 
+      date: string;
+    }) => {
       const occurrence = occurrences.find(o => o.id === occurrenceId);
       if (!occurrence || !occurrence.scheduledPayment) {
         throw new Error('Payment not found');
       }
 
-      // Create transaction
-      await api.createTransaction({
-        type: 'debit',
-        amount: occurrence.scheduledPayment.amount,
-        merchant: occurrence.scheduledPayment.name,
-        description: `Scheduled payment: ${occurrence.scheduledPayment.name}`,
-        categoryId: occurrence.scheduledPayment.categoryId || null,
-        accountId,
-        transactionDate: date,
-        paymentOccurrenceId: occurrenceId,
-      });
+      const payment = occurrence.scheduledPayment;
+      const affectTransaction = payment.affectTransaction ?? true;
+      const affectAccountBalance = payment.affectAccountBalance ?? true;
 
-      // Update occurrence status
-      await api.updatePaymentOccurrence(occurrenceId, { status: 'paid' });
+      // Create transaction if affectTransaction is enabled
+      if (affectTransaction) {
+        await api.createTransaction({
+          type: 'debit',
+          amount: payment.amount,
+          merchant: payment.name,
+          description: `Scheduled payment: ${payment.name}`,
+          categoryId: payment.categoryId || null,
+          accountId,
+          transactionDate: date,
+          paymentOccurrenceId: occurrenceId,
+        });
+
+        // If transaction is created but should not affect balance, reverse the balance change
+        if (!affectAccountBalance) {
+          const account = accounts.find(a => a.id === accountId);
+          if (account) {
+            const newBalance = (parseFloat(account.balance) + parseFloat(payment.amount)).toString();
+            await api.updateAccount(accountId, { balance: newBalance });
+          }
+        }
+      } else if (!affectTransaction && affectAccountBalance) {
+        // If no transaction but balance should be affected, update balance directly
+        const account = accounts.find(a => a.id === accountId);
+        if (account) {
+          const newBalance = (parseFloat(account.balance) - parseFloat(payment.amount)).toString();
+          await api.updateAccount(accountId, { balance: newBalance });
+        }
+      }
+
+      // Update occurrence status and toggle settings
+      await api.updatePaymentOccurrence(occurrenceId, { 
+        status: 'paid',
+        affectTransaction,
+        affectAccountBalance
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       refetchOccurrences();
       setShowPaymentModal(false);
       setSelectedOccurrence(null);
@@ -187,19 +252,8 @@ export default function ScheduledPaymentsScreen() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      console.log('deleteMutation called with id:', id);
-      try {
-        const result = await api.deleteScheduledPayment(id);
-        console.log('Delete API result:', result);
-        return result;
-      } catch (error) {
-        console.error('Delete API error:', error);
-        throw error;
-      }
-    },
+    mutationFn: api.deleteScheduledPayment,
     onSuccess: () => {
-      console.log('Delete mutation onSuccess called');
       queryClient.invalidateQueries({ queryKey: ['scheduled-payments'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       refetchPayments();
@@ -211,8 +265,7 @@ export default function ScheduledPaymentsScreen() {
         position: 'bottom',
       });
     },
-    onError: (error) => {
-      console.error('Delete mutation onError:', error);
+    onError: () => {
       Toast.show({
         type: 'error',
         text1: 'Delete Failed',
@@ -229,29 +282,148 @@ export default function ScheduledPaymentsScreen() {
   }, [payments?.length, currentMonth, currentYear]);
 
   const handleDelete = (payment: ScheduledPayment) => {
-    console.log('Delete button clicked for payment:', payment.id, payment.name);
-    
-    // Directly call the mutation to test
-    console.log('About to call deleteMutation.mutate with id:', payment.id);
-    deleteMutation.mutate(payment.id);
-    
-    /* Original alert version - uncomment if you want confirmation dialog
-    Alert.alert(
-      'Delete Payment',
-      `Delete "${payment.name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: () => {
-            console.log('Confirmed delete for:', payment.id);
-            deleteMutation.mutate(payment.id);
-          }
-        },
-      ]
+    setPaymentToDelete(payment);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = () => {
+    if (paymentToDelete) {
+      // Close the swipeable before deleting
+      if (currentOpenSwipeable.current !== null) {
+        swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+        currentOpenSwipeable.current = null;
+      }
+      deleteMutation.mutate(paymentToDelete.id);
+      setShowDeleteModal(false);
+      setPaymentToDelete(null);
+    }
+  };
+
+  const cancelDelete = () => {
+    // Close the swipeable when canceling
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
+    }
+    setShowDeleteModal(false);
+    setPaymentToDelete(null);
+  };
+
+  const handleEdit = (payment: ScheduledPayment) => {
+    // Close the swipeable before navigation
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
+    }
+    navigation.navigate('AddScheduledPayment', { paymentId: payment.id });
+  };
+
+  const renderRightActionsManage = (payment: ScheduledPayment) => {
+    const action = swipeSettings.rightAction;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => action === 'edit' ? handleEdit(payment) : handleDelete(payment)}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
     );
-    */
+  };
+
+  const renderLeftActionsManage = (payment: ScheduledPayment) => {
+    const action = swipeSettings.leftAction;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => action === 'edit' ? handleEdit(payment) : handleDelete(payment)}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderPaymentCard = (payment: ScheduledPayment) => {
+    const category = categories.find(c => c.id === payment.categoryId);
+    const isActive = payment.status === 'active';
+
+    const content = (
+      <View
+        style={[
+          styles.paymentCard,
+          { backgroundColor: colors.card },
+          !isActive && styles.paymentCardInactive
+        ]}
+      >
+        <View style={styles.paymentInfo}>
+          <View style={styles.paymentHeader}>
+            <Text style={[styles.paymentName, { color: colors.text }, !isActive && { color: colors.textMuted }]}>
+              {payment.name}
+            </Text>
+            <View style={[styles.frequencyBadge, { backgroundColor: `${colors.primary}20` }]}>
+              <Text style={[styles.frequencyText, { color: colors.primary }]}>
+                {FREQUENCY_OPTIONS[payment.frequency || 'monthly'] || 'Monthly'}
+              </Text>
+            </View>
+          </View>
+          <Text style={[styles.paymentDue, { color: colors.textMuted }]}>
+            Due on {payment.dueDate}th
+            {category && ` • ${category.name}`}
+          </Text>
+          {payment.notes && (
+            <Text style={[styles.paymentNotes, { color: colors.textMuted }]}>{payment.notes}</Text>
+          )}
+        </View>
+        <View style={styles.paymentRight}>
+          <Text style={[styles.paymentAmount, { color: colors.text }, !isActive && { color: colors.textMuted }]}>
+            {formatCurrency(parseFloat(payment.amount))}
+          </Text>
+          <Switch
+            value={isActive}
+            onValueChange={() => toggleStatus(payment)}
+            trackColor={{ false: colors.border, true: `${colors.primary}80` }}
+            thumbColor={isActive ? colors.primary : colors.textMuted}
+          />
+        </View>
+      </View>
+    );
+
+    if (swipeSettings.enabled) {
+      return (
+        <Swipeable
+          key={payment.id}
+          ref={(ref) => {
+            if (ref) {
+              swipeableRefs.current.set(payment.id, ref);
+            } else {
+              swipeableRefs.current.delete(payment.id);
+            }
+          }}
+          renderRightActions={() => renderRightActionsManage(payment)}
+          renderLeftActions={() => renderLeftActionsManage(payment)}
+          onSwipeableOpen={(direction) => {
+            // Close previously opened swipeable
+            if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== payment.id) {
+              swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+            }
+            currentOpenSwipeable.current = payment.id;
+            
+            // Trigger action based on swipe direction
+            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
+            if (action === 'edit') {
+              handleEdit(payment);
+            } else {
+              handleDelete(payment);
+            }
+          }}
+        >
+          {content}
+        </Swipeable>
+      );
+    }
+
+    return <View key={payment.id}>{content}</View>;
   };
 
   const toggleStatus = (payment: ScheduledPayment) => {
@@ -282,7 +454,16 @@ export default function ScheduledPaymentsScreen() {
   const handleMarkAsPaid = (occurrence: PaymentOccurrence) => {
     setSelectedOccurrence(occurrence);
     setPaymentDate(new Date());
-    setSelectedAccountId(accounts.length > 0 ? accounts[0].id : null);
+    
+    // If the scheduled payment has an account assigned, use that account
+    // Otherwise, use the first available account or default account
+    if (occurrence.scheduledPayment?.accountId) {
+      setSelectedAccountId(occurrence.scheduledPayment.accountId);
+    } else {
+      const defaultAccount = accounts.find(acc => acc.isDefault);
+      setSelectedAccountId(defaultAccount?.id || (accounts.length > 0 ? accounts[0].id : null));
+    }
+    
     setShowPaymentModal(true);
   };
 
@@ -491,65 +672,7 @@ export default function ScheduledPaymentsScreen() {
 
             {/* Payments List */}
             {payments && payments.length > 0 ? (
-              payments.map((payment) => {
-                const category = categories.find(c => c.id === payment.categoryId);
-                const isActive = payment.status === 'active';
-
-                return (
-                  <View
-                    key={payment.id} 
-                    style={[
-                      styles.paymentCard,
-                      { backgroundColor: colors.card },
-                      !isActive && styles.paymentCardInactive
-                    ]}
-                  >
-                    <View style={styles.paymentInfo}>
-                      <View style={styles.paymentHeader}>
-                        <Text style={[styles.paymentName, { color: colors.text }, !isActive && { color: colors.textMuted }]}>
-                          {payment.name}
-                        </Text>
-                        <View style={[styles.frequencyBadge, { backgroundColor: `${colors.primary}20` }]}>
-                          <Text style={[styles.frequencyText, { color: colors.primary }]}>
-                            {FREQUENCY_OPTIONS[payment.frequency || 'monthly'] || 'Monthly'}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.paymentDue, { color: colors.textMuted }]}>
-                        Due on {payment.dueDate}th
-                        {category && ` • ${category.name}`}
-                      </Text>
-                      {payment.notes && (
-                        <Text style={[styles.paymentNotes, { color: colors.textMuted }]}>{payment.notes}</Text>
-                      )}
-                    </View>
-                    <View style={styles.paymentRight}>
-                      <Text style={[styles.paymentAmount, { color: colors.text }, !isActive && { color: colors.textMuted }]}>
-                        {formatCurrency(parseFloat(payment.amount))}
-                      </Text>
-                      <View style={styles.paymentActions}>
-                        <Switch
-                          value={isActive}
-                          onValueChange={() => toggleStatus(payment)}
-                          trackColor={{ false: colors.border, true: `${colors.primary}80` }}
-                          thumbColor={isActive ? colors.primary : colors.textMuted}
-                        />
-                        <TouchableOpacity 
-                          onPress={() => {
-                            console.log('Delete button pressed!');
-                            handleDelete(payment);
-                          }}
-                          style={[styles.deleteButton, { backgroundColor: '#fee2e2', borderRadius: 8 }]}
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                          activeOpacity={0.6}
-                        >
-                          <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })
+              payments.map((payment) => renderPaymentCard(payment))
             ) : (
               <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
                 <Ionicons name="calendar-outline" size={48} color={colors.textMuted} />
@@ -627,34 +750,51 @@ export default function ScheduledPaymentsScreen() {
               )}
 
               <View style={styles.modalField}>
-                <Text style={[styles.modalFieldLabel, { color: colors.textMuted }]}>Pay From Account</Text>
+                <Text style={[styles.modalFieldLabel, { color: colors.textMuted }]}>
+                  Pay From Account
+                  {selectedOccurrence?.scheduledPayment?.accountId && (
+                    <Text style={{ fontSize: 12, fontStyle: 'italic' }}> (Pre-assigned)</Text>
+                  )}
+                </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={styles.accountRow}>
-                    {accounts.map((account) => (
-                      <TouchableOpacity
-                        key={account.id}
-                        style={[
-                          styles.accountChip,
-                          { backgroundColor: colors.card, borderColor: colors.border },
-                          selectedAccountId === account.id && { backgroundColor: colors.primary, borderColor: colors.primary }
-                        ]}
-                        onPress={() => setSelectedAccountId(account.id)}
-                      >
-                        <Ionicons 
-                          name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
-                          size={16} 
-                          color={selectedAccountId === account.id ? '#fff' : colors.textMuted}
-                          style={{ marginRight: 6 }}
-                        />
-                        <Text style={[
-                          styles.accountChipText,
-                          { color: colors.text },
-                          selectedAccountId === account.id && { color: '#fff' }
-                        ]}>
-                          {account.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                    {accounts.map((account) => {
+                      const isPreAssigned = selectedOccurrence?.scheduledPayment?.accountId === account.id;
+                      const isDisabled = selectedOccurrence?.scheduledPayment?.accountId && !isPreAssigned;
+                      
+                      return (
+                        <TouchableOpacity
+                          key={account.id}
+                          style={[
+                            styles.accountChip,
+                            { backgroundColor: colors.card, borderColor: colors.border },
+                            selectedAccountId === account.id && { backgroundColor: colors.primary, borderColor: colors.primary },
+                            isDisabled ? { opacity: 0.4 } : undefined
+                          ]}
+                          onPress={() => {
+                            // Only allow selection if not pre-assigned or if it's the pre-assigned account
+                            if (!isDisabled) {
+                              setSelectedAccountId(account.id);
+                            }
+                          }}
+                          disabled={!!isDisabled}
+                        >
+                          <Ionicons 
+                            name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
+                            size={16} 
+                            color={selectedAccountId === account.id ? '#fff' : colors.textMuted}
+                            style={{ marginRight: 6 }}
+                          />
+                          <Text style={[
+                            styles.accountChipText,
+                            { color: colors.text },
+                            selectedAccountId === account.id && { color: '#fff' }
+                          ]}>
+                            {account.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </ScrollView>
               </View>
@@ -668,6 +808,45 @@ export default function ScheduledPaymentsScreen() {
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.confirmButtonText}>Confirm Payment</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={[styles.deleteModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.deleteModalHeader}>
+              <Ionicons name="warning-outline" size={48} color="#ef4444" />
+            </View>
+            <Text style={[styles.deleteModalTitle, { color: colors.text }]}>Delete Payment?</Text>
+            <Text style={[styles.deleteModalMessage, { color: colors.textMuted }]}>
+              Are you sure you want to delete "{paymentToDelete?.name}"? This action cannot be undone.
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
+                onPress={cancelDelete}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton]}
+                onPress={confirmDelete}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.deleteButtonText}>Delete</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -896,9 +1075,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  deleteButton: {
+  editButton: {
     padding: 8,
     marginLeft: 4,
+  },
+  deleteButton: {
+    backgroundColor: '#ef4444',
+  },
+  swipeAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '600',
   },
   emptyCard: {
     padding: 40,
@@ -1022,6 +1216,58 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   confirmButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  deleteModalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  deleteModalHeader: {
+    marginBottom: 16,
+  },
+  deleteModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  deleteModalMessage: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',

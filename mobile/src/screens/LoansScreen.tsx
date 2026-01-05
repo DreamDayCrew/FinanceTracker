@@ -1,13 +1,15 @@
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, Animated } from 'react-native';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Toast from 'react-native-toast-message';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { api } from '../lib/api';
 import type { Loan } from '../lib/types';
 import { useTheme } from '../contexts/ThemeContext';
-import { useMemo } from 'react';
 
 interface LoanSummary {
   totalLoans: number;
@@ -20,6 +22,7 @@ type RootStackParamList = {
   Loans: undefined;
   LoanDetails: { loanId: number };
   AddLoan: undefined;
+  EditLoan: { loanId: number };
 };
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -28,6 +31,11 @@ export default function LoansScreen() {
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const queryClient = useQueryClient();
+  const swipeableRefs = useRef<{ [key: number]: Swipeable | null }>({});
+
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [loanToDelete, setLoanToDelete] = useState<Loan | null>(null);
 
   const { data: loans, isLoading } = useQuery<Loan[]>({
     queryKey: ['loans'],
@@ -40,6 +48,31 @@ export default function LoansScreen() {
       const res = await fetch(`${api.API_BASE_URL || 'http://localhost:5000'}/api/loan-summary`);
       if (!res.ok) throw new Error('Failed to fetch summary');
       return res.json();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (loanId: number) => api.deleteLoan(loanId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loans'] });
+      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      setDeleteModalVisible(false);
+      setLoanToDelete(null);
+      Toast.show({
+        type: 'success',
+        text1: 'Loan Deleted',
+        text2: 'The loan has been deleted successfully',
+        position: 'bottom',
+      });
+    },
+    onError: (error: any) => {
+      setDeleteModalVisible(false);
+      Toast.show({
+        type: 'error',
+        text1: 'Delete Failed',
+        text2: error.message || 'Could not delete loan',
+        position: 'bottom',
+      });
     },
   });
 
@@ -84,43 +117,106 @@ export default function LoansScreen() {
     }
   };
 
+  const handleDelete = (loan: Loan) => {
+    setLoanToDelete(loan);
+    setDeleteModalVisible(true);
+    // Close the swipeable
+    if (swipeableRefs.current[loan.id]) {
+      swipeableRefs.current[loan.id]?.close();
+    }
+  };
+
+  const confirmDelete = () => {
+    if (loanToDelete) {
+      deleteMutation.mutate(loanToDelete.id);
+    }
+  };
+
+  const handleEdit = (loan: Loan) => {
+    // Close the swipeable
+    if (swipeableRefs.current[loan.id]) {
+      swipeableRefs.current[loan.id]?.close();
+    }
+    navigation.navigate('EditLoan', { loanId: loan.id });
+  };
+
+  const renderRightActions = (item: Loan, progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+    const trans = dragX.interpolate({
+      inputRange: [-160, 0],
+      outputRange: [0, 160],
+      extrapolate: 'clamp',
+    });
+
+    return (
+      <Animated.View style={[styles.swipeActions, { transform: [{ translateX: trans }] }]}>
+        <TouchableOpacity
+          style={[styles.swipeAction, styles.editAction, { backgroundColor: colors.primary }]}
+          onPress={() => handleEdit(item)}
+        >
+          <Ionicons name="pencil" size={24} color="#fff" />
+          <Text style={styles.swipeActionText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.swipeAction, styles.deleteAction, { backgroundColor: colors.danger }]}
+          onPress={() => handleDelete(item)}
+        >
+          <Ionicons name="trash" size={24} color="#fff" />
+          <Text style={styles.swipeActionText}>Delete</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
   const renderLoan = ({ item }: { item: Loan }) => {
     const progress = calculateProgress(item);
     const statusColor = getStatusColor(item.status);
     
     return (
-      <TouchableOpacity
-        style={[styles.loanCard, { backgroundColor: colors.card }]}
-        onPress={() => navigation.navigate('LoanDetails', { loanId: item.id })}
-        activeOpacity={0.7}
+      <Swipeable
+        ref={(ref) => (swipeableRefs.current[item.id] = ref)}
+        renderRightActions={(progress, dragX) => renderRightActions(item, progress, dragX)}
+        overshootRight={false}
+        friction={2}
+        rightThreshold={40}
       >
-        <View style={styles.loanHeader}>
-          <View style={[styles.loanIcon, { backgroundColor: statusColor + '20' }]}>
-            <Ionicons name={getLoanIcon(item.loanType)} size={24} color={statusColor} />
-          </View>
-          <View style={styles.loanInfo}>
-            <Text style={[styles.loanName, { color: colors.text }]}>{item.name}</Text>
-            <Text style={[styles.loanType, { color: colors.textMuted }]}>{getLoanTypeLabel(item.loanType)}</Text>
-          </View>
-          <View style={styles.loanRight}>
-            <Text style={[styles.outstandingAmount, { color: colors.text }]}>
-              {formatCurrency(parseFloat(item.outstandingAmount))}
-            </Text>
-            <Text style={[styles.remainingLabel, { color: colors.textMuted }]}>remaining</Text>
-          </View>
-        </View>
+        <View style={[styles.loanCard, { backgroundColor: colors.card }]}>
+          <TouchableOpacity
+            style={styles.loanCardContent}
+            onPress={() => navigation.navigate('LoanDetails', { loanId: item.id })}
+            activeOpacity={0.7}
+          >
+            <View style={styles.loanHeader}>
+              <View style={[styles.loanIcon, { backgroundColor: statusColor + '20' }]}>
+                <Ionicons name={getLoanIcon(item.loanType)} size={24} color={statusColor} />
+              </View>
+              <View style={styles.loanInfo}>
+                <Text style={[styles.loanName, { color: colors.text }]}>{item.name}</Text>
+                <Text style={[styles.loanType, { color: colors.textMuted }]}>{getLoanTypeLabel(item.loanType)}</Text>
+              </View>
+              <View style={styles.loanRight}>
+                <View style={styles.loanAmounts}>
+                  <Text style={[styles.outstandingAmount, { color: colors.text }]}>
+                    {formatCurrency(parseFloat(item.outstandingAmount))}
+                  </Text>
+                  <Text style={[styles.remainingLabel, { color: colors.textMuted }]}>remaining</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} style={styles.chevron} />
+              </View>
+            </View>
 
-        {/* Progress Bar */}
-        <View style={[styles.progressBar, { backgroundColor: colors.background }]}>
-          <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: colors.primary }]} />
+            {/* Progress Bar */}
+            <View style={[styles.progressBar, { backgroundColor: colors.background }]}>
+              <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: colors.primary }]} />
+            </View>
+            <View style={styles.progressLabels}>
+              <Text style={[styles.progressText, { color: colors.textMuted }]}>{progress}% paid</Text>
+              <Text style={[styles.progressText, { color: colors.textMuted }]}>
+                EMI: {formatCurrency(parseFloat(item.emiAmount || '0'))}
+              </Text>
+            </View>
+          </TouchableOpacity>
         </View>
-        <View style={styles.progressLabels}>
-          <Text style={[styles.progressText, { color: colors.textMuted }]}>{progress}% paid</Text>
-          <Text style={[styles.progressText, { color: colors.textMuted }]}>
-            EMI: {formatCurrency(parseFloat(item.emiAmount || '0'))}
-          </Text>
-        </View>
-      </TouchableOpacity>
+      </Swipeable>
     );
   };
 
@@ -193,6 +289,43 @@ export default function LoansScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={deleteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <Ionicons name="warning" size={48} color={colors.danger} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Delete Loan?</Text>
+            <Text style={[styles.modalMessage, { color: colors.textMuted }]}>
+              This will permanently delete "{loanToDelete?.name}" and all its installments. This action cannot be undone.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
+                onPress={() => setDeleteModalVisible(false)}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.danger }]}
+                onPress={confirmDelete}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -289,13 +422,15 @@ const styles = StyleSheet.create({
   },
   loanCard: {
     borderRadius: 12,
-    padding: 16,
     marginBottom: 12,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+  },
+  loanCardContent: {
+    padding: 16,
   },
   loanHeader: {
     flexDirection: 'row',
@@ -323,7 +458,15 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   loanRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loanAmounts: {
     alignItems: 'flex-end',
+  },
+  chevron: {
+    marginLeft: 4,
   },
   outstandingAmount: {
     fontSize: 16,
@@ -332,6 +475,85 @@ const styles = StyleSheet.create({
   remainingLabel: {
     fontSize: 10,
     marginTop: 2,
+  },
+  swipeActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  swipeAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100%',
+    paddingHorizontal: 20,
+    minWidth: 80,
+  },
+  editAction: {
+    borderTopLeftRadius: 12,
+    borderBottomLeftRadius: 12,
+  },
+  deleteAction: {
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '85%',
+    padding: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  modalMessage: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  confirmButton: {},
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   progressBar: {
     height: 6,

@@ -15,6 +15,20 @@
       "when": 1767546055891,
       "tag": "0001_omniscient_kitty_pryde",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1767602140781,
+      "tag": "0002_tiresome_maria_hill",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1767609380854,
+      "tag": "0003_calm_banshee",
+      "breakpoints": true
     }
   ]
 }

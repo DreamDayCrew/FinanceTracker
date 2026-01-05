@@ -34,10 +34,12 @@ export const accounts = pgTable("accounts", {
   accountNumber: varchar("account_number", { length: 50 }),
   balance: decimal("balance", { precision: 12, scale: 2 }).default("0"),
   creditLimit: decimal("credit_limit", { precision: 12, scale: 2 }), // only for credit cards
+  billingDate: integer("billing_date"), // day of month (1-31) for credit card billing cycle
   linkedAccountId: integer("linked_account_id"), // for debit cards - links to bank account
   icon: varchar("icon", { length: 50 }),
   color: varchar("color", { length: 20 }),
   isActive: boolean("is_active").default(true),
+  isDefault: boolean("is_default").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -56,8 +58,10 @@ export const insertAccountSchema = createInsertSchema(accounts).omit({
   type: z.enum(["bank", "credit_card", "debit_card"]),
   balance: z.string().optional(),
   creditLimit: z.string().optional(),
+  billingDate: z.number().min(1).max(31).optional(),
   linkedAccountId: z.number().optional(),
   userId: z.number().optional(),
+  isDefault: z.boolean().optional(),
 });
 
 export type InsertAccount = z.infer<typeof insertAccountSchema>;
@@ -173,10 +177,13 @@ export const scheduledPayments = pgTable("scheduled_payments", {
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   dueDate: integer("due_date").notNull(), // day of month (1-31)
   categoryId: integer("category_id").references(() => categories.id),
+  accountId: integer("account_id").references(() => accounts.id),
   frequency: varchar("frequency", { length: 20 }).default("monthly"), // 'monthly', 'quarterly', 'half_yearly', 'yearly', 'one_time'
   startMonth: integer("start_month"), // 1-12, for quarterly/yearly payments
   status: varchar("status", { length: 20 }).default("active"), // 'active', 'inactive'
   notes: text("notes"),
+  affectTransaction: boolean("affect_transaction").default(true),
+  affectAccountBalance: boolean("affect_account_balance").default(true),
   lastNotifiedAt: timestamp("last_notified_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -185,6 +192,7 @@ export const scheduledPayments = pgTable("scheduled_payments", {
 export const scheduledPaymentsRelations = relations(scheduledPayments, ({ one }) => ({
   user: one(users, { fields: [scheduledPayments.userId], references: [users.id] }),
   category: one(categories, { fields: [scheduledPayments.categoryId], references: [categories.id] }),
+  account: one(accounts, { fields: [scheduledPayments.accountId], references: [accounts.id] }),
 }));
 
 export const insertScheduledPaymentSchema = createInsertSchema(scheduledPayments).omit({
@@ -215,6 +223,8 @@ export const paymentOccurrences = pgTable("payment_occurrences", {
   paidAt: timestamp("paid_at"),
   paidAmount: decimal("paid_amount", { precision: 12, scale: 2 }),
   notes: text("notes"),
+  affectTransaction: boolean("affect_transaction").default(true),
+  affectAccountBalance: boolean("affect_account_balance").default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -242,15 +252,21 @@ export const savingsGoals = pgTable("savings_goals", {
   targetAmount: decimal("target_amount", { precision: 12, scale: 2 }).notNull(),
   currentAmount: decimal("current_amount", { precision: 12, scale: 2 }).default("0"),
   targetDate: timestamp("target_date"),
+  accountId: integer("account_id").references(() => accounts.id), // from account
+  toAccountId: integer("to_account_id").references(() => accounts.id), // to account (optional)
   icon: varchar("icon", { length: 50 }),
   color: varchar("color", { length: 20 }),
   status: varchar("status", { length: 20 }).default("active"), // 'active', 'completed', 'paused'
+  affectTransaction: boolean("affect_transaction").default(true), // whether to create transaction history
+  affectAccountBalance: boolean("affect_account_balance").default(true), // whether to affect account balance
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const savingsGoalsRelations = relations(savingsGoals, ({ one, many }) => ({
   user: one(users, { fields: [savingsGoals.userId], references: [users.id] }),
+  account: one(accounts, { fields: [savingsGoals.accountId], references: [accounts.id] }),
+  toAccount: one(accounts, { fields: [savingsGoals.toAccountId], references: [accounts.id] }),
   contributions: many(savingsContributions),
 }));
 
@@ -262,7 +278,11 @@ export const insertSavingsGoalSchema = createInsertSchema(savingsGoals).omit({
   name: z.string().min(1, "Goal name is required"),
   targetAmount: z.string().min(1, "Target amount is required"),
   currentAmount: z.string().optional(),
+  accountId: z.number().optional(),
+  toAccountId: z.number().optional().nullable(),
   status: z.enum(["active", "completed", "paused"]).optional(),
+  affectTransaction: z.boolean().optional(),
+  affectAccountBalance: z.boolean().optional(),
 });
 
 export type InsertSavingsGoal = z.infer<typeof insertSavingsGoalSchema>;
@@ -341,12 +361,14 @@ export const salaryCycles = pgTable("salary_cycles", {
   actualPayDate: timestamp("actual_pay_date"),
   expectedAmount: decimal("expected_amount", { precision: 12, scale: 2 }),
   actualAmount: decimal("actual_amount", { precision: 12, scale: 2 }),
+  transactionId: integer("transaction_id").references(() => transactions.id, { onDelete: 'set null' }),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const salaryCyclesRelations = relations(salaryCycles, ({ one }) => ({
   salaryProfile: one(salaryProfiles, { fields: [salaryCycles.salaryProfileId], references: [salaryProfiles.id] }),
+  transaction: one(transactions, { fields: [salaryCycles.transactionId], references: [transactions.id] }),
 }));
 
 export const insertSalaryCycleSchema = createInsertSchema(salaryCycles).omit({
@@ -405,6 +427,8 @@ export const insertLoanSchema = createInsertSchema(loans).omit({
   tenure: z.number().min(1, "Tenure is required"),
   emiAmount: z.string().optional(),
   emiDay: z.number().min(1).max(31).optional(),
+  startDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)),
+  endDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
   status: z.enum(["active", "closed", "defaulted"]).optional(),
 });
 

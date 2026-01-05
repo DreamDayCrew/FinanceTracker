@@ -103,7 +103,11 @@ export const api = {
       method: 'POST', 
       body: JSON.stringify({ month, year }) 
     }),
-  updatePaymentOccurrence: (id: number, data: { status: string }) => 
+  updatePaymentOccurrence: (id: number, data: { 
+    status?: string; 
+    affectTransaction?: boolean; 
+    affectAccountBalance?: boolean;
+  }) => 
     apiRequest<any>(`/api/payment-occurrences/${id}`, { 
       method: 'PATCH', 
       body: JSON.stringify(data) 
@@ -198,6 +202,44 @@ export const api = {
     apiRequest<{ valid: boolean; message?: string }>('/api/user/verify-pin', { 
       method: 'POST', body: JSON.stringify({ pin }) 
     }),
+
+  getMonthlyExpenses: () => 
+    apiRequest<Array<{
+      month: string;
+      year: number;
+      fullMonth: string;
+      expenses: number;
+      monthIndex: number;
+    }>>('/api/expenses/monthly'),
+
+  getCategoryBreakdown: (month: number, year: number) => 
+    apiRequest<{
+      month: number;
+      year: number;
+      totalExpenses: number;
+      breakdown: Array<{
+        categoryId: number;
+        categoryName: string;
+        total: number;
+        color: string;
+        transactionCount: number;
+      }>;
+    }>(`/api/expenses/category-breakdown?month=${month}&year=${year}`),
+
+  getCreditCardSpending: () =>
+    apiRequest<Array<{
+      accountId: number;
+      accountName: string;
+      color: string | null;
+      billingDate: number;
+      cycleStart: string;
+      cycleEnd: string;
+      totalSpent: number;
+      creditLimit: number;
+      availableCredit: number;
+      usedCredit: number;
+      utilizationPercent: number;
+    }>>('/api/credit-card-spending'),
 };
 
 export { API_BASE_URL };

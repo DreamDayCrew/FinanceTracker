@@ -46,6 +46,16 @@ export default function AddTransactionScreen() {
     queryFn: api.getAccounts,
   });
 
+  // Auto-select default account for new transactions
+  React.useEffect(() => {
+    if (!isEditMode && accounts && !selectedAccountId) {
+      const defaultAccount = accounts.find(acc => acc.isDefault);
+      if (defaultAccount) {
+        setSelectedAccountId(defaultAccount.id);
+      }
+    }
+  }, [accounts, isEditMode, selectedAccountId]);
+
   const { data: transactions } = useQuery({
     queryKey: ['transactions'],
     queryFn: api.getTransactions,
@@ -74,6 +84,8 @@ export default function AddTransactionScreen() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       navigation.goBack();
       Toast.show({
         type: 'success',
@@ -99,6 +111,8 @@ export default function AddTransactionScreen() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       navigation.goBack();
       Toast.show({
         type: 'success',
@@ -130,6 +144,8 @@ export default function AddTransactionScreen() {
       if (result.success && result.transaction) {
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
         queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+        queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+        queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
         setShowSmsModal(false);
         setSmsText('');
         Alert.alert('Success', 'Transaction added from SMS!', [

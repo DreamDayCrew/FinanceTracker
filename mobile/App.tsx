@@ -1,3 +1,4 @@
+import 'react-native-gesture-handler';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -27,6 +28,7 @@ import LoansScreen from './src/screens/LoansScreen';
 import AddLoanScreen from './src/screens/AddLoanScreen';
 import LoanDetailsScreen from './src/screens/LoanDetailsScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
+import ExpenseDetailsScreen from './src/screens/ExpenseDetailsScreen';
 
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
@@ -48,7 +50,7 @@ export type MoreStackParamList = {
   AddBudget: { budgetId?: number } | undefined;
   CategoryTransactions: { categoryId: number; categoryName: string; month: number; year: number } | undefined;
   ScheduledPayments: undefined;
-  AddScheduledPayment: undefined;
+  AddScheduledPayment: { paymentId?: number } | undefined;
   SavingsGoals: undefined;
   Salary: undefined;
   Loans: undefined;
@@ -62,6 +64,7 @@ export type RootStackParamList = {
   Main: undefined;
   AddTransaction: { accountId?: number; transactionId?: number } | undefined;
   AddAccount: { accountId?: number } | undefined;
+  ExpenseDetails: undefined;
 };
 
 export type TabParamList = {
@@ -297,6 +300,11 @@ function MainApp() {
             title: route.params?.accountId ? 'Edit Account' : 'Add Account', 
             presentation: 'modal' 
           })}
+        />
+        <RootStack.Screen 
+          name="ExpenseDetails" 
+          component={ExpenseDetailsScreen}
+          options={{ headerShown: false }}
         />
       </RootStack.Navigator>
     </NavigationContainer>

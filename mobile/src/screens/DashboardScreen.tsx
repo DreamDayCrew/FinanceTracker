@@ -1,9 +1,10 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, Dimensions } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, CompositeNavigationProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { LineChart } from 'react-native-chart-kit';
 import { api } from '../lib/api';
 import { formatCurrency, formatDate, getThemedColors, getOrdinalSuffix } from '../lib/utils';
 import { RootStackParamList, TabParamList } from '../../App';
@@ -28,11 +29,25 @@ export default function DashboardScreen() {
     queryFn: api.getDashboard,
   });
 
+  const { data: monthlyExpenses, isLoading: isLoadingExpenses } = useQuery({
+    queryKey: ['monthlyExpenses'],
+    queryFn: api.getMonthlyExpenses,
+  });
+
+  const { data: creditCardSpending } = useQuery({
+    queryKey: ['creditCardSpending'],
+    queryFn: api.getCreditCardSpending,
+  });
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refetch();
+    await Promise.all([
+      refetch(), 
+      queryClient.refetchQueries({ queryKey: ['monthlyExpenses'] }),
+      queryClient.refetchQueries({ queryKey: ['creditCardSpending'] })
+    ]);
     setRefreshing(false);
-  }, [refetch]);
+  }, [refetch, queryClient]);
 
   if (isLoading && !data) {
     return (
@@ -75,6 +90,96 @@ export default function DashboardScreen() {
             <Text style={[styles.summaryValue, { color: colors.text }]}>{formatCurrency(data?.totalSpentMonth || 0)}</Text>
           </View>
         </View>
+
+        {monthlyExpenses && monthlyExpenses.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Expense Trend</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('ExpenseDetails')}>
+                <Text style={[styles.viewAll, { color: colors.primary }]}>View Details</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
+              <LineChart
+                data={{
+                  labels: monthlyExpenses.map(m => m.month),
+                  datasets: [{
+                    data: monthlyExpenses.map(m => m.expenses || 0),
+                  }]
+                }}
+                width={Dimensions.get('window').width - 64}
+                height={220}
+                chartConfig={{
+                  backgroundColor: colors.card,
+                  backgroundGradientFrom: colors.card,
+                  backgroundGradientTo: colors.card,
+                  decimalPlaces: 0,
+                  color: (opacity = 1) => `rgba(244, 67, 54, ${opacity})`,
+                  labelColor: (opacity = 1) => resolvedTheme === 'dark' 
+                    ? `rgba(255, 255, 255, ${opacity * 0.6})` 
+                    : `rgba(0, 0, 0, ${opacity * 0.6})`,
+                  style: {
+                    borderRadius: 12,
+                  },
+                  propsForDots: {
+                    r: '5',
+                    strokeWidth: '2',
+                    stroke: '#F44336'
+                  }
+                }}
+                bezier
+                style={{
+                  marginVertical: 8,
+                  borderRadius: 12,
+                }}
+              />
+            </View>
+          </View>
+        )}
+
+        {creditCardSpending && creditCardSpending.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Credit Card Spending</Text>
+            {creditCardSpending.map((card) => (
+              <View key={card.accountId} style={[styles.creditCardItem, { backgroundColor: colors.card }]}>
+                <View style={styles.creditCardHeader}>
+                  <View style={styles.creditCardInfo}>
+                    <View style={[styles.cardDot, { backgroundColor: card.color || colors.primary }]} />
+                    <View>
+                      <Text style={[styles.creditCardName, { color: colors.text }]}>{card.accountName}</Text>
+                      <Text style={[styles.creditCardCycle, { color: colors.textMuted }]}>
+                        Billing Date: {card.billingDate}{getOrdinalSuffix(card.billingDate)} of month
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.creditCardAmounts}>
+                    <Text style={[styles.creditCardSpent, { color: '#f44336' }]}>
+                      {formatCurrency(card.totalSpent)}
+                    </Text>
+                    <Text style={[styles.creditCardLimit, { color: colors.textMuted }]}>
+                      of {formatCurrency(card.creditLimit)}
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+                  <View 
+                    style={[
+                      styles.progressFill, 
+                      { 
+                        width: `${Math.min(card.utilizationPercent, 100)}%`,
+                        backgroundColor: card.utilizationPercent >= 90 ? '#f44336' : 
+                          card.utilizationPercent >= 70 ? '#ff9800' : '#4CAF50'
+                      }
+                    ]} 
+                  />
+                </View>
+                <Text style={[styles.utilizationText, { color: colors.textMuted }]}>
+                  {card.utilizationPercent.toFixed(1)}% utilized
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Budget Tracking</Text>
@@ -320,5 +425,56 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 13,
     marginTop: 4,
+  },
+  chartCard: {
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  creditCardItem: {
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  creditCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  creditCardInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  cardDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 12,
+  },
+  creditCardName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  creditCardCycle: {
+    fontSize: 12,
+  },
+  creditCardAmounts: {
+    alignItems: 'flex-end',
+  },
+  creditCardSpent: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  creditCardLimit: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  utilizationText: {
+    fontSize: 12,
+    marginTop: 6,
+    textAlign: 'right',
   },
 });

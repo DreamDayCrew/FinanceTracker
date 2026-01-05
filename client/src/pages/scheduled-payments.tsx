@@ -213,7 +213,7 @@ export default function ScheduledPayments() {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-lg font-semibold">My Monthly Payment Checklist</h1>
+            <h1 className="text-lg font-semibold">s</h1>
             <p className="text-xs text-muted-foreground">{activePayments.length} active payments</p>
           </div>
         </div>

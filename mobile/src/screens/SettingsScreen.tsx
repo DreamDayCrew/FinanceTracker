@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, Alert, TextInput, Modal } from 'react-native';
+import { useState, useMemo, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Switch, Alert, TextInput, Modal, ScrollView } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../lib/api';
 import { getThemedColors } from '../lib/utils';
 import { useTheme } from '../contexts/ThemeContext';
@@ -15,10 +16,70 @@ export default function SettingsScreen() {
   const { checkPinRequired } = useAuth();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
 
+  // Swipe gesture settings
+  const [swipeEnabled, setSwipeEnabled] = useState(false);
+  const [leftSwipeAction, setLeftSwipeAction] = useState<'edit' | 'delete'>('delete');
+  const [rightSwipeAction, setRightSwipeAction] = useState<'edit' | 'delete'>('edit');
+
   const { data: user } = useQuery({
     queryKey: ['user'],
     queryFn: api.getUser,
   });
+
+  // Load swipe settings from AsyncStorage
+  useEffect(() => {
+    const loadSwipeSettings = async () => {
+      try {
+        const enabled = await AsyncStorage.getItem('swipeEnabled');
+        const leftAction = await AsyncStorage.getItem('leftSwipeAction');
+        const rightAction = await AsyncStorage.getItem('rightSwipeAction');
+        
+        if (enabled !== null) setSwipeEnabled(enabled === 'true');
+        if (leftAction) setLeftSwipeAction(leftAction as 'edit' | 'delete');
+        if (rightAction) setRightSwipeAction(rightAction as 'edit' | 'delete');
+      } catch (error) {
+        console.error('Error loading swipe settings:', error);
+      }
+    };
+    loadSwipeSettings();
+  }, []);
+
+  // Save swipe settings to AsyncStorage
+  const saveSwipeSettings = async (key: string, value: string) => {
+    try {
+      await AsyncStorage.setItem(key, value);
+    } catch (error) {
+      console.error('Error saving swipe settings:', error);
+    }
+  };
+
+  const toggleSwipeEnabled = () => {
+    const newValue = !swipeEnabled;
+    setSwipeEnabled(newValue);
+    saveSwipeSettings('swipeEnabled', newValue.toString());
+  };
+
+  const handleLeftSwipeChange = (action: 'edit' | 'delete') => {
+    // Ensure both swipes don't have the same action
+    if (action === rightSwipeAction) {
+      // Swap actions
+      setRightSwipeAction(leftSwipeAction);
+      saveSwipeSettings('rightSwipeAction', leftSwipeAction);
+    }
+    setLeftSwipeAction(action);
+    saveSwipeSettings('leftSwipeAction', action);
+  };
+
+  const handleRightSwipeChange = (action: 'edit' | 'delete') => {
+    // Ensure both swipes don't have the same action
+    if (action === leftSwipeAction) {
+      // Swap actions
+      setLeftSwipeAction(rightSwipeAction);
+      saveSwipeSettings('leftSwipeAction', rightSwipeAction);
+    }
+    setRightSwipeAction(action);
+    saveSwipeSettings('rightSwipeAction', action);
+  };
 
   const updateUserMutation = useMutation({
     mutationFn: api.updateUser,
@@ -94,7 +155,7 @@ export default function SettingsScreen() {
   const isSystemTheme = theme === 'system';
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
       <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Appearance</Text>
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <View style={[styles.settingRow, { borderBottomColor: colors.border }]}>
@@ -130,6 +191,129 @@ export default function SettingsScreen() {
             <Ionicons name="ellipse-outline" size={22} color={colors.textMuted} />
           )}
         </TouchableOpacity>
+      </View>
+
+      <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Swipe Gestures</Text>
+      <View style={[styles.section, { backgroundColor: colors.card }]}>
+        <View style={[styles.settingRow, { borderBottomColor: colors.border }]}>
+          <View style={styles.settingInfo}>
+            <Ionicons name="swap-horizontal-outline" size={22} color={colors.text} />
+            <View>
+              <Text style={[styles.settingTitle, { color: colors.text }]}>Enable Swipe Actions</Text>
+              <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Swipe items for quick actions</Text>
+            </View>
+          </View>
+          <Switch
+            value={swipeEnabled}
+            onValueChange={toggleSwipeEnabled}
+            trackColor={{ false: colors.border, true: `${colors.primary}80` }}
+            thumbColor={swipeEnabled ? colors.primary : colors.textMuted}
+          />
+        </View>
+
+        {swipeEnabled && (
+          <>
+            <View style={[styles.settingRow, { borderBottomColor: colors.border }]}>
+              <View style={styles.settingInfo}>
+                <Ionicons name="arrow-forward-outline" size={22} color={colors.text} />
+                <View>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>Right Swipe</Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Swipe from left to right</Text>
+                </View>
+              </View>
+              <View style={styles.actionSelector}>
+                <TouchableOpacity
+                  style={[
+                    styles.actionOption,
+                    { backgroundColor: colors.background, borderColor: colors.border },
+                    rightSwipeAction === 'edit' && { backgroundColor: colors.primary, borderColor: colors.primary }
+                  ]}
+                  onPress={() => handleRightSwipeChange('edit')}
+                >
+                  <Ionicons 
+                    name="pencil" 
+                    size={16} 
+                    color={rightSwipeAction === 'edit' ? '#fff' : colors.text} 
+                  />
+                  <Text style={[
+                    styles.actionOptionText,
+                    { color: colors.text },
+                    rightSwipeAction === 'edit' && { color: '#fff' }
+                  ]}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.actionOption,
+                    { backgroundColor: colors.background, borderColor: colors.border },
+                    rightSwipeAction === 'delete' && { backgroundColor: '#ef4444', borderColor: '#ef4444' }
+                  ]}
+                  onPress={() => handleRightSwipeChange('delete')}
+                >
+                  <Ionicons 
+                    name="trash-outline" 
+                    size={16} 
+                    color={rightSwipeAction === 'delete' ? '#fff' : colors.text} 
+                  />
+                  <Text style={[
+                    styles.actionOptionText,
+                    { color: colors.text },
+                    rightSwipeAction === 'delete' && { color: '#fff' }
+                  ]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.settingRowLast}>
+              <View style={styles.settingInfo}>
+                <Ionicons name="arrow-back-outline" size={22} color={colors.text} />
+                <View>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>Left Swipe</Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Swipe from right to left</Text>
+                </View>
+              </View>
+              <View style={styles.actionSelector}>
+                <TouchableOpacity
+                  style={[
+                    styles.actionOption,
+                    { backgroundColor: colors.background, borderColor: colors.border },
+                    leftSwipeAction === 'edit' && { backgroundColor: colors.primary, borderColor: colors.primary }
+                  ]}
+                  onPress={() => handleLeftSwipeChange('edit')}
+                >
+                  <Ionicons 
+                    name="pencil" 
+                    size={16} 
+                    color={leftSwipeAction === 'edit' ? '#fff' : colors.text} 
+                  />
+                  <Text style={[
+                    styles.actionOptionText,
+                    { color: colors.text },
+                    leftSwipeAction === 'edit' && { color: '#fff' }
+                  ]}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.actionOption,
+                    { backgroundColor: colors.background, borderColor: colors.border },
+                    leftSwipeAction === 'delete' && { backgroundColor: '#ef4444', borderColor: '#ef4444' }
+                  ]}
+                  onPress={() => handleLeftSwipeChange('delete')}
+                >
+                  <Ionicons 
+                    name="trash-outline" 
+                    size={16} 
+                    color={leftSwipeAction === 'delete' ? '#fff' : colors.text} 
+                  />
+                  <Text style={[
+                    styles.actionOptionText,
+                    { color: colors.text },
+                    leftSwipeAction === 'delete' && { color: '#fff' }
+                  ]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
       </View>
 
       <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Security</Text>
@@ -220,7 +404,9 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+
+      <View style={{ height: 40 }} />
+    </ScrollView>
   );
 }
 
@@ -283,6 +469,23 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     fontSize: 14,
+    fontWeight: '500',
+  },
+  actionSelector: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  actionOptionText: {
+    fontSize: 13,
     fontWeight: '500',
   },
   modalOverlay: {

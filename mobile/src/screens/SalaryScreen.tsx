@@ -20,6 +20,7 @@ interface Account {
   name: string;
   type: string;
   balance: string;
+  isDefault?: boolean;
 }
 
 interface Payday {
@@ -36,6 +37,7 @@ interface SalaryCycle {
   actualPayDate: string | null;
   expectedAmount: string | null;
   actualAmount: string | null;
+  transactionId: number | null;
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -50,9 +52,12 @@ export default function SalaryScreen() {
   const [monthlyAmount, setMonthlyAmount] = useState('');
   const [accountId, setAccountId] = useState<number | null>(null);
   const [showSalary, setShowSalary] = useState(false);
+  const [showPastSalary, setShowPastSalary] = useState(false);
   const [editingCycle, setEditingCycle] = useState<SalaryCycle | null>(null);
   const [editActualDate, setEditActualDate] = useState('');
   const [editActualAmount, setEditActualAmount] = useState('');
+  const [markAsCredited, setMarkAsCredited] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const { data: profile, isLoading } = useQuery<SalaryProfile | null>({
     queryKey: ['salary-profile'],
@@ -66,7 +71,7 @@ export default function SalaryScreen() {
   const { data: nextPaydays = [] } = useQuery<Payday[]>({
     queryKey: ['salary-profile-paydays'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE_URL}/api/salary-profile/next-paydays`);
+      const res = await fetch(`${API_BASE_URL}/api/salary-profile/next-paydays?count=3`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -82,6 +87,16 @@ export default function SalaryScreen() {
     },
   });
 
+  // Auto-select default account
+  useMemo(() => {
+    if (!accountId && accounts.length > 0) {
+      const defaultAccount = accounts.find(acc => acc.isDefault);
+      if (defaultAccount) {
+        setAccountId(defaultAccount.id);
+      }
+    }
+  }, [accounts]);
+
   const { data: salaryCycles = [] } = useQuery<SalaryCycle[]>({
     queryKey: ['salary-cycles'],
     queryFn: async () => {
@@ -92,22 +107,25 @@ export default function SalaryScreen() {
   });
 
   const updateCycleMutation = useMutation({
-    mutationFn: async ({ id, actualPayDate, actualAmount }: { id: number; actualPayDate: string; actualAmount: string }) => {
+    mutationFn: async ({ id, actualPayDate, actualAmount, markAsCredited }: { id: number; actualPayDate: string; actualAmount: string; markAsCredited: boolean }) => {
       const res = await fetch(`${API_BASE_URL}/api/salary-cycles/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actualPayDate, actualAmount }),
+        body: JSON.stringify({ actualPayDate, actualAmount, markAsCredited }),
       });
       if (!res.ok) throw new Error('Failed to update');
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['salary-cycles'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       setEditingCycle(null);
       Toast.show({
         type: 'success',
         text1: 'Updated',
-        text2: 'Salary date updated successfully',
+        text2: 'Salary information updated successfully',
         position: 'bottom',
       });
     },
@@ -117,6 +135,8 @@ export default function SalaryScreen() {
     setEditingCycle(cycle);
     setEditActualDate(cycle.actualPayDate || cycle.expectedPayDate);
     setEditActualAmount(cycle.actualAmount || cycle.expectedAmount || '');
+    setMarkAsCredited(!!cycle.transactionId);
+    setShowDatePicker(false);
   };
 
   const handleSaveCycle = () => {
@@ -125,6 +145,7 @@ export default function SalaryScreen() {
         id: editingCycle.id,
         actualPayDate: editActualDate,
         actualAmount: editActualAmount,
+        markAsCredited: markAsCredited,
       });
     }
   };
@@ -168,6 +189,7 @@ export default function SalaryScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['salary-profile'] });
       queryClient.invalidateQueries({ queryKey: ['salary-profile-paydays'] });
+      queryClient.invalidateQueries({ queryKey: ['salary-cycles'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       Toast.show({
         type: 'success',
@@ -353,43 +375,59 @@ export default function SalaryScreen() {
           <View style={styles.cardHeader}>
             <Ionicons name="checkmark-circle" size={20} color={colors.text} />
             <Text style={[styles.cardTitle, { color: colors.text }]}>Past Paydays</Text>
+            <TouchableOpacity
+              onPress={() => setShowPastSalary(!showPastSalary)}
+              style={styles.headerButton}
+            >
+              <Ionicons name={showPastSalary ? 'eye-off' : 'eye'} size={20} color={colors.primary} />
+            </TouchableOpacity>
           </View>
           
           <View style={styles.paydayList}>
-            {salaryCycles.map((cycle) => (
-              <View 
-                key={cycle.id}
-                style={[
-                  styles.paydayItem,
-                  { 
-                    backgroundColor: colors.background,
-                    borderColor: colors.border,
-                  }
-                ]}
-              >
-                <View style={styles.paydayContent}>
-                  <View style={[styles.monthBadge, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.monthText, { color: colors.text }]}>
-                      {MONTH_NAMES[cycle.month - 1]}
-                    </Text>
-                  </View>
-                  <View style={styles.paydayInfo}>
-                    <Text style={[styles.paydayDate, { color: colors.text }]}>
-                      {cycle.actualPayDate ? new Date(cycle.actualPayDate).toLocaleDateString('en-IN') : 'Not paid yet'}
-                    </Text>
-                    <Text style={[styles.paydayLabel, { color: colors.textMuted }]}>
-                      {MONTH_NAMES[cycle.month - 1]} {cycle.year}
-                    </Text>
-                  </View>
-                </View>
+            {salaryCycles.map((cycle) => {
+              const amount = cycle.actualAmount || cycle.expectedAmount;
+              return (
                 <TouchableOpacity
+                  key={cycle.id}
+                  style={[
+                    styles.paydayItem,
+                    { 
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                    }
+                  ]}
                   onPress={() => handleEditCycle(cycle)}
-                  style={styles.editButton}
+                  activeOpacity={0.7}
                 >
-                  <Ionicons name="pencil" size={18} color={colors.primary} />
+                  <View style={styles.paydayContent}>
+                    <View style={[styles.monthBadge, { backgroundColor: colors.card }]}>
+                      <Text style={[styles.monthText, { color: colors.text }]}>
+                        {MONTH_NAMES[cycle.month - 1]}
+                      </Text>
+                    </View>
+                    <View style={styles.paydayInfo}>
+                      <Text style={[styles.paydayDate, { color: colors.text }]}>
+                        {cycle.actualPayDate ? new Date(cycle.actualPayDate).toLocaleDateString('en-IN') : 'Not paid yet'}
+                      </Text>
+                      {amount && (
+                        <Text style={[styles.paydayAmount, { color: colors.primary }]}>
+                          {showPastSalary ? formatCurrency(parseFloat(amount)) : '₹ *****'}
+                        </Text>
+                      )}
+                      <Text style={[styles.paydayLabel, { color: colors.textMuted }]}>
+                        {MONTH_NAMES[cycle.month - 1]} {cycle.year}
+                      </Text>
+                    </View>
+                  </View>
+                  {cycle.transactionId && (
+                    <View style={[styles.creditedBadge, { backgroundColor: colors.primary + '20' }]}>
+                      <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
+                    </View>
+                  )}
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                 </TouchableOpacity>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </View>
       )}
@@ -461,18 +499,20 @@ export default function SalaryScreen() {
             <View style={styles.modalContent}>
               <View style={styles.field}>
                 <Text style={[styles.label, { color: colors.textMuted }]}>Actual Pay Date</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.textMuted}
-                  value={editActualDate ? new Date(editActualDate).toISOString().split('T')[0] : ''}
-                  onChangeText={(text) => {
-                    const date = new Date(text);
-                    if (!isNaN(date.getTime())) {
-                      setEditActualDate(date.toISOString());
-                    }
-                  }}
-                />
+                <TouchableOpacity
+                  style={[styles.datePickerButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Ionicons name="calendar-outline" size={20} color={colors.text} />
+                  <Text style={[styles.datePickerText, { color: colors.text }]}>
+                    {editActualDate ? new Date(editActualDate).toLocaleDateString('en-IN', { 
+                      weekday: 'short',
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    }) : 'Select Date'}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               <View style={styles.field}>
@@ -486,6 +526,42 @@ export default function SalaryScreen() {
                   onChangeText={setEditActualAmount}
                 />
               </View>
+
+              {/* Credit Account Info */}
+              {profile && profile.accountId && (
+                <View style={[styles.infoBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                  <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
+                  <Text style={[styles.infoText, { color: colors.text }]}>
+                    Will be credited to: {accounts.find(a => a.id === profile.accountId)?.name || 'Salary Account'}
+                  </Text>
+                </View>
+              )}
+
+              {/* Mark as Credited Checkbox */}
+              <TouchableOpacity
+                style={styles.checkboxContainer}
+                onPress={() => setMarkAsCredited(!markAsCredited)}
+                activeOpacity={0.7}
+              >
+                <View style={[
+                  styles.checkbox,
+                  { borderColor: colors.border },
+                  markAsCredited && { backgroundColor: colors.primary, borderColor: colors.primary }
+                ]}>
+                  {markAsCredited && (
+                    <Ionicons name="checkmark" size={16} color="#fff" />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.checkboxLabel, { color: colors.text }]}>Mark as Credited</Text>
+                  <Text style={[styles.checkboxHint, { color: colors.textMuted }]}>
+                    {markAsCredited 
+                      ? `₹${editActualAmount} will be added to your account` 
+                      : 'Check this to automatically create a transaction and update your account balance'
+                    }
+                  </Text>
+                </View>
+              </TouchableOpacity>
 
               <View style={styles.modalActions}>
                 <TouchableOpacity
@@ -506,6 +582,66 @@ export default function SalaryScreen() {
                   )}
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Date Picker Modal */}
+      {showDatePicker && editingCycle && (
+        <View style={styles.modalOverlay}>
+          <View style={[styles.datePickerModal, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Select Date</Text>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.datePickerContent}>
+              <ScrollView style={styles.datePickerScroll}>
+                {/* Generate date options for the month */}
+                {(() => {
+                  const year = editingCycle.year;
+                  const month = editingCycle.month;
+                  const daysInMonth = new Date(year, month, 0).getDate();
+                  const dates = [];
+                  
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    const date = new Date(year, month - 1, day);
+                    const isSelected = editActualDate && 
+                      new Date(editActualDate).toDateString() === date.toDateString();
+                    
+                    dates.push(
+                      <TouchableOpacity
+                        key={day}
+                        style={[
+                          styles.dateOption,
+                          { backgroundColor: colors.background, borderColor: colors.border },
+                          isSelected ? { backgroundColor: colors.primary + '20', borderColor: colors.primary } : undefined
+                        ]}
+                        onPress={() => {
+                          setEditActualDate(date.toISOString());
+                          setShowDatePicker(false);
+                        }}
+                      >
+                        <Text style={[
+                          styles.dateOptionText,
+                          { color: colors.text },
+                          isSelected ? { color: colors.primary, fontWeight: '600' } : undefined
+                        ]}>
+                          {date.toLocaleDateString('en-IN', { 
+                            weekday: 'short',
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric'
+                          })}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                  return dates;
+                })()}
+              </ScrollView>
             </View>
           </View>
         </View>
@@ -683,6 +819,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginBottom: 2,
   },
+  paydayAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
   paydayLabel: {
     fontSize: 12,
   },
@@ -692,6 +833,88 @@ const styles = StyleSheet.create({
   },
   editButton: {
     padding: 8,
+  },
+  headerButton: {
+    marginLeft: 'auto',
+    padding: 4,
+  },
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+  },
+  datePickerText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  datePickerModal: {
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '70%',
+    borderRadius: 12,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  datePickerContent: {
+    maxHeight: 400,
+  },
+  datePickerScroll: {
+    padding: 16,
+  },
+  dateOption: {
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  dateOptionText: {
+    fontSize: 15,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 12,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  checkboxHint: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  infoText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  creditedBadge: {
+    padding: 4,
+    borderRadius: 12,
   },
   modalOverlay: {
     position: 'absolute',

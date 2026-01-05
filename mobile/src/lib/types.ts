@@ -7,9 +7,11 @@ export interface Account {
   accountNumber: string | null;
   balance: string;
   creditLimit: string | null;
+  billingDate: number | null;
   icon: string | null;
   color: string | null;
   isActive: boolean;
+  isDefault: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -61,14 +63,18 @@ export interface ScheduledPayment {
   amount: string;
   dueDate: number;
   categoryId: number | null;
+  accountId: number | null;
   frequency?: string | null;
   startMonth?: number | null;
   status: 'active' | 'inactive';
   notes: string | null;
+  affectTransaction: boolean;
+  affectAccountBalance: boolean;
   lastNotifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
   category?: Category | null;
+  account?: Account | null;
 }
 
 export interface User {
@@ -145,6 +151,8 @@ export interface PaymentOccurrence {
   paidAt: string | null;
   paidAmount: string | null;
   notes: string | null;
+  affectTransaction: boolean;
+  affectAccountBalance: boolean;
   createdAt: string;
   scheduledPayment?: ScheduledPayment;
 }
@@ -156,9 +164,13 @@ export interface SavingsGoal {
   targetAmount: string;
   currentAmount: string;
   targetDate: string | null;
+  accountId: number | null;
+  toAccountId: number | null;
   icon: string | null;
   color: string | null;
   status: 'active' | 'completed' | 'cancelled';
+  affectTransaction: boolean;
+  affectAccountBalance: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -202,11 +214,13 @@ export interface Loan {
   id: number;
   userId: number | null;
   name: string;
-  loanType: 'home_loan' | 'personal_loan' | 'credit_card_loan' | 'item_emi';
+  type: 'home_loan' | 'personal_loan' | 'credit_card_loan' | 'item_emi';
+  loanType?: 'home_loan' | 'personal_loan' | 'credit_card_loan' | 'item_emi'; // alias for compatibility
   principalAmount: string;
   outstandingAmount: string;
   interestRate: string;
-  tenureMonths: number;
+  tenure?: number; // backend field name
+  tenureMonths?: number; // frontend alias
   emiAmount: string;
   emiDay: number | null;
   startDate: string;

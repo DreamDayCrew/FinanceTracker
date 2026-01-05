@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Modal, Switch, Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -6,11 +6,13 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Toast from 'react-native-toast-message';
+import { Swipeable } from 'react-native-gesture-handler';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { api } from '../lib/api';
 import type { SavingsGoal, Category } from '../lib/types';
 import { useTheme } from '../contexts/ThemeContext';
 import { MoreStackParamList } from '../../App';
+import { useSwipeSettings } from '../hooks/useSwipeSettings';
 
 type NavigationProp = NativeStackNavigationProp<MoreStackParamList>;
 
@@ -22,22 +24,32 @@ export default function SavingsGoalsScreen() {
   const queryClient = useQueryClient();
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+  const swipeSettings = useSwipeSettings();
+  const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
+  const currentOpenSwipeable = useRef<number | null>(null);
 
   const [activeTab, setActiveTab] = useState<'progress' | 'manage'>('progress');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isContributeModalOpen, setIsContributeModalOpen] = useState(false);
   const [isContributionsModalOpen, setIsContributionsModalOpen] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<SavingsGoal | null>(null);
+  const [goalToEdit, setGoalToEdit] = useState<SavingsGoal | null>(null);
   const [newGoal, setNewGoal] = useState({ 
     name: '', 
     targetAmount: '', 
     icon: 'flag', 
-    color: '#4CAF50' 
+    color: '#4CAF50',
+    accountId: null as number | null,
+    toAccountId: null as number | null,
+    affectTransaction: true,
+    affectAccountBalance: true
   });
   const [contributionAmount, setContributionAmount] = useState('');
-  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [contributionDate, setContributionDate] = useState(new Date());
   const [showContributionDatePicker, setShowContributionDatePicker] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [goalToDelete, setGoalToDelete] = useState<SavingsGoal | null>(null);
 
   const { data: goals, isLoading, refetch: refetchGoals } = useQuery<SavingsGoal[]>({
     queryKey: ['savings-goals'],
@@ -64,17 +76,22 @@ export default function SavingsGoalsScreen() {
   useFocusEffect(
     useCallback(() => {
       refetchGoals();
+      return () => {
+        // Close all swipeables when leaving screen
+        swipeableRefs.current.forEach(ref => ref?.close());
+        currentOpenSwipeable.current = null;
+      };
     }, [refetchGoals])
   );
 
   const createGoalMutation = useMutation({
-    mutationFn: (data: { name: string; targetAmount: string; icon: string; color: string }) =>
+    mutationFn: (data: { name: string; targetAmount: string; icon: string; color: string; accountId?: number | null; toAccountId?: number | null; affectTransaction: boolean; affectAccountBalance: boolean }) =>
       api.createSavingsGoal(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       setIsAddModalOpen(false);
-      setNewGoal({ name: '', targetAmount: '', icon: 'flag', color: '#4CAF50' });
+      setNewGoal({ name: '', targetAmount: '', icon: 'flag', color: '#4CAF50', accountId: null, toAccountId: null, affectTransaction: true, affectAccountBalance: true });
       Toast.show({
         type: 'success',
         text1: 'Goal Created',
@@ -92,17 +109,43 @@ export default function SavingsGoalsScreen() {
     },
   });
 
+  const updateGoalMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<{ name: string; targetAmount: string; icon: string; color: string; accountId?: number | null; toAccountId?: number | null }> }) =>
+      api.updateSavingsGoal(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      setIsEditModalOpen(false);
+      setGoalToEdit(null);
+      Toast.show({
+        type: 'success',
+        text1: 'Goal Updated',
+        text2: 'Your savings goal has been updated',
+        position: 'bottom',
+      });
+    },
+    onError: (error) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Update Failed',
+        text2: 'Could not update goal. Please try again.',
+        position: 'bottom',
+      });
+    },
+  });
+
   const addContributionMutation = useMutation({
-    mutationFn: ({ goalId, amount, accountId, contributedAt }: { goalId: number; amount: string; accountId?: number; contributedAt?: string }) =>
-      api.addContribution(goalId, { amount, accountId, contributedAt }),
+    mutationFn: ({ goalId, amount, contributedAt }: { goalId: number; amount: string; contributedAt?: string }) =>
+      api.addContribution(goalId, { amount, contributedAt }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       setIsContributeModalOpen(false);
       setContributionAmount('');
-      setSelectedAccountId(null);
       setSelectedGoal(null);
       setContributionDate(new Date());
       Toast.show({
@@ -143,6 +186,8 @@ export default function SavingsGoalsScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       refetchGoals();
       Toast.show({
         type: 'success',
@@ -169,6 +214,8 @@ export default function SavingsGoalsScreen() {
       queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
       queryClient.invalidateQueries({ queryKey: ['contributions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       refetchGoals();
       refetchContributions();
       Toast.show({
@@ -189,7 +236,31 @@ export default function SavingsGoalsScreen() {
   });
 
   const handleDelete = (goal: SavingsGoal) => {
-    deleteMutation.mutate(goal.id);
+    setGoalToDelete(goal);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = () => {
+    if (goalToDelete) {
+      // Close the swipeable before deleting
+      if (currentOpenSwipeable.current !== null) {
+        swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+        currentOpenSwipeable.current = null;
+      }
+      deleteMutation.mutate(goalToDelete.id);
+      setShowDeleteModal(false);
+      setGoalToDelete(null);
+    }
+  };
+
+  const cancelDelete = () => {
+    // Close the swipeable when canceling
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
+    }
+    setShowDeleteModal(false);
+    setGoalToDelete(null);
   };
 
   const toggleStatus = (goal: SavingsGoal) => {
@@ -204,6 +275,42 @@ export default function SavingsGoalsScreen() {
     const currentNum = parseFloat(current || '0');
     const targetNum = parseFloat(target);
     return Math.min((currentNum / targetNum) * 100, 100);
+  };
+
+  const handleEdit = (goal: SavingsGoal) => {
+    // Close the swipeable before opening modal
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
+    }
+    setGoalToEdit(goal);
+    setIsEditModalOpen(true);
+  };
+
+  const renderRightActions = (goal: SavingsGoal) => {
+    const action = swipeSettings.rightAction;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => action === 'edit' ? handleEdit(goal) : handleDelete(goal)}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderLeftActions = (goal: SavingsGoal) => {
+    const action = swipeSettings.leftAction;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => action === 'edit' ? handleEdit(goal) : handleDelete(goal)}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
   };
 
   const activeGoals = goals?.filter(g => g.status === 'active') || [];
@@ -400,9 +507,8 @@ export default function SavingsGoalsScreen() {
                 const isActive = goal.status === 'active';
                 const progress = calculateProgress(goal.currentAmount, goal.targetAmount);
 
-                return (
+                const content = (
                   <View
-                    key={goal.id} 
                     style={[
                       styles.manageCard,
                       { backgroundColor: colors.card },
@@ -435,24 +541,52 @@ export default function SavingsGoalsScreen() {
                             {goal.status}
                           </Text>
                         </View>
-                        <View style={styles.actionButtons}>
-                          <Switch
-                            value={isActive}
-                            onValueChange={() => toggleStatus(goal)}
-                            trackColor={{ false: colors.border, true: `${colors.primary}80` }}
-                            thumbColor={isActive ? colors.primary : colors.textMuted}
-                          />
-                          <TouchableOpacity 
-                            onPress={() => handleDelete(goal)}
-                            style={[styles.deleteButton, { backgroundColor: '#fee2e2' }]}
-                          >
-                            <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                          </TouchableOpacity>
-                        </View>
+                        <Switch
+                          value={isActive}
+                          onValueChange={() => toggleStatus(goal)}
+                          trackColor={{ false: colors.border, true: `${colors.primary}80` }}
+                          thumbColor={isActive ? colors.primary : colors.textMuted}
+                        />
                       </View>
                     </View>
                   </View>
                 );
+
+                if (swipeSettings.enabled) {
+                  return (
+                    <Swipeable
+                      key={goal.id}
+                      ref={(ref) => {
+                        if (ref) {
+                          swipeableRefs.current.set(goal.id, ref);
+                        } else {
+                          swipeableRefs.current.delete(goal.id);
+                        }
+                      }}
+                      renderRightActions={() => renderRightActions(goal)}
+                      renderLeftActions={() => renderLeftActions(goal)}
+                      onSwipeableOpen={(direction) => {
+                        // Close previously opened swipeable
+                        if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== goal.id) {
+                          swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+                        }
+                        currentOpenSwipeable.current = goal.id;
+                        
+                        // Trigger action based on swipe direction
+                        const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
+                        if (action === 'edit') {
+                          handleEdit(goal);
+                        } else {
+                          handleDelete(goal);
+                        }
+                      }}
+                    >
+                      {content}
+                    </Swipeable>
+                  );
+                }
+
+                return <View key={goal.id}>{content}</View>;
               })
             ) : (
               <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
@@ -509,6 +643,75 @@ export default function SavingsGoalsScreen() {
                 onChangeText={(text) => setNewGoal({ ...newGoal, targetAmount: text })}
               />
 
+              <Text style={[styles.label, { color: colors.text }]}>From Account *</Text>
+              <View style={[styles.accountSelector, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {accounts.filter((acc: any) => acc.type === 'bank' && acc.isActive).map((account: any) => (
+                    <TouchableOpacity
+                      key={account.id}
+                      style={[
+                        styles.accountOption,
+                        { borderColor: colors.border },
+                        newGoal.accountId === account.id && { borderColor: colors.primary, backgroundColor: `${colors.primary}20` }
+                      ]}
+                      onPress={() => setNewGoal({ ...newGoal, accountId: account.id })}
+                    >
+                      <View style={[styles.accountIcon, { backgroundColor: account.color || colors.primary }]}>
+                        <Ionicons name={(account.icon as any) || 'wallet'} size={16} color="#fff" />
+                      </View>
+                      <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
+                        {account.name}
+                      </Text>
+                      <Text style={[styles.accountBalance, { color: colors.textMuted }]}>
+                        {formatCurrency(parseFloat(account.balance || '0'))}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              <Text style={[styles.label, { color: colors.text }]}>To Account (Optional)</Text>
+              <View style={[styles.accountSelector, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <TouchableOpacity
+                    style={[
+                      styles.accountOption,
+                      { borderColor: colors.border },
+                      newGoal.toAccountId === null && { borderColor: colors.primary, backgroundColor: `${colors.primary}20` }
+                    ]}
+                    onPress={() => setNewGoal({ ...newGoal, toAccountId: null })}
+                  >
+                    <View style={[styles.accountIcon, { backgroundColor: colors.textMuted }]}>
+                      <Ionicons name="close" size={16} color="#fff" />
+                    </View>
+                    <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
+                      None
+                    </Text>
+                  </TouchableOpacity>
+                  {accounts.filter((acc: any) => acc.type === 'bank' && acc.isActive && acc.id !== newGoal.accountId).map((account: any) => (
+                    <TouchableOpacity
+                      key={account.id}
+                      style={[
+                        styles.accountOption,
+                        { borderColor: colors.border },
+                        newGoal.toAccountId === account.id && { borderColor: colors.primary, backgroundColor: `${colors.primary}20` }
+                      ]}
+                      onPress={() => setNewGoal({ ...newGoal, toAccountId: account.id })}
+                    >
+                      <View style={[styles.accountIcon, { backgroundColor: account.color || colors.primary }]}>
+                        <Ionicons name={(account.icon as any) || 'wallet'} size={16} color="#fff" />
+                      </View>
+                      <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
+                        {account.name}
+                      </Text>
+                      <Text style={[styles.accountBalance, { color: colors.textMuted }]}>
+                        {formatCurrency(parseFloat(account.balance || '0'))}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
               <Text style={[styles.label, { color: colors.text }]}>Icon</Text>
               <View style={styles.iconGrid}>
                 {GOAL_ICONS.map((icon) => (
@@ -545,23 +748,268 @@ export default function SavingsGoalsScreen() {
                 ))}
               </View>
 
+              <View style={styles.toggleContainer}>
+                <View style={styles.toggleRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.toggleLabel, { color: colors.text }]}>Create Transaction</Text>
+                    <Text style={[styles.toggleDescription, { color: colors.textMuted }]}>
+                      Add to transaction history when contributed
+                    </Text>
+                  </View>
+                  <Switch
+                    value={newGoal.affectTransaction}
+                    onValueChange={(value) => setNewGoal({ ...newGoal, affectTransaction: value })}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+
+                <View style={styles.toggleRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.toggleLabel, { color: colors.text }]}>Affect Account Balance</Text>
+                    <Text style={[styles.toggleDescription, { color: colors.textMuted }]}>
+                      Update account balance when contributed
+                    </Text>
+                  </View>
+                  <Switch
+                    value={newGoal.affectAccountBalance}
+                    onValueChange={(value) => setNewGoal({ ...newGoal, affectAccountBalance: value })}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+              </View>
+
               <TouchableOpacity
                 style={[
                   styles.submitButton, 
                   { backgroundColor: colors.primary },
-                  (!newGoal.name || !newGoal.targetAmount || createGoalMutation.isPending) && styles.submitButtonDisabled
+                  (!newGoal.name || !newGoal.targetAmount || !newGoal.accountId || createGoalMutation.isPending) && styles.submitButtonDisabled
                 ]}
                 onPress={() => {
-                  if (newGoal.name && newGoal.targetAmount && !createGoalMutation.isPending) {
+                  if (newGoal.name && newGoal.targetAmount && newGoal.accountId && !createGoalMutation.isPending) {
                     createGoalMutation.mutate(newGoal);
                   }
                 }}
-                disabled={!newGoal.name || !newGoal.targetAmount || createGoalMutation.isPending}
+                disabled={!newGoal.name || !newGoal.targetAmount || !newGoal.accountId || createGoalMutation.isPending}
               >
                 {createGoalMutation.isPending ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
                   <Text style={styles.submitButtonText}>Create Goal</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Goal Modal */}
+      <Modal
+        visible={isEditModalOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {
+          setIsEditModalOpen(false);
+          setGoalToEdit(null);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Savings Goal</Text>
+              <TouchableOpacity onPress={() => {
+                setIsEditModalOpen(false);
+                setGoalToEdit(null);
+              }}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalBody}>
+              <Text style={[styles.label, { color: colors.text }]}>Goal Name</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., Vacation Fund"
+                placeholderTextColor={colors.textMuted}
+                value={goalToEdit?.name || ''}
+                onChangeText={(text) => goalToEdit && setGoalToEdit({ ...goalToEdit, name: text })}
+              />
+
+              <Text style={[styles.label, { color: colors.text }]}>Target Amount (₹)</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                placeholder="50000"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                value={goalToEdit?.targetAmount || ''}
+                onChangeText={(text) => goalToEdit && setGoalToEdit({ ...goalToEdit, targetAmount: text })}
+              />
+
+              <Text style={[styles.label, { color: colors.text }]}>From Account (Cannot be changed)</Text>
+              <View style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', opacity: 0.7 }]}>
+                {(() => {
+                  const fromAccount = accounts.find((acc: any) => acc.id === goalToEdit?.accountId);
+                  if (fromAccount) {
+                    return (
+                      <>
+                        <View style={[styles.accountIcon, { backgroundColor: fromAccount.color || colors.primary, marginRight: 12 }]}>
+                          <Ionicons name={(fromAccount.icon as any) || 'wallet'} size={16} color="#fff" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[{ color: colors.text, fontSize: 14, fontWeight: '600' }]}>
+                            {fromAccount.name}
+                          </Text>
+                          <Text style={[{ color: colors.textMuted, fontSize: 12 }]}>
+                            {formatCurrency(parseFloat(fromAccount.balance || '0'))}
+                          </Text>
+                        </View>
+                      </>
+                    );
+                  }
+                  return <Text style={[{ color: colors.textMuted }]}>No account selected</Text>;
+                })()}
+              </View>
+
+              <Text style={[styles.label, { color: colors.text }]}>To Account (Cannot be changed)</Text>
+              <View style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', opacity: 0.7 }]}>
+                {(() => {
+                  if (goalToEdit?.toAccountId === null || goalToEdit?.toAccountId === undefined) {
+                    return (
+                      <>
+                        <View style={[styles.accountIcon, { backgroundColor: colors.textMuted, marginRight: 12 }]}>
+                          <Ionicons name="close" size={16} color="#fff" />
+                        </View>
+                        <Text style={[{ color: colors.text, fontSize: 14 }]}>None</Text>
+                      </>
+                    );
+                  }
+                  const toAccount = accounts.find((acc: any) => acc.id === goalToEdit?.toAccountId);
+                  if (toAccount) {
+                    return (
+                      <>
+                        <View style={[styles.accountIcon, { backgroundColor: toAccount.color || colors.primary, marginRight: 12 }]}>
+                          <Ionicons name={(toAccount.icon as any) || 'wallet'} size={16} color="#fff" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[{ color: colors.text, fontSize: 14, fontWeight: '600' }]}>
+                            {toAccount.name}
+                          </Text>
+                          <Text style={[{ color: colors.textMuted, fontSize: 12 }]}>
+                            {formatCurrency(parseFloat(toAccount.balance || '0'))}
+                          </Text>
+                        </View>
+                      </>
+                    );
+                  }
+                  return <Text style={[{ color: colors.textMuted }]}>No account selected</Text>;
+                })()}
+              </View>
+
+              <Text style={[styles.label, { color: colors.text }]}>Icon</Text>
+              <View style={styles.iconGrid}>
+                {GOAL_ICONS.map((icon) => (
+                  <TouchableOpacity
+                    key={icon}
+                    style={[
+                      styles.iconButton,
+                      { borderColor: colors.border },
+                      goalToEdit?.icon === icon && { borderColor: colors.primary, backgroundColor: `${colors.primary}20` }
+                    ]}
+                    onPress={() => goalToEdit && setGoalToEdit({ ...goalToEdit, icon })}
+                  >
+                    <Ionicons name={icon as any} size={24} color={goalToEdit?.icon === icon ? colors.primary : colors.text} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[styles.label, { color: colors.text }]}>Color</Text>
+              <View style={styles.colorGrid}>
+                {GOAL_COLORS.map((color) => (
+                  <TouchableOpacity
+                    key={color}
+                    style={[
+                      styles.colorButton,
+                      { backgroundColor: color },
+                      goalToEdit?.color === color && styles.colorButtonSelected
+                    ]}
+                    onPress={() => goalToEdit && setGoalToEdit({ ...goalToEdit, color })}
+                  >
+                    {goalToEdit?.color === color && (
+                      <Ionicons name="checkmark" size={20} color="#fff" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={[styles.infoBox, { backgroundColor: `${colors.primary}20`, borderColor: colors.primary }]}>
+                <Ionicons name="information-circle-outline" size={20} color={colors.primary} style={styles.infoIcon} />
+                <Text style={[styles.infoText, { color: colors.text }]}>
+                  Changing these settings will only apply to future contributions. Past transactions remain unchanged.
+                </Text>
+              </View>
+
+              <View style={styles.toggleContainer}>
+                <View style={styles.toggleRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.toggleLabel, { color: colors.text }]}>Create Transaction</Text>
+                    <Text style={[styles.toggleDescription, { color: colors.textMuted }]}>
+                      Add to transaction history when contributed
+                    </Text>
+                  </View>
+                  <Switch
+                    value={goalToEdit?.affectTransaction ?? true}
+                    onValueChange={(value) => goalToEdit && setGoalToEdit({ ...goalToEdit, affectTransaction: value })}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+
+                <View style={styles.toggleRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.toggleLabel, { color: colors.text }]}>Affect Account Balance</Text>
+                    <Text style={[styles.toggleDescription, { color: colors.textMuted }]}>
+                      Update account balance when contributed
+                    </Text>
+                  </View>
+                  <Switch
+                    value={goalToEdit?.affectAccountBalance ?? true}
+                    onValueChange={(value) => goalToEdit && setGoalToEdit({ ...goalToEdit, affectAccountBalance: value })}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.submitButton, 
+                  { backgroundColor: colors.primary },
+                  (!goalToEdit?.name || !goalToEdit?.targetAmount || !goalToEdit?.accountId || updateGoalMutation.isPending) && styles.submitButtonDisabled
+                ]}
+                onPress={() => {
+                  if (goalToEdit && goalToEdit.name && goalToEdit.targetAmount && goalToEdit.accountId && !updateGoalMutation.isPending) {
+                    updateGoalMutation.mutate({
+                      id: goalToEdit.id,
+                      data: {
+                        name: goalToEdit.name,
+                        targetAmount: goalToEdit.targetAmount,
+                        icon: goalToEdit.icon,
+                        color: goalToEdit.color,
+                        accountId: goalToEdit.accountId,
+                        toAccountId: goalToEdit.toAccountId,
+                        affectTransaction: goalToEdit.affectTransaction,
+                        affectAccountBalance: goalToEdit.affectAccountBalance
+                      }
+                    });
+                  }
+                }}
+                disabled={!goalToEdit?.name || !goalToEdit?.targetAmount || !goalToEdit?.accountId || updateGoalMutation.isPending}
+              >
+                {updateGoalMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Update Goal</Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
@@ -624,54 +1072,22 @@ export default function SavingsGoalsScreen() {
                 />
               )}
 
-              <Text style={[styles.label, { color: colors.text }]}>From Account</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.accountScroll}>
-                {accounts.map((account: any) => (
-                  <TouchableOpacity
-                    key={account.id}
-                    style={[
-                      styles.accountChip,
-                      { borderColor: colors.border, backgroundColor: colors.card },
-                      selectedAccountId === account.id && { 
-                        borderColor: colors.primary, 
-                        backgroundColor: `${colors.primary}20` 
-                      }
-                    ]}
-                    onPress={() => setSelectedAccountId(account.id)}
-                  >
-                    <Text style={[
-                      styles.accountChipText, 
-                      { color: colors.text },
-                      selectedAccountId === account.id && { color: colors.primary, fontWeight: '600' }
-                    ]}>
-                      {account.name}
-                    </Text>
-                    {account.balance && (
-                      <Text style={[styles.accountBalance, { color: colors.textMuted }]}>
-                        {formatCurrency(parseFloat(account.balance))}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
               <TouchableOpacity
                 style={[
                   styles.submitButton, 
                   { backgroundColor: colors.primary },
-                  (!contributionAmount || !selectedAccountId || addContributionMutation.isPending) && styles.submitButtonDisabled
+                  (!contributionAmount || addContributionMutation.isPending) && styles.submitButtonDisabled
                 ]}
                 onPress={() => {
-                  if (selectedGoal && contributionAmount && selectedAccountId && !addContributionMutation.isPending) {
+                  if (selectedGoal && contributionAmount && !addContributionMutation.isPending) {
                     addContributionMutation.mutate({ 
                       goalId: selectedGoal.id, 
                       amount: contributionAmount,
-                      accountId: selectedAccountId,
                       contributedAt: contributionDate.toISOString()
                     });
                   }
                 }}
-                disabled={!contributionAmount || !selectedAccountId || addContributionMutation.isPending}
+                disabled={!contributionAmount || addContributionMutation.isPending}
               >
                 {addContributionMutation.isPending ? (
                   <ActivityIndicator color="#fff" size="small" />
@@ -758,6 +1174,45 @@ export default function SavingsGoalsScreen() {
                 </View>
               )}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={cancelDelete}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={[styles.deleteModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.deleteModalHeader}>
+              <Ionicons name="warning-outline" size={48} color="#ef4444" />
+            </View>
+            <Text style={[styles.deleteModalTitle, { color: colors.text }]}>Delete Savings Goal?</Text>
+            <Text style={[styles.deleteModalMessage, { color: colors.textMuted }]}>
+              Are you sure you want to delete "{goalToDelete?.name}"? This will permanently delete all contributions. This action cannot be undone.
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
+                onPress={cancelDelete}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton]}
+                onPress={confirmDelete}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.deleteButtonText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1132,6 +1587,37 @@ const styles = StyleSheet.create({
   colorButtonSelected: {
     borderColor: '#fff',
   },
+  accountSelector: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 16,
+  },
+  accountOption: {
+    width: 120,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 2,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  accountIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  accountName: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  accountBalance: {
+    fontSize: 11,
+  },
   submitButton: {
     marginTop: 24,
     padding: 16,
@@ -1211,5 +1697,109 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     textAlign: 'center',
+  },
+  swipeAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  deleteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  deleteModalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  deleteModalHeader: {
+    marginBottom: 16,
+  },
+  deleteModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  deleteModalMessage: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteButton: {
+    backgroundColor: '#ef4444',
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  toggleContainer: {
+    marginTop: 16,
+    marginBottom: 8,
+    gap: 12,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  toggleLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  toggleDescription: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  infoIcon: {
+    marginRight: 8,
+    marginTop: 2,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

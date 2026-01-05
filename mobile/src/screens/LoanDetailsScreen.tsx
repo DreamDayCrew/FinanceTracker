@@ -157,7 +157,7 @@ export default function LoanDetailsScreen() {
             </View>
             <View style={[styles.typeBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
               <Text style={styles.typeBadgeText}>
-                {loan.loanType.replace('_', ' ').toUpperCase()}
+                {(loan.loanType || (loan as any).type || '').replace(/_/g, ' ').toUpperCase()}
               </Text>
             </View>
           </View>
@@ -188,7 +188,7 @@ export default function LoanDetailsScreen() {
           </View>
           <View style={[styles.statCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.statLabel, { color: colors.textMuted }]}>Tenure</Text>
-            <Text style={[styles.statValue, { color: colors.text }]}>{loan.tenureMonths} months</Text>
+            <Text style={[styles.statValue, { color: colors.text }]}>{loan.tenure || loan.tenureMonths} months</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.statLabel, { color: colors.textMuted }]}>EMI Date</Text>

@@ -1,16 +1,18 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
+import { Swipeable } from 'react-native-gesture-handler';
 import { api } from '../lib/api';
 import { formatCurrency, formatDate, getThemedColors } from '../lib/utils';
 import { RootStackParamList } from '../../App';
 import { FABButton } from '../components/FABButton';
 import type { Transaction } from '../lib/types';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSwipeSettings } from '../hooks/useSwipeSettings';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -23,6 +25,20 @@ export default function TransactionsScreen() {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+  const swipeSettings = useSwipeSettings();
+  const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
+  const currentOpenSwipeable = useRef<number | null>(null);
+
+  // Close all swipeables when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Close all swipeables when leaving screen
+        swipeableRefs.current.forEach(ref => ref?.close());
+        currentOpenSwipeable.current = null;
+      };
+    }, [])
+  );
 
   const { data: transactions, isLoading } = useQuery({
     queryKey: ['transactions'],
@@ -35,6 +51,8 @@ export default function TransactionsScreen() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       setIsDeleteModalOpen(false);
       setSelectedTransaction(null);
       Toast.show({
@@ -71,12 +89,22 @@ export default function TransactionsScreen() {
   const handleDelete = (transaction: Transaction) => {
     setSelectedTransaction(transaction);
     setIsDeleteModalOpen(true);
+    // Close the swipeable after showing modal
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
+    }
   };
 
   const confirmDelete = () => {
     if (selectedTransaction && !deleteMutation.isPending) {
       deleteMutation.mutate(selectedTransaction.id);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setIsDeleteModalOpen(false);
+    setSelectedTransaction(null);
   };
 
   const filteredTransactions = transactions?.filter(t => {
@@ -89,6 +117,114 @@ export default function TransactionsScreen() {
     
     return matchesSearch && matchesFilter;
   }) || [];
+
+  const handleEdit = (transaction: Transaction) => {
+    // Close the swipeable before navigation
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
+    }
+    navigation.navigate('AddTransaction', { transactionId: transaction.id });
+  };
+
+  const renderRightActions = (transaction: Transaction) => {
+    const action = swipeSettings.rightAction;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => action === 'edit' ? handleEdit(transaction) : handleDelete(transaction)}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderLeftActions = (transaction: Transaction) => {
+    const action = swipeSettings.leftAction;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => action === 'edit' ? handleEdit(transaction) : handleDelete(transaction)}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderTransaction = (transaction: Transaction) => {
+    const content = (
+      <TouchableOpacity 
+        style={[styles.transactionCard, { backgroundColor: colors.card }]}
+        onPress={swipeSettings.enabled ? undefined : () => handleEdit(transaction)}
+        activeOpacity={swipeSettings.enabled ? 1 : 0.7}
+        disabled={swipeSettings.enabled}
+      >
+        <View style={[
+          styles.transactionIcon,
+          { backgroundColor: transaction.type === 'credit' ? colors.primary + '20' : colors.danger + '20' }
+        ]}>
+          <Ionicons 
+            name={transaction.type === 'credit' ? 'arrow-down' : 'arrow-up'} 
+            size={20} 
+            color={transaction.type === 'credit' ? colors.primary : colors.danger}
+          />
+        </View>
+        <View style={styles.transactionInfo}>
+          <Text style={[styles.transactionMerchant, { color: colors.text }]}>
+            {transaction.merchant || transaction.category?.name || 'Transaction'}
+          </Text>
+          <Text style={[styles.transactionCategory, { color: colors.textMuted }]}>
+            {transaction.category?.name} {transaction.account && `• ${transaction.account.name}`}
+          </Text>
+          <Text style={[styles.transactionDate, { color: colors.textMuted }]}>{formatDate(transaction.transactionDate)}</Text>
+        </View>
+        <Text style={[
+          styles.transactionAmount,
+          { color: transaction.type === 'credit' ? colors.primary : colors.danger }
+        ]}>
+          {transaction.type === 'credit' ? '+' : '-'}{formatCurrency(transaction.amount)}
+        </Text>
+      </TouchableOpacity>
+    );
+
+    if (swipeSettings.enabled) {
+      return (
+        <Swipeable
+          key={transaction.id}
+          ref={(ref) => {
+            if (ref) {
+              swipeableRefs.current.set(transaction.id, ref);
+            } else {
+              swipeableRefs.current.delete(transaction.id);
+            }
+          }}
+          renderRightActions={() => renderRightActions(transaction)}
+          renderLeftActions={() => renderLeftActions(transaction)}
+          onSwipeableOpen={(direction) => {
+            // Close previously opened swipeable
+            if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== transaction.id) {
+              swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+            }
+            currentOpenSwipeable.current = transaction.id;
+            
+            // Trigger action based on swipe direction
+            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
+            if (action === 'edit') {
+              handleEdit(transaction);
+            } else {
+              handleDelete(transaction);
+            }
+          }}
+        >
+          {content}
+        </Swipeable>
+      );
+    }
+
+    return <View key={transaction.id}>{content}</View>;
+  };
 
   if (isLoading) {
     return (
@@ -135,54 +271,7 @@ export default function TransactionsScreen() {
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {filteredTransactions.length > 0 ? (
-          filteredTransactions.map((transaction) => (
-            <View
-              key={transaction.id}
-              style={[styles.transactionItem, { backgroundColor: colors.card }]}
-            >
-              <View style={[
-                styles.transactionIcon,
-                { backgroundColor: transaction.type === 'credit' ? colors.primary + '20' : colors.danger + '20' }
-              ]}>
-                <Ionicons 
-                  name={transaction.type === 'credit' ? 'arrow-down' : 'arrow-up'} 
-                  size={20} 
-                  color={transaction.type === 'credit' ? colors.primary : colors.danger}
-                />
-              </View>
-              <View style={styles.transactionInfo}>
-                <Text style={[styles.transactionMerchant, { color: colors.text }]}>
-                  {transaction.merchant || transaction.category?.name || 'Transaction'}
-                </Text>
-                <Text style={[styles.transactionCategory, { color: colors.textMuted }]}>
-                  {transaction.category?.name} {transaction.account && `• ${transaction.account.name}`}
-                </Text>
-                <Text style={[styles.transactionDate, { color: colors.textMuted }]}>{formatDate(transaction.transactionDate)}</Text>
-              </View>
-              <Text style={[
-                styles.transactionAmount,
-                { color: transaction.type === 'credit' ? colors.primary : colors.danger }
-              ]}>
-                {transaction.type === 'credit' ? '+' : '-'}{formatCurrency(transaction.amount)}
-              </Text>
-              <View style={styles.transactionActions}>
-                <TouchableOpacity 
-                  onPress={() => navigation.navigate('AddTransaction', { transactionId: transaction.id })}
-                  style={[styles.actionIconButton, { backgroundColor: colors.primary + '20' }]}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="pencil" size={16} color={colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  onPress={() => handleDelete(transaction)}
-                  style={[styles.actionIconButton, { backgroundColor: '#fee2e2' }]}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
+          filteredTransactions.map((transaction) => renderTransaction(transaction))
         ) : (
           <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
             <Ionicons name="receipt-outline" size={48} color={colors.textMuted} />
@@ -231,10 +320,7 @@ export default function TransactionsScreen() {
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background, borderColor: colors.border }]}
-                onPress={() => {
-                  setIsDeleteModalOpen(false);
-                  setSelectedTransaction(null);
-                }}
+                onPress={handleCancelDelete}
                 disabled={deleteMutation.isPending}
               >
                 <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
@@ -304,6 +390,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  transactionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
   transactionItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -350,6 +443,18 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 8,
     marginLeft: 8,
+  },
+  swipeAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,

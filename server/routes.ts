@@ -20,7 +20,7 @@ import {
   insertCardDetailsSchema
 } from "@shared/schema";
 import { suggestCategory, parseSmsMessage } from "./openai";
-import { getPaydayForMonth, getNextPaydays } from "./salaryUtils";
+import { getPaydayForMonth, getNextPaydays, getPastPaydays } from "./salaryUtils";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Seed default categories on startup
@@ -32,6 +32,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const categories = await storage.getAllCategories();
       res.json(categories);
     } catch (error) {
+      console.error("Error fetching categories:", error);
       res.status(500).json({ error: "Failed to fetch categories" });
     }
   });
@@ -52,6 +53,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const accounts = await storage.getAllAccounts();
       res.json(accounts);
     } catch (error) {
+      console.error("Error fetching accounts:", error);
       res.status(500).json({ error: "Failed to fetch accounts" });
     }
   });
@@ -65,6 +67,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Account not found" });
       }
     } catch (error) {
+      console.error("Error fetching account:", error);
       res.status(500).json({ error: "Failed to fetch account" });
     }
   });
@@ -121,6 +124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const transactions = await storage.getAllTransactions(filters);
       res.json(transactions);
     } catch (error) {
+      console.error("Error fetching transactions:", error);
       res.status(500).json({ error: "Failed to fetch transactions" });
     }
   });
@@ -134,6 +138,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Transaction not found" });
       }
     } catch (error) {
+      console.error("Error fetching transaction:", error);
       res.status(500).json({ error: "Failed to fetch transaction" });
     }
   });
@@ -185,6 +190,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Check if this transaction is linked to a savings contribution
       if (transaction.savingsContributionId) {
+        // Get all transactions linked to this contribution (both debit and credit)
+        const allTransactions = await storage.getAllTransactions({});
+        const linkedTransactions = allTransactions.filter(
+          (t: any) => t.savingsContributionId === transaction.savingsContributionId
+        );
+        
+        // Delete all linked transactions
+        for (const linkedTx of linkedTransactions) {
+          if (linkedTx.id !== transactionId) {
+            await storage.deleteTransaction(linkedTx.id);
+          }
+        }
+        
         // Delete the savings contribution
         const contribution = await storage.getSavingsContribution(transaction.savingsContributionId);
         if (contribution) {
@@ -352,13 +370,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/payment-occurrences/:id", async (req, res) => {
     try {
-      const occurrence = await storage.updatePaymentOccurrence(parseInt(req.params.id), req.body);
+      const occurrenceId = parseInt(req.params.id);
+      const { affectTransaction, affectAccountBalance, ...otherData } = req.body;
+      
+      // Get current occurrence
+      const currentOccurrence = await storage.getPaymentOccurrence(occurrenceId);
+      if (!currentOccurrence) {
+        return res.status(404).json({ error: "Payment occurrence not found" });
+      }
+
+      // Get scheduled payment details
+      const payment = await storage.getScheduledPayment(currentOccurrence.scheduledPaymentId);
+      if (!payment) {
+        return res.status(404).json({ error: "Scheduled payment not found" });
+      }
+
+      // Handle affectTransaction toggle change
+      if (affectTransaction !== undefined && affectTransaction !== currentOccurrence.affectTransaction) {
+        if (affectTransaction && currentOccurrence.status === 'paid') {
+          // Create transaction when toggle is enabled
+          const account = await storage.getDefaultAccount();
+          if (account) {
+            await storage.createTransaction({
+              type: 'debit',
+              amount: payment.amount,
+              merchant: payment.name,
+              description: `Scheduled payment: ${payment.name}`,
+              categoryId: payment.categoryId || null,
+              accountId: account.id,
+              transactionDate: currentOccurrence.paidAt || currentOccurrence.dueDate,
+              paymentOccurrenceId: occurrenceId,
+            });
+          }
+        } else if (!affectTransaction) {
+          // Delete transaction when toggle is disabled
+          const transactions = await storage.getAllTransactions({});
+          const matchingTransaction = transactions.find((t: any) => 
+            t.paymentOccurrenceId === occurrenceId
+          );
+          if (matchingTransaction) {
+            await storage.deleteTransaction(matchingTransaction.id);
+          }
+        }
+      }
+
+      // Handle affectAccountBalance toggle change
+      if (affectAccountBalance !== undefined && affectAccountBalance !== currentOccurrence.affectAccountBalance) {
+        const transactions = await storage.getAllTransactions({});
+        const matchingTransaction = transactions.find((t: any) => 
+          t.paymentOccurrenceId === occurrenceId
+        );
+        
+        if (matchingTransaction && matchingTransaction.accountId) {
+          const account = await storage.getAccount(matchingTransaction.accountId);
+          if (account) {
+            const amount = parseFloat(payment.amount);
+            if (!affectAccountBalance) {
+              // Restore balance when toggle is disabled (add back the payment amount)
+              const newBalance = (parseFloat(account.balance) + amount).toString();
+              await storage.updateAccount(account.id, { balance: newBalance });
+            } else if (affectAccountBalance && !currentOccurrence.affectAccountBalance) {
+              // Deduct balance when toggle is re-enabled
+              const newBalance = (parseFloat(account.balance) - amount).toString();
+              await storage.updateAccount(account.id, { balance: newBalance });
+            }
+          }
+        }
+      }
+
+      // Update occurrence with new toggle states
+      const updateData = {
+        ...otherData,
+        ...(affectTransaction !== undefined && { affectTransaction }),
+        ...(affectAccountBalance !== undefined && { affectAccountBalance }),
+      };
+      
+      const occurrence = await storage.updatePaymentOccurrence(occurrenceId, updateData);
       if (occurrence) {
         res.json(occurrence);
       } else {
         res.status(404).json({ error: "Payment occurrence not found" });
       }
     } catch (error) {
+      console.error("Error updating payment occurrence:", error);
       res.status(500).json({ error: "Failed to update payment occurrence" });
     }
   });
@@ -435,42 +529,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/savings-goals/:goalId/contributions", async (req, res) => {
     try {
       const goalId = parseInt(req.params.goalId);
+      
+      // Get the goal to use its configured accounts and toggle settings
+      const goal = await storage.getSavingsGoal(goalId);
+      if (!goal) {
+        return res.status(404).json({ error: "Savings goal not found" });
+      }
+      
       const validatedData = insertSavingsContributionSchema.parse({
         ...req.body,
         savingsGoalId: goalId,
+        accountId: goal.accountId, // Use accountId from goal configuration
       });
       
       // Create the contribution
       const contribution = await storage.createSavingsContribution(validatedData);
       
-      // If accountId is provided, create a transaction to track the expense
-      if (validatedData.accountId) {
-        const goal = await storage.getSavingsGoal(goalId);
-        if (goal) {
-          // Find or create a "Savings" category
-          const categories = await storage.getAllCategories();
-          let savingsCategory = categories.find(c => c.name === "Savings");
-          
-          if (!savingsCategory) {
-            savingsCategory = await storage.createCategory({
-              name: "Savings",
-              icon: "piggy-bank",
-              color: "#10b981",
-              type: "expense",
+      // Get toggle settings from goal (default to true if not set)
+      const affectTransaction = goal.affectTransaction ?? true;
+      const affectAccountBalance = goal.affectAccountBalance ?? true;
+      
+      // Handle transaction and balance updates based on toggle settings
+      if (affectTransaction && goal.accountId) {
+        // Find or create a "Savings" category
+        const categories = await storage.getAllCategories();
+        let savingsCategory = categories.find(c => c.name === "Savings");
+        
+        if (!savingsCategory) {
+          savingsCategory = await storage.createCategory({
+            name: "Savings",
+            icon: "piggy-bank",
+            color: "#10b981",
+            type: "expense",
+          });
+        }
+        
+        // Create transaction to debit from account
+        await storage.createTransaction({
+          accountId: goal.accountId,
+          categoryId: savingsCategory.id,
+          amount: validatedData.amount,
+          type: "debit",
+          description: `Contribution to ${goal.name}`,
+          transactionDate: validatedData.contributedAt || new Date().toISOString(),
+          savingsContributionId: contribution.id,
+        });
+        
+        // If affectAccountBalance is false, reverse the balance change
+        if (!affectAccountBalance) {
+          const account = await storage.getAccount(goal.accountId);
+          if (account) {
+            const currentBalance = parseFloat(account.balance);
+            const contributionAmount = parseFloat(validatedData.amount);
+            // Add amount back to reverse the debit
+            await storage.updateAccount(goal.accountId, {
+              balance: (currentBalance + contributionAmount).toString()
             });
           }
-          
-          // Create transaction with link to contribution
-          await storage.createTransaction({
-            accountId: validatedData.accountId,
-            categoryId: savingsCategory.id,
-            amount: validatedData.amount,
-            type: "debit",
-            description: `Contribution to ${goal.name}`,
-            transactionDate: validatedData.contributedAt || new Date().toISOString(),
-            savingsContributionId: contribution.id,
+        }
+      } else if (!affectTransaction && affectAccountBalance && goal.accountId) {
+        // No transaction, but directly update balance
+        const account = await storage.getAccount(goal.accountId);
+        if (account) {
+          const currentBalance = parseFloat(account.balance);
+          const contributionAmount = parseFloat(validatedData.amount);
+          // Subtract amount directly
+          await storage.updateAccount(goal.accountId, {
+            balance: (currentBalance - contributionAmount).toString()
           });
-          // Note: createTransaction automatically updates account balance
+        }
+      }
+      
+      // If toAccountId is provided in goal and affectTransaction is true, create a transaction to credit to account
+      if (affectTransaction && goal.toAccountId) {
+        // Find or create a "Savings" category
+        const categories = await storage.getAllCategories();
+        let savingsCategory = categories.find(c => c.name === "Savings");
+        
+        if (!savingsCategory) {
+          savingsCategory = await storage.createCategory({
+            name: "Savings",
+            icon: "piggy-bank",
+            color: "#10b981",
+            type: "income",
+          });
+        }
+        
+        // Create transaction to credit to account
+        await storage.createTransaction({
+          accountId: goal.toAccountId,
+          categoryId: savingsCategory.id,
+          amount: validatedData.amount,
+          type: "credit",
+          description: `Contribution to ${goal.name}`,
+          transactionDate: validatedData.contributedAt || new Date().toISOString(),
+          savingsContributionId: contribution.id,
+        });
+        
+        // If affectAccountBalance is false, reverse the balance change for to account
+        if (!affectAccountBalance) {
+          const toAccount = await storage.getAccount(goal.toAccountId);
+          if (toAccount) {
+            const currentBalance = parseFloat(toAccount.balance);
+            const contributionAmount = parseFloat(validatedData.amount);
+            // Subtract amount back to reverse the credit
+            await storage.updateAccount(goal.toAccountId, {
+              balance: (currentBalance - contributionAmount).toString()
+            });
+          }
+        }
+      } else if (!affectTransaction && affectAccountBalance && goal.toAccountId) {
+        // No transaction, but directly update balance for to account
+        const toAccount = await storage.getAccount(goal.toAccountId);
+        if (toAccount) {
+          const currentBalance = parseFloat(toAccount.balance);
+          const contributionAmount = parseFloat(validatedData.amount);
+          // Add amount directly
+          await storage.updateAccount(goal.toAccountId, {
+            balance: (currentBalance + contributionAmount).toString()
+          });
         }
       }
       
@@ -491,29 +668,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Contribution not found" });
       }
       
-      // If contribution has an account, delete the associated transaction
-      // Note: deleteTransaction will automatically restore the account balance
+      // Get the goal to access account configuration
+      const goal = await storage.getSavingsGoal(contribution.savingsGoalId);
+      if (!goal) {
+        return res.status(404).json({ error: "Savings goal not found" });
+      }
+      
+      // Delete transactions associated with this contribution
+      // Both from account (debit) and to account (credit) if they exist
+      const transactionDescription = `Contribution to ${goal.name}`;
+      
+      // Find and delete transaction from accountId (debit)
       if (contribution.accountId) {
-        const goal = await storage.getSavingsGoal(contribution.savingsGoalId);
-        if (goal) {
-          // Find the transaction with matching description, account, and amount
-          const transactionDescription = `Contribution to ${goal.name}`;
-          const allTransactions = await storage.getAllTransactions({
-            accountId: contribution.accountId,
-            search: transactionDescription,
-          });
-          
-          // Find the exact transaction (matching amount and savingsContributionId)
-          const matchingTransaction = allTransactions.find((t: any) => 
-            t.description === transactionDescription && 
-            parseFloat(t.amount) === parseFloat(contribution.amount) &&
-            t.savingsContributionId === contribution.id
-          );
-          
-          if (matchingTransaction) {
-            // This will automatically restore the account balance
-            await storage.deleteTransaction(matchingTransaction.id);
-          }
+        const fromTransactions = await storage.getAllTransactions({
+          accountId: contribution.accountId,
+          search: transactionDescription,
+        });
+        
+        const fromTransaction = fromTransactions.find((t: any) => 
+          t.description === transactionDescription && 
+          parseFloat(t.amount) === parseFloat(contribution.amount) &&
+          t.savingsContributionId === contribution.id &&
+          t.type === 'debit'
+        );
+        
+        if (fromTransaction) {
+          await storage.deleteTransaction(fromTransaction.id);
+        }
+      }
+      
+      // Find and delete transaction to toAccountId (credit) if it exists
+      if (goal.toAccountId) {
+        const toTransactions = await storage.getAllTransactions({
+          accountId: goal.toAccountId,
+          search: transactionDescription,
+        });
+        
+        const toTransaction = toTransactions.find((t: any) => 
+          t.description === transactionDescription && 
+          parseFloat(t.amount) === parseFloat(contribution.amount) &&
+          t.savingsContributionId === contribution.id &&
+          t.type === 'credit'
+        );
+        
+        if (toTransaction) {
+          await storage.deleteTransaction(toTransaction.id);
         }
       }
       
@@ -549,6 +748,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: null,
       };
       const profile = await storage.createSalaryProfile(profileData);
+      
+      // Auto-generate past 3 months salary cycles
+      const pastPaydays = getPastPaydays(
+        profile.paydayRule || 'last_working_day',
+        profile.fixedDay,
+        profile.weekdayPreference,
+        3
+      );
+      
+      for (const payday of pastPaydays) {
+        try {
+          // Check if cycle already exists
+          const existingCycles = await storage.getSalaryCycles(profile.id);
+          const exists = existingCycles.some(c => c.month === payday.month && c.year === payday.year);
+          
+          if (!exists) {
+            await storage.createSalaryCycle({
+              salaryProfileId: profile.id,
+              month: payday.month,
+              year: payday.year,
+              expectedPayDate: payday.date.toISOString(),
+              expectedAmount: profile.monthlyAmount,
+              actualPayDate: null,
+              actualAmount: null,
+            });
+          }
+        } catch (cycleError) {
+          console.error('Error creating salary cycle:', cycleError);
+        }
+      }
+      
       res.status(201).json(profile);
     } catch (error: any) {
       console.error("Salary profile creation error:", error);
@@ -560,6 +790,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const profile = await storage.updateSalaryProfile(parseInt(req.params.id), req.body);
       if (profile) {
+        // Auto-generate past 3 months salary cycles if they don't exist
+        const pastPaydays = getPastPaydays(
+          profile.paydayRule || 'last_working_day',
+          profile.fixedDay,
+          profile.weekdayPreference,
+          3
+        );
+        
+        for (const payday of pastPaydays) {
+          try {
+            const existingCycles = await storage.getSalaryCycles(profile.id);
+            const exists = existingCycles.some(c => c.month === payday.month && c.year === payday.year);
+            
+            if (!exists) {
+              await storage.createSalaryCycle({
+                salaryProfileId: profile.id,
+                month: payday.month,
+                year: payday.year,
+                expectedPayDate: payday.date.toISOString(),
+                expectedAmount: profile.monthlyAmount,
+                actualPayDate: null,
+                actualAmount: null,
+              });
+            }
+          } catch (cycleError) {
+            console.error('Error creating salary cycle:', cycleError);
+          }
+        }
+        
         res.json(profile);
       } else {
         res.status(404).json({ error: "Salary profile not found" });
@@ -569,18 +828,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/salary-profile/next-paydays", async (_req, res) => {
+  app.get("/api/salary-profile/next-paydays", async (req, res) => {
     try {
       const profile = await storage.getSalaryProfile();
       if (!profile) {
         res.json([]);
         return;
       }
+      const count = req.query.count ? parseInt(req.query.count as string) : 6;
       const paydays = getNextPaydays(
         profile.paydayRule || 'last_working_day',
         profile.fixedDay,
         profile.weekdayPreference,
-        6
+        count
       );
       res.json(paydays);
     } catch (error) {
@@ -634,14 +894,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/salary-cycles/:id", async (req, res) => {
     try {
-      const cycle = await storage.updateSalaryCycle(parseInt(req.params.id), req.body);
+      const cycleId = parseInt(req.params.id);
+      const { markAsCredited, ...updateData } = req.body;
+      
+      // Get current cycle to check existing state
+      const currentCycle = await storage.getSalaryCycle(cycleId);
+      if (!currentCycle) {
+        res.status(404).json({ error: "Salary cycle not found" });
+        return;
+      }
+
+      // Get salary profile to get account info
+      const profile = await storage.getSalaryProfile();
+      if (!profile || !profile.accountId) {
+        res.status(400).json({ error: "Salary profile or account not configured" });
+        return;
+      }
+
+      // Handle marking as credited/uncredited
+      if (markAsCredited !== undefined) {
+        if (markAsCredited && !currentCycle.transactionId) {
+          // Create transaction
+          if (!updateData.actualAmount || !updateData.actualPayDate) {
+            res.status(400).json({ error: "Actual amount and date required to mark as credited" });
+            return;
+          }
+
+          // Get or create Salary category
+          let salaryCategory = await storage.getCategoryByName('Salary');
+          if (!salaryCategory) {
+            salaryCategory = await storage.createCategory({
+              name: 'Salary',
+              type: 'income',
+              icon: 'wallet',
+              color: '#10b981',
+            });
+          }
+
+          // Create transaction
+          const transaction = await storage.createTransaction({
+            accountId: profile.accountId,
+            categoryId: salaryCategory.id,
+            type: 'credit',
+            amount: updateData.actualAmount,
+            transactionDate: new Date(updateData.actualPayDate),
+            description: `Salary - ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][currentCycle.month - 1]} ${currentCycle.year}`,
+          });
+
+          // createTransaction already updates account balance automatically
+          
+          // Update cycle with transaction ID
+          updateData.transactionId = transaction.id;
+        } else if (!markAsCredited && currentCycle.transactionId) {
+          // Delete transaction (this will automatically update account balance)
+          await storage.deleteTransaction(currentCycle.transactionId);
+          updateData.transactionId = null;
+        }
+      }
+
+      // Update the cycle
+      const cycle = await storage.updateSalaryCycle(cycleId, updateData);
       if (cycle) {
         res.json(cycle);
       } else {
         res.status(404).json({ error: "Salary cycle not found" });
       }
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update salary cycle" });
+    } catch (error: any) {
+      console.error("Error updating salary cycle:", error);
+      res.status(500).json({ error: error.message || "Failed to update salary cycle" });
     }
   });
 
@@ -709,7 +1029,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = await storage.getDashboardStats();
       res.json(stats);
     } catch (error) {
+      console.error("Error fetching dashboard stats:", error);
       res.status(500).json({ error: "Failed to fetch dashboard stats" });
+    }
+  });
+
+  // Get credit card billing cycle spending
+  app.get("/api/credit-card-spending", async (_req, res) => {
+    try {
+      const accounts = await storage.getAccounts();
+      const creditCards = accounts.filter(acc => acc.type === 'credit_card' && acc.isActive && acc.billingDate);
+      
+      const cardSpending = [];
+      
+      for (const card of creditCards) {
+        const now = new Date();
+        const currentDay = now.getDate();
+        const billingDay = card.billingDate!;
+        
+        // Determine billing cycle dates
+        let cycleStartDate: Date;
+        let cycleEndDate: Date;
+        
+        if (currentDay >= billingDay) {
+          // Current cycle: billingDay of this month to today
+          cycleStartDate = new Date(now.getFullYear(), now.getMonth(), billingDay, 0, 0, 0);
+          cycleEndDate = new Date(now.getFullYear(), now.getMonth() + 1, billingDay - 1, 23, 59, 59);
+        } else {
+          // Previous cycle: billingDay of last month to today
+          cycleStartDate = new Date(now.getFullYear(), now.getMonth() - 1, billingDay, 0, 0, 0);
+          cycleEndDate = new Date(now.getFullYear(), now.getMonth(), billingDay - 1, 23, 59, 59);
+        }
+        
+        // Get transactions for this card in billing cycle
+        const transactions = await storage.getAllTransactions({
+          accountId: card.id,
+          startDate: cycleStartDate,
+          endDate: cycleEndDate,
+        });
+        
+        const totalSpent = transactions
+          .filter(t => t.type === 'debit')
+          .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+        
+        const creditLimit = card.creditLimit ? parseFloat(card.creditLimit) : 0;
+        const availableCredit = parseFloat(card.balance);
+        const usedCredit = creditLimit - availableCredit;
+        
+        cardSpending.push({
+          accountId: card.id,
+          accountName: card.name,
+          color: card.color,
+          billingDate: billingDay,
+          cycleStart: cycleStartDate.toISOString(),
+          cycleEnd: cycleEndDate.toISOString(),
+          totalSpent,
+          creditLimit,
+          availableCredit,
+          usedCredit,
+          utilizationPercent: creditLimit > 0 ? (usedCredit / creditLimit) * 100 : 0,
+        });
+      }
+      
+      res.json(cardSpending);
+    } catch (error) {
+      console.error("Error fetching credit card spending:", error);
+      res.status(500).json({ error: "Failed to fetch credit card spending" });
+    }
+  });
+
+  // ========== Expense Analytics ==========
+  app.get("/api/expenses/monthly", async (_req, res) => {
+    try {
+      const now = new Date();
+      const monthlyData = [];
+      
+      // Get last 6 months of expense data
+      for (let i = 5; i >= 0; i--) {
+        const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const year = targetDate.getFullYear();
+        const month = targetDate.getMonth();
+        
+        const startOfMonth = new Date(year, month, 1);
+        const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59);
+        
+        const transactions = await storage.getAllTransactions({
+          startDate: startOfMonth,
+          endDate: endOfMonth,
+        });
+        
+        const totalExpenses = transactions
+          .filter(t => t.type === 'debit')
+          .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+        
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        
+        monthlyData.push({
+          month: monthNames[month],
+          year,
+          fullMonth: `${monthNames[month]} ${year}`,
+          expenses: totalExpenses,
+          monthIndex: month,
+        });
+      }
+      
+      res.json(monthlyData);
+    } catch (error) {
+      console.error("Error fetching monthly expenses:", error);
+      res.status(500).json({ error: "Failed to fetch monthly expenses" });
+    }
+  });
+
+  app.get("/api/expenses/category-breakdown", async (req, res) => {
+    try {
+      const { month, year } = req.query;
+      
+      if (!month || !year) {
+        return res.status(400).json({ error: "Month and year are required" });
+      }
+      
+      const monthNum = parseInt(month as string);
+      const yearNum = parseInt(year as string);
+      
+      const startOfMonth = new Date(yearNum, monthNum, 1);
+      const endOfMonth = new Date(yearNum, monthNum + 1, 0, 23, 59, 59);
+      
+      const transactions = await storage.getAllTransactions({
+        startDate: startOfMonth,
+        endDate: endOfMonth,
+      });
+      
+      const categoryTotals = new Map<number, { name: string; total: number; color: string; count: number }>();
+      
+      for (const t of transactions.filter(t => t.type === 'debit')) {
+        if (t.categoryId && t.category) {
+          const existing = categoryTotals.get(t.categoryId) || { 
+            name: t.category.name, 
+            total: 0, 
+            color: t.category.color || '#9E9E9E',
+            count: 0
+          };
+          existing.total += parseFloat(t.amount);
+          existing.count += 1;
+          categoryTotals.set(t.categoryId, existing);
+        }
+      }
+      
+      const breakdown = Array.from(categoryTotals.entries()).map(([categoryId, data]) => ({
+        categoryId,
+        categoryName: data.name,
+        total: data.total,
+        color: data.color,
+        transactionCount: data.count,
+      })).sort((a, b) => b.total - a.total);
+      
+      const totalExpenses = breakdown.reduce((sum, item) => sum + item.total, 0);
+      
+      res.json({
+        month: monthNum,
+        year: yearNum,
+        totalExpenses,
+        breakdown,
+      });
+    } catch (error) {
+      console.error("Error fetching category breakdown:", error);
+      res.status(500).json({ error: "Failed to fetch category breakdown" });
     }
   });
 

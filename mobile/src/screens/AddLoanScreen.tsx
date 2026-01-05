@@ -41,11 +41,22 @@ export default function AddLoanScreen() {
     startDate: new Date().toISOString().split('T')[0],
     accountId: '',
   });
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['accounts'],
     queryFn: () => api.getAccounts(),
   });
+
+  // Auto-select default account
+  useMemo(() => {
+    if (!formData.accountId && accounts.length > 0) {
+      const defaultAccount = accounts.find(acc => acc.isDefault);
+      if (defaultAccount) {
+        setFormData(prev => ({ ...prev, accountId: defaultAccount.id.toString() }));
+      }
+    }
+  }, [accounts]);
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -227,13 +238,20 @@ export default function AddLoanScreen() {
 
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textMuted }]}>Start Date</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={colors.textMuted}
-            value={formData.startDate}
-            onChangeText={(text) => setFormData({ ...formData, startDate: text })}
-          />
+          <TouchableOpacity
+            style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Ionicons name="calendar-outline" size={20} color={colors.text} />
+            <Text style={[styles.datePickerText, { color: colors.text }]}>
+              {formData.startDate ? new Date(formData.startDate).toLocaleDateString('en-IN', { 
+                weekday: 'short',
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+              }) : 'Select Date'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {accounts.length > 0 && (
@@ -294,6 +312,72 @@ export default function AddLoanScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Date Picker Modal */}
+      {showDatePicker && (
+        <View style={styles.modalOverlay}>
+          <View style={[styles.datePickerModal, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Select Start Date</Text>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.datePickerContent}>
+              <ScrollView style={styles.datePickerScroll}>
+                {(() => {
+                  const today = new Date();
+                  const dates = [];
+                  
+                  // Show dates from 2 years ago to today
+                  for (let monthsAgo = 24; monthsAgo >= 0; monthsAgo--) {
+                    const date = new Date(today.getFullYear(), today.getMonth() - monthsAgo, 1);
+                    const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+                    
+                    for (let day = 1; day <= daysInMonth; day++) {
+                      const currentDate = new Date(date.getFullYear(), date.getMonth(), day);
+                      if (currentDate <= today) {
+                        const dateStr = currentDate.toISOString().split('T')[0];
+                        const isSelected = formData.startDate === dateStr;
+                        
+                        dates.push(
+                          <TouchableOpacity
+                            key={dateStr}
+                            style={[
+                              styles.dateOption,
+                              { backgroundColor: colors.background, borderColor: colors.border },
+                              isSelected && { backgroundColor: colors.primary + '20', borderColor: colors.primary }
+                            ]}
+                            onPress={() => {
+                              setFormData({ ...formData, startDate: dateStr });
+                              setShowDatePicker(false);
+                            }}
+                          >
+                            <Text style={[
+                              styles.dateOptionText,
+                              { color: colors.text },
+                              isSelected && { color: colors.primary, fontWeight: '600' }
+                            ]}>
+                              {currentDate.toLocaleDateString('en-IN', { 
+                                weekday: 'short',
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric'
+                              })}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      }
+                    }
+                  }
+                  
+                  return dates.reverse(); // Show most recent first
+                })()}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+      )}
 
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -369,5 +453,67 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+  },
+  datePickerText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  datePickerModal: {
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '70%',
+    borderRadius: 12,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e5e5',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    flex: 1,
+  },
+  datePickerContent: {
+    maxHeight: 400,
+  },
+  datePickerScroll: {
+    padding: 16,
+  },
+  dateOption: {
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  dateOptionText: {
+    fontSize: 15,
   },
 });
