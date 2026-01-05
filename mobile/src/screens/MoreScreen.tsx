@@ -77,7 +77,7 @@ export default function MoreScreen() {
             <TouchableOpacity
               key={item.route}
               style={[styles.menuItem, { backgroundColor: colors.card }]}
-              onPress={() => navigation.navigate(item.route)}
+              onPress={() => navigation.navigate(item.route as any)}
             >
               <View style={[styles.menuIcon, { backgroundColor: `${item.color}15` }]}>
                 <Ionicons name={item.icon} size={24} color={item.color} />
@@ -92,7 +92,7 @@ export default function MoreScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: colors.textMuted }]}>My Tracker v1.0.5</Text>
+          <Text style={[styles.footerText, { color: colors.textMuted }]}>My Tracker v1.0.6</Text>
           <Text style={[styles.footerSubtext, { color: colors.textMuted }]}>Personal Finance Manager</Text>
         </View>
       </ScrollView>
