@@ -1,13 +1,24 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { useState, useMemo, useEffect } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import Toast from 'react-native-toast-message';
 import { api } from '../lib/api';
-import { COLORS } from '../lib/utils';
+import { getThemedColors } from '../lib/utils';
+import { useTheme } from '../contexts/ThemeContext';
+import { MoreStackParamList } from '../../App';
+
+type AddBudgetRouteProp = RouteProp<MoreStackParamList, 'AddBudget'>;
 
 export default function AddBudgetScreen() {
   const navigation = useNavigation();
+  const route = useRoute<AddBudgetRouteProp>();
   const queryClient = useQueryClient();
+  const { resolvedTheme } = useTheme();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+  
+  const budgetId = route.params?.budgetId;
+  const isEditMode = !!budgetId;
   
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
@@ -21,48 +32,116 @@ export default function AddBudgetScreen() {
     queryFn: api.getCategories,
   });
 
-  const mutation = useMutation({
+  const { data: budgets } = useQuery({
+    queryKey: ['budgets', month, year],
+    queryFn: () => api.getBudgets(month, year),
+    enabled: isEditMode,
+  });
+
+  const createMutation = useMutation({
     mutationFn: api.createBudget,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgets'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       navigation.goBack();
+      Toast.show({
+        type: 'success',
+        text1: 'Budget Created',
+        text2: 'Budget has been added successfully',
+        position: 'bottom',
+      });
     },
     onError: () => {
-      Alert.alert('Error', 'Failed to add budget');
+      Toast.show({
+        type: 'error',
+        text1: 'Failed to Create Budget',
+        text2: 'Please try again',
+        position: 'bottom',
+      });
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => api.updateBudget(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['budgets'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      navigation.goBack();
+      Toast.show({
+        type: 'success',
+        text1: 'Budget Updated',
+        text2: 'Budget has been updated successfully',
+        position: 'bottom',
+      });
+    },
+    onError: () => {
+      Toast.show({
+        type: 'error',
+        text1: 'Failed to Update Budget',
+        text2: 'Please try again',
+        position: 'bottom',
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (isEditMode && budgets && budgetId) {
+      const budget = budgets.find(b => b.id === budgetId);
+      if (budget) {
+        setAmount(budget.amount);
+        setSelectedCategoryId(budget.categoryId);
+      }
+    }
+  }, [isEditMode, budgets, budgetId]);
+
   const handleSubmit = () => {
     if (!selectedCategoryId) {
-      Alert.alert('Error', 'Please select a category');
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Please select a category',
+        position: 'bottom',
+      });
       return;
     }
     if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Please enter a valid amount',
+        position: 'bottom',
+      });
       return;
     }
 
-    mutation.mutate({
+    const budgetData = {
       categoryId: selectedCategoryId,
       amount,
       month,
       year,
-    });
+    };
+
+    if (isEditMode && budgetId) {
+      updateMutation.mutate({ id: budgetId, data: budgetData });
+    } else {
+      createMutation.mutate(budgetData);
+    }
   };
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
 
   const expenseCategories = categories?.filter(c => c.type === 'expense') || [];
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
       <View style={styles.field}>
-        <Text style={styles.label}>Budget Amount</Text>
-        <View style={styles.amountContainer}>
-          <Text style={styles.currencySymbol}>₹</Text>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Budget Amount</Text>
+        <View style={[styles.amountContainer, { backgroundColor: colors.card }]}>
+          <Text style={[styles.currencySymbol, { color: colors.textMuted }]}>₹</Text>
           <TextInput
-            style={styles.amountInput}
+            style={[styles.amountInput, { color: colors.text }]}
             placeholder="0"
-            placeholderTextColor={COLORS.textMuted}
+            placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
             value={amount}
             onChangeText={setAmount}
@@ -71,20 +150,22 @@ export default function AddBudgetScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Category</Text>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Category</Text>
         <View style={styles.categoryGrid}>
           {expenseCategories.map((category) => (
             <TouchableOpacity
               key={category.id}
               style={[
                 styles.categoryCard,
-                selectedCategoryId === category.id && styles.categoryCardActive
+                { backgroundColor: colors.card },
+                selectedCategoryId === category.id && { backgroundColor: colors.primary }
               ]}
               onPress={() => setSelectedCategoryId(category.id)}
             >
               <Text style={[
                 styles.categoryName,
-                selectedCategoryId === category.id && styles.categoryNameActive
+                { color: colors.text },
+                selectedCategoryId === category.id && { color: '#fff' }
               ]}>
                 {category.name}
               </Text>
@@ -94,14 +175,14 @@ export default function AddBudgetScreen() {
       </View>
 
       <TouchableOpacity 
-        style={[styles.submitButton, mutation.isPending && styles.submitButtonDisabled]} 
+        style={[styles.submitButton, { backgroundColor: colors.primary }, isPending && styles.submitButtonDisabled]} 
         onPress={handleSubmit}
-        disabled={mutation.isPending}
+        disabled={isPending}
       >
-        {mutation.isPending ? (
+        {isPending ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.submitButtonText}>Save Budget</Text>
+          <Text style={styles.submitButtonText}>{isEditMode ? 'Update Budget' : 'Save Budget'}</Text>
         )}
       </TouchableOpacity>
 
@@ -113,7 +194,6 @@ export default function AddBudgetScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
     padding: 16,
   },
   field: {
@@ -122,27 +202,23 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.textMuted,
     marginBottom: 12,
   },
   amountContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.card,
     borderRadius: 12,
     padding: 16,
   },
   currencySymbol: {
     fontSize: 32,
     fontWeight: '300',
-    color: COLORS.textMuted,
     marginRight: 8,
   },
   amountInput: {
     fontSize: 40,
     fontWeight: '700',
-    color: COLORS.text,
     minWidth: 100,
     textAlign: 'center',
   },
@@ -155,21 +231,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: COLORS.card,
   },
   categoryCardActive: {
-    backgroundColor: COLORS.primary,
   },
   categoryName: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.text,
   },
   categoryNameActive: {
     color: '#ffffff',
   },
   submitButton: {
-    backgroundColor: COLORS.primary,
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',

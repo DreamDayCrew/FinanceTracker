@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, ActivityIndicator } from 'react-native';
+import Toast from 'react-native-toast-message';
 
 import DashboardScreen from './src/screens/DashboardScreen';
 import AccountsScreen from './src/screens/AccountsScreen';
@@ -13,6 +14,7 @@ import TransactionsScreen from './src/screens/TransactionsScreen';
 import MoreScreen from './src/screens/MoreScreen';
 import AddTransactionScreen from './src/screens/AddTransactionScreen';
 import BudgetsScreen from './src/screens/BudgetsScreen';
+import CategoryTransactionsScreen from './src/screens/CategoryTransactionsScreen';
 import ScheduledPaymentsScreen from './src/screens/ScheduledPaymentsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import AddAccountScreen from './src/screens/AddAccountScreen';
@@ -22,6 +24,8 @@ import ScanSMSScreen from './src/screens/ScanSMSScreen';
 import SavingsGoalsScreen from './src/screens/SavingsGoalsScreen';
 import SalaryScreen from './src/screens/SalaryScreen';
 import LoansScreen from './src/screens/LoansScreen';
+import AddLoanScreen from './src/screens/AddLoanScreen';
+import LoanDetailsScreen from './src/screens/LoanDetailsScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
 
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
@@ -41,20 +45,23 @@ const queryClient = new QueryClient({
 export type MoreStackParamList = {
   MoreMenu: undefined;
   Budgets: undefined;
-  AddBudget: undefined;
+  AddBudget: { budgetId?: number } | undefined;
+  CategoryTransactions: { categoryId: number; categoryName: string; month: number; year: number } | undefined;
   ScheduledPayments: undefined;
   AddScheduledPayment: undefined;
   SavingsGoals: undefined;
   Salary: undefined;
   Loans: undefined;
+  AddLoan: undefined;
+  LoanDetails: { loanId: number };
   Settings: undefined;
   ScanSMS: undefined;
 };
 
 export type RootStackParamList = {
   Main: undefined;
-  AddTransaction: undefined;
-  AddAccount: undefined;
+  AddTransaction: { accountId?: number; transactionId?: number } | undefined;
+  AddAccount: { accountId?: number } | undefined;
 };
 
 export type TabParamList = {
@@ -97,7 +104,14 @@ function MoreStackNavigator() {
       <MoreStack.Screen 
         name="AddBudget" 
         component={AddBudgetScreen}
-        options={{ title: 'Add Budget' }}
+        options={({ route }) => ({ 
+          title: route.params?.budgetId ? 'Edit Budget' : 'Add Budget' 
+        })}
+      />
+      <MoreStack.Screen 
+        name="CategoryTransactions" 
+        component={CategoryTransactionsScreen}
+        options={{ headerShown: false }}
       />
       <MoreStack.Screen 
         name="ScheduledPayments" 
@@ -133,6 +147,16 @@ function MoreStackNavigator() {
         name="Loans" 
         component={LoansScreen}
         options={{ title: 'Loans & EMI' }}
+      />
+      <MoreStack.Screen 
+        name="AddLoan" 
+        component={AddLoanScreen}
+        options={{ title: 'Add Loan' }}
+      />
+      <MoreStack.Screen 
+        name="LoanDetails" 
+        component={LoanDetailsScreen}
+        options={{ title: 'Loan Details' }}
       />
     </MoreStack.Navigator>
   );
@@ -261,12 +285,18 @@ function MainApp() {
         <RootStack.Screen 
           name="AddTransaction" 
           component={AddTransactionScreen}
-          options={{ title: 'Add Transaction', presentation: 'modal' }}
+          options={({ route }) => ({ 
+            title: route.params?.transactionId ? 'Edit Transaction' : 'Add Transaction', 
+            presentation: 'modal' 
+          })}
         />
         <RootStack.Screen 
           name="AddAccount" 
           component={AddAccountScreen}
-          options={{ title: 'Add Account', presentation: 'modal' }}
+          options={({ route }) => ({ 
+            title: route.params?.accountId ? 'Edit Account' : 'Add Account', 
+            presentation: 'modal' 
+          })}
         />
       </RootStack.Navigator>
     </NavigationContainer>
@@ -281,6 +311,7 @@ export default function App() {
           <AuthProvider>
             <MainApp />
             <StatusBar style="auto" />
+            <Toast />
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

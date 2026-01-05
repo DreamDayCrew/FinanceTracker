@@ -23,7 +23,7 @@ export default function More() {
     },
     { 
       icon: Calendar, 
-      label: "Bills & EMIs", 
+      label: "Scheduled Payments", 
       description: "Monthly payment checklist",
       path: "/scheduled-payments",
       testId: "link-scheduled-payments",

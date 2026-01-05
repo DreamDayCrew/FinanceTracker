@@ -148,9 +148,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/transactions/:id", async (req, res) => {
+    try {
+      const transactionId = parseInt(req.params.id);
+      const transaction = await storage.getTransaction(transactionId);
+      
+      if (!transaction) {
+        return res.status(404).json({ error: "Transaction not found" });
+      }
+
+      // Check if this transaction is linked to a savings contribution
+      if (transaction.savingsContributionId) {
+        return res.status(400).json({ 
+          error: "Cannot edit savings contribution transaction",
+          isSavingsContribution: true,
+          message: "This transaction is part of a savings contribution and cannot be edited directly."
+        });
+      }
+
+      const validatedData = insertTransactionSchema.partial().parse(req.body);
+      const updated = await storage.updateTransaction(transactionId, validatedData);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid transaction data" });
+    }
+  });
+
   app.delete("/api/transactions/:id", async (req, res) => {
     try {
-      const deleted = await storage.deleteTransaction(parseInt(req.params.id));
+      const transactionId = parseInt(req.params.id);
+      const transaction = await storage.getTransaction(transactionId);
+      
+      if (!transaction) {
+        return res.status(404).json({ error: "Transaction not found" });
+      }
+      
+      // Check if this transaction is linked to a savings contribution
+      if (transaction.savingsContributionId) {
+        // Delete the savings contribution
+        const contribution = await storage.getSavingsContribution(transaction.savingsContributionId);
+        if (contribution) {
+          // Delete the contribution (this will also update the goal's currentAmount)
+          await storage.deleteSavingsContribution(contribution.id);
+        }
+      }
+      
+      // Check if this transaction is linked to a payment occurrence
+      if (transaction.paymentOccurrenceId) {
+        // Update the payment occurrence status back to pending
+        await storage.updatePaymentOccurrence(transaction.paymentOccurrenceId, { status: 'pending' });
+      }
+      
+      // Delete the transaction (this will restore the account balance)
+      const deleted = await storage.deleteTransaction(transactionId);
       if (deleted) {
         res.status(204).send();
       } else {
@@ -384,11 +434,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/savings-goals/:goalId/contributions", async (req, res) => {
     try {
+      const goalId = parseInt(req.params.goalId);
       const validatedData = insertSavingsContributionSchema.parse({
         ...req.body,
-        savingsGoalId: parseInt(req.params.goalId),
+        savingsGoalId: goalId,
       });
+      
+      // Create the contribution
       const contribution = await storage.createSavingsContribution(validatedData);
+      
+      // If accountId is provided, create a transaction to track the expense
+      if (validatedData.accountId) {
+        const goal = await storage.getSavingsGoal(goalId);
+        if (goal) {
+          // Find or create a "Savings" category
+          const categories = await storage.getAllCategories();
+          let savingsCategory = categories.find(c => c.name === "Savings");
+          
+          if (!savingsCategory) {
+            savingsCategory = await storage.createCategory({
+              name: "Savings",
+              icon: "piggy-bank",
+              color: "#10b981",
+              type: "expense",
+            });
+          }
+          
+          // Create transaction with link to contribution
+          await storage.createTransaction({
+            accountId: validatedData.accountId,
+            categoryId: savingsCategory.id,
+            amount: validatedData.amount,
+            type: "debit",
+            description: `Contribution to ${goal.name}`,
+            transactionDate: validatedData.contributedAt || new Date().toISOString(),
+            savingsContributionId: contribution.id,
+          });
+          // Note: createTransaction automatically updates account balance
+        }
+      }
+      
       res.status(201).json(contribution);
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Invalid contribution data" });
@@ -397,13 +482,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/savings-contributions/:id", async (req, res) => {
     try {
-      const deleted = await storage.deleteSavingsContribution(parseInt(req.params.id));
+      const contributionId = parseInt(req.params.id);
+      
+      // Get contribution details before deleting
+      const contribution = await storage.getSavingsContribution(contributionId);
+      
+      if (!contribution) {
+        return res.status(404).json({ error: "Contribution not found" });
+      }
+      
+      // If contribution has an account, delete the associated transaction
+      // Note: deleteTransaction will automatically restore the account balance
+      if (contribution.accountId) {
+        const goal = await storage.getSavingsGoal(contribution.savingsGoalId);
+        if (goal) {
+          // Find the transaction with matching description, account, and amount
+          const transactionDescription = `Contribution to ${goal.name}`;
+          const allTransactions = await storage.getAllTransactions({
+            accountId: contribution.accountId,
+            search: transactionDescription,
+          });
+          
+          // Find the exact transaction (matching amount and savingsContributionId)
+          const matchingTransaction = allTransactions.find((t: any) => 
+            t.description === transactionDescription && 
+            parseFloat(t.amount) === parseFloat(contribution.amount) &&
+            t.savingsContributionId === contribution.id
+          );
+          
+          if (matchingTransaction) {
+            // This will automatically restore the account balance
+            await storage.deleteTransaction(matchingTransaction.id);
+          }
+        }
+      }
+      
+      // Delete the contribution (this also updates the goal's currentAmount)
+      const deleted = await storage.deleteSavingsContribution(contributionId);
       if (deleted) {
         res.status(204).send();
       } else {
         res.status(404).json({ error: "Contribution not found" });
       }
     } catch (error) {
+      console.error("Error deleting contribution:", error);
       res.status(500).json({ error: "Failed to delete contribution" });
     }
   });
@@ -421,9 +543,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/salary-profile", async (req, res) => {
     try {
       const validatedData = insertSalaryProfileSchema.parse(req.body);
-      const profile = await storage.createSalaryProfile(validatedData);
+      // Add userId (set to null since no auth)
+      const profileData = {
+        ...validatedData,
+        userId: null,
+      };
+      const profile = await storage.createSalaryProfile(profileData);
       res.status(201).json(profile);
     } catch (error: any) {
+      console.error("Salary profile creation error:", error);
       res.status(400).json({ error: error.message || "Invalid salary profile data" });
     }
   });

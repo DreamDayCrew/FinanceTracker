@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
 import { api } from '../lib/api';
 import { formatCurrency, formatDate, getThemedColors } from '../lib/utils';
 import { RootStackParamList } from '../../App';
@@ -18,6 +19,8 @@ export default function TransactionsScreen() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'credit' | 'debit'>('all');
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
 
@@ -31,22 +34,49 @@ export default function TransactionsScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      setIsDeleteModalOpen(false);
+      setSelectedTransaction(null);
+      Toast.show({
+        type: 'success',
+        text1: 'Transaction Deleted',
+        text2: 'Transaction has been removed',
+        position: 'bottom',
+      });
+    },
+    onError: (error: any) => {
+      setIsDeleteModalOpen(false);
+      setSelectedTransaction(null);
+      
+      // Check if this is a savings contribution transaction
+      if (error.isSavingsContribution || error.message?.includes('savings contribution')) {
+        Toast.show({
+          type: 'error',
+          text1: 'Cannot Delete',
+          text2: error.message || `This is a savings contribution transaction. Delete it from Savings Goals screen.`,
+          position: 'bottom',
+          visibilityTime: 5000,
+        });
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Delete Failed',
+          text2: 'Could not delete transaction. Please try again.',
+          position: 'bottom',
+        });
+      }
     },
   });
 
   const handleDelete = (transaction: Transaction) => {
-    Alert.alert(
-      'Delete Transaction',
-      'Are you sure you want to delete this transaction?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: () => deleteMutation.mutate(transaction.id)
-        },
-      ]
-    );
+    setSelectedTransaction(transaction);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (selectedTransaction && !deleteMutation.isPending) {
+      deleteMutation.mutate(selectedTransaction.id);
+    }
   };
 
   const filteredTransactions = transactions?.filter(t => {
@@ -106,10 +136,9 @@ export default function TransactionsScreen() {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {filteredTransactions.length > 0 ? (
           filteredTransactions.map((transaction) => (
-            <TouchableOpacity
+            <View
               key={transaction.id}
               style={[styles.transactionItem, { backgroundColor: colors.card }]}
-              onLongPress={() => handleDelete(transaction)}
             >
               <View style={[
                 styles.transactionIcon,
@@ -136,7 +165,23 @@ export default function TransactionsScreen() {
               ]}>
                 {transaction.type === 'credit' ? '+' : '-'}{formatCurrency(transaction.amount)}
               </Text>
-            </TouchableOpacity>
+              <View style={styles.transactionActions}>
+                <TouchableOpacity 
+                  onPress={() => navigation.navigate('AddTransaction', { transactionId: transaction.id })}
+                  style={[styles.actionIconButton, { backgroundColor: colors.primary + '20' }]}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="pencil" size={16} color={colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  onPress={() => handleDelete(transaction)}
+                  style={[styles.actionIconButton, { backgroundColor: '#fee2e2' }]}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                </TouchableOpacity>
+              </View>
+            </View>
           ))
         ) : (
           <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
@@ -148,6 +193,67 @@ export default function TransactionsScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={isDeleteModalOpen}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setIsDeleteModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.modalIconContainer}>
+              <View style={[styles.modalIcon, { backgroundColor: '#fee2e2' }]}>
+                <Ionicons name="warning-outline" size={32} color="#ef4444" />
+              </View>
+            </View>
+
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Delete Transaction?</Text>
+            <Text style={[styles.modalMessage, { color: colors.textMuted }]}>
+              Are you sure you want to delete this transaction? This action cannot be undone.
+            </Text>
+
+            {selectedTransaction && (
+              <View style={[styles.transactionPreview, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                <Text style={[styles.previewAmount, { color: selectedTransaction.type === 'credit' ? colors.primary : colors.danger }]}>
+                  {selectedTransaction.type === 'credit' ? '+' : '-'}{formatCurrency(selectedTransaction.amount)}
+                </Text>
+                <Text style={[styles.previewDescription, { color: colors.text }]}>
+                  {selectedTransaction.merchant || selectedTransaction.category?.name || 'Transaction'}
+                </Text>
+                <Text style={[styles.previewDate, { color: colors.textMuted }]}>
+                  {formatDate(selectedTransaction.transactionDate)}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+                onPress={() => {
+                  setIsDeleteModalOpen(false);
+                  setSelectedTransaction(null);
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton, { backgroundColor: '#ef4444' }]}
+                onPress={confirmDelete}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.deleteButtonText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <FABButton onPress={() => navigation.navigate('AddTransaction')} />
     </View>
@@ -231,6 +337,101 @@ const styles = StyleSheet.create({
   transactionAmount: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  transactionActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionIconButton: {
+    padding: 8,
+    borderRadius: 8,
+  },
+  deleteIconButton: {
+    padding: 8,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+  },
+  modalIconContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  modalMessage: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  transactionPreview: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  previewAmount: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  previewDescription: {
+    fontSize: 15,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  previewDate: {
+    fontSize: 13,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteButton: {
+    // backgroundColor set inline
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   emptyCard: {
     padding: 40,

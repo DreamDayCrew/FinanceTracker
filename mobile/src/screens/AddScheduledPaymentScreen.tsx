@@ -1,13 +1,17 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
+import Toast from 'react-native-toast-message';
 import { api } from '../lib/api';
-import { COLORS } from '../lib/utils';
+import { getThemedColors } from '../lib/utils';
+import { useTheme } from '../contexts/ThemeContext';
 
 export default function AddScheduledPaymentScreen() {
   const navigation = useNavigation();
   const queryClient = useQueryClient();
+  const { resolvedTheme } = useTheme();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
   
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
@@ -25,25 +29,54 @@ export default function AddScheduledPaymentScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scheduled-payments'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      Toast.show({
+        type: 'success',
+        text1: 'Payment Added',
+        text2: 'Scheduled payment has been created',
+        position: 'bottom',
+      });
       navigation.goBack();
     },
-    onError: () => {
-      Alert.alert('Error', 'Failed to add scheduled payment');
+    onError: (error) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to add scheduled payment',
+        position: 'bottom',
+      });
     },
   });
 
   const handleSubmit = () => {
     if (!name.trim()) {
-      Alert.alert('Error', 'Please enter payment name');
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Please enter payment name',
+        position: 'bottom',
+        visibilityTime: 3000,
+      });
       return;
     }
     if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Please enter a valid amount',
+        position: 'bottom',
+        visibilityTime: 3000,
+      });
       return;
     }
     const dueDateNum = parseInt(dueDate);
-    if (!dueDate || dueDateNum < 1 || dueDateNum > 31) {
-      Alert.alert('Error', 'Please enter a valid due date (1-31)');
+    if (!dueDate || isNaN(dueDateNum) || dueDateNum < 1 || dueDateNum > 31) {
+      Toast.show({
+        type: 'error',
+        text1: 'Invalid Due Date',
+        text2: 'Due date must be between 1 and 31',
+        position: 'bottom',
+        visibilityTime: 3000,
+      });
       return;
     }
 
@@ -60,26 +93,26 @@ export default function AddScheduledPaymentScreen() {
   const expenseCategories = categories?.filter(c => c.type === 'expense') || [];
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
       <View style={styles.field}>
-        <Text style={styles.label}>Payment Name</Text>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Payment Name</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
           placeholder="e.g., Rent, Netflix, Maid Salary"
-          placeholderTextColor={COLORS.textMuted}
+          placeholderTextColor={colors.textMuted}
           value={name}
           onChangeText={setName}
         />
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Amount</Text>
-        <View style={styles.amountInputContainer}>
-          <Text style={styles.currencyPrefix}>₹</Text>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Amount</Text>
+        <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
+          <Text style={[styles.currencyPrefix, { color: colors.textMuted }]}>₹</Text>
           <TextInput
-            style={styles.amountInput}
+            style={[styles.amountInput, { color: colors.text }]}
             placeholder="0"
-            placeholderTextColor={COLORS.textMuted}
+            placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
             value={amount}
             onChangeText={setAmount}
@@ -88,11 +121,11 @@ export default function AddScheduledPaymentScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Due Date (Day of Month)</Text>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Due Date (Day of Month)</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
           placeholder="e.g., 1, 15, 28"
-          placeholderTextColor={COLORS.textMuted}
+          placeholderTextColor={colors.textMuted}
           keyboardType="numeric"
           maxLength={2}
           value={dueDate}
@@ -101,7 +134,7 @@ export default function AddScheduledPaymentScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Category (optional)</Text>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Category (optional)</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.categoryRow}>
             {expenseCategories.map((category) => (
@@ -109,7 +142,8 @@ export default function AddScheduledPaymentScreen() {
                 key={category.id}
                 style={[
                   styles.categoryChip,
-                  selectedCategoryId === category.id && styles.categoryChipActive
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  selectedCategoryId === category.id && { backgroundColor: colors.primary }
                 ]}
                 onPress={() => setSelectedCategoryId(
                   selectedCategoryId === category.id ? null : category.id
@@ -117,7 +151,8 @@ export default function AddScheduledPaymentScreen() {
               >
                 <Text style={[
                   styles.categoryChipText,
-                  selectedCategoryId === category.id && styles.categoryChipTextActive
+                  { color: colors.text },
+                  selectedCategoryId === category.id && { color: '#fff' }
                 ]}>
                   {category.name}
                 </Text>
@@ -128,11 +163,11 @@ export default function AddScheduledPaymentScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Notes (optional)</Text>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Notes (optional)</Text>
         <TextInput
-          style={[styles.input, styles.textArea]}
+          style={[styles.input, styles.textArea, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
           placeholder="Add any notes..."
-          placeholderTextColor={COLORS.textMuted}
+          placeholderTextColor={colors.textMuted}
           multiline
           numberOfLines={3}
           value={notes}
@@ -141,7 +176,7 @@ export default function AddScheduledPaymentScreen() {
       </View>
 
       <TouchableOpacity 
-        style={[styles.submitButton, mutation.isPending && styles.submitButtonDisabled]} 
+        style={[styles.submitButton, { backgroundColor: colors.primary }, mutation.isPending && styles.submitButtonDisabled]} 
         onPress={handleSubmit}
         disabled={mutation.isPending}
       >
@@ -160,7 +195,6 @@ export default function AddScheduledPaymentScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
     padding: 16,
   },
   field: {
@@ -169,15 +203,12 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.textMuted,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: COLORS.card,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: COLORS.text,
   },
   textArea: {
     minHeight: 80,
@@ -186,20 +217,17 @@ const styles = StyleSheet.create({
   amountInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.card,
     borderRadius: 12,
     paddingHorizontal: 16,
   },
   currencyPrefix: {
     fontSize: 18,
-    color: COLORS.textMuted,
     marginRight: 8,
   },
   amountInput: {
     flex: 1,
     paddingVertical: 16,
     fontSize: 16,
-    color: COLORS.text,
   },
   categoryRow: {
     flexDirection: 'row',
@@ -209,21 +237,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: COLORS.card,
   },
   categoryChipActive: {
-    backgroundColor: COLORS.primary,
   },
   categoryChipText: {
     fontSize: 14,
-    color: COLORS.text,
     fontWeight: '500',
   },
   categoryChipTextActive: {
     color: '#ffffff',
   },
   submitButton: {
-    backgroundColor: COLORS.primary,
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',

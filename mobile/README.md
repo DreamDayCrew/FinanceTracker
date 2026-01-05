@@ -58,7 +58,7 @@ A React Native mobile version of the Personal Finance Tracker app, built with Ex
 npm run web
 # or: npx expo start --web
 ```
-Opens at `http://localhost:8081`
+Opens at `http://localhost:8082`
 
 > **Note:** The web version uses Metro bundler. If you see JSON output at the root URL, ensure you're running with `--web` flag.
 

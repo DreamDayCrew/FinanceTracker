@@ -36,6 +36,8 @@ export interface Transaction {
   transactionDate: string;
   smsId: number | null;
   isRecurring: boolean;
+  savingsContributionId?: number | null;
+  paymentOccurrenceId?: number | null;
   createdAt: string;
   account?: Account | null;
   category?: Category | null;
@@ -59,6 +61,8 @@ export interface ScheduledPayment {
   amount: string;
   dueDate: number;
   categoryId: number | null;
+  frequency?: string | null;
+  startMonth?: number | null;
   status: 'active' | 'inactive';
   notes: string | null;
   lastNotifiedAt: string | null;
@@ -109,6 +113,8 @@ export interface InsertTransaction {
   transactionDate?: string;
   referenceNumber?: string | null;
   isRecurring?: boolean;
+  savingsContributionId?: number;
+  paymentOccurrenceId?: number;
 }
 
 export interface InsertBudget {
@@ -123,8 +129,24 @@ export interface InsertScheduledPayment {
   amount: string;
   dueDate: number;
   categoryId?: number | null;
+  frequency?: string;
+  startMonth?: number | null;
   status?: 'active' | 'inactive';
   notes?: string | null;
+}
+
+export interface PaymentOccurrence {
+  id: number;
+  scheduledPaymentId: number;
+  month: number;
+  year: number;
+  dueDate: string;
+  status: string;
+  paidAt: string | null;
+  paidAmount: string | null;
+  notes: string | null;
+  createdAt: string;
+  scheduledPayment?: ScheduledPayment;
 }
 
 export interface SavingsGoal {
@@ -182,9 +204,11 @@ export interface Loan {
   name: string;
   loanType: 'home_loan' | 'personal_loan' | 'credit_card_loan' | 'item_emi';
   principalAmount: string;
+  outstandingAmount: string;
   interestRate: string;
   tenureMonths: number;
   emiAmount: string;
+  emiDay: number | null;
   startDate: string;
   endDate: string | null;
   accountId: number | null;
@@ -237,7 +261,8 @@ export interface InsertSavingsGoal {
 export interface InsertSavingsContribution {
   savingsGoalId: number;
   amount: string;
-  contributionDate?: string;
+  accountId?: number;
+  contributedAt?: string;
   notes?: string | null;
 }
 

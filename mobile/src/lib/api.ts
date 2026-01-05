@@ -1,7 +1,7 @@
 import type { 
   Account, Category, Transaction, Budget, ScheduledPayment, 
   User, DashboardData, InsertAccount, InsertTransaction, 
-  InsertBudget, InsertScheduledPayment,
+  InsertBudget, InsertScheduledPayment, PaymentOccurrence,
   SavingsGoal, SavingsContribution, InsertSavingsGoal, InsertSavingsContribution,
   SalaryProfile, SalaryCycle, InsertSalaryProfile,
   Loan, LoanInstallment, InsertLoan,
@@ -26,7 +26,27 @@ async function apiRequest<T>(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`API error ${response.status}: ${errorText}`);
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText };
+      }
+      
+      // Create an error object with additional properties
+      const error: any = new Error(errorData.message || errorData.error || `API error ${response.status}`);
+      // Attach additional error data
+      if (errorData.isSavingsContribution) {
+        error.isSavingsContribution = true;
+        error.savingsGoalName = errorData.savingsGoalName;
+        error.savingsContributionId = errorData.savingsContributionId;
+      }
+      throw error;
+    }
+
+    // Handle 204 No Content responses
+    if (response.status === 204) {
+      return undefined as T;
     }
 
     return response.json();
@@ -54,6 +74,8 @@ export const api = {
   getTransactions: () => apiRequest<Transaction[]>('/api/transactions'),
   createTransaction: (data: InsertTransaction) => 
     apiRequest<Transaction>('/api/transactions', { method: 'POST', body: JSON.stringify(data) }),
+  updateTransaction: (id: number, data: Partial<InsertTransaction>) => 
+    apiRequest<Transaction>(`/api/transactions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteTransaction: (id: number) => 
     apiRequest<void>(`/api/transactions/${id}`, { method: 'DELETE' }),
   
@@ -61,6 +83,8 @@ export const api = {
     apiRequest<Budget[]>(`/api/budgets?month=${month}&year=${year}`),
   createBudget: (data: InsertBudget) => 
     apiRequest<Budget>('/api/budgets', { method: 'POST', body: JSON.stringify(data) }),
+  updateBudget: (id: number, data: Partial<InsertBudget>) => 
+    apiRequest<Budget>(`/api/budgets/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteBudget: (id: number) => 
     apiRequest<void>(`/api/budgets/${id}`, { method: 'DELETE' }),
   
@@ -71,6 +95,19 @@ export const api = {
     apiRequest<ScheduledPayment>(`/api/scheduled-payments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteScheduledPayment: (id: number) => 
     apiRequest<void>(`/api/scheduled-payments/${id}`, { method: 'DELETE' }),
+  
+  getPaymentOccurrences: (month: number, year: number) => 
+    apiRequest<any[]>(`/api/payment-occurrences?month=${month}&year=${year}`),
+  generatePaymentOccurrences: (month: number, year: number) => 
+    apiRequest<any>('/api/payment-occurrences/generate', { 
+      method: 'POST', 
+      body: JSON.stringify({ month, year }) 
+    }),
+  updatePaymentOccurrence: (id: number, data: { status: string }) => 
+    apiRequest<any>(`/api/payment-occurrences/${id}`, { 
+      method: 'PATCH', 
+      body: JSON.stringify(data) 
+    }),
   
   getUser: () => apiRequest<User>('/api/user'),
   updateUser: (data: Partial<User>) => 
@@ -116,6 +153,8 @@ export const api = {
     apiRequest<SavingsContribution>(`/api/savings-goals/${goalId}/contributions`, { 
       method: 'POST', body: JSON.stringify(data) 
     }),
+  deleteContribution: (id: number) => 
+    apiRequest<void>(`/api/savings-contributions/${id}`, { method: 'DELETE' }),
 
   getSalaryProfiles: () => apiRequest<SalaryProfile[]>('/api/salary-profiles'),
   createSalaryProfile: (data: InsertSalaryProfile) => 

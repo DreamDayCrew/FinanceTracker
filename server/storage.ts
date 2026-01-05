@@ -57,6 +57,7 @@ export interface IStorage {
   }): Promise<TransactionWithRelations[]>;
   getTransaction(id: number): Promise<TransactionWithRelations | undefined>;
   createTransaction(transaction: InsertTransaction): Promise<Transaction>;
+  updateTransaction(id: number, transaction: Partial<InsertTransaction>): Promise<Transaction>;
   deleteTransaction(id: number): Promise<boolean>;
 
   // Budgets
@@ -93,6 +94,7 @@ export interface IStorage {
 
   // Savings Contributions
   getSavingsContributions(goalId: number): Promise<SavingsContribution[]>;
+  getSavingsContribution(id: number): Promise<SavingsContribution | undefined>;
   createSavingsContribution(contribution: InsertSavingsContribution): Promise<SavingsContribution>;
   deleteSavingsContribution(id: number): Promise<boolean>;
 
@@ -250,6 +252,8 @@ export class DatabaseStorage implements IStorage {
       transactionDate: transactions.transactionDate,
       smsId: transactions.smsId,
       isRecurring: transactions.isRecurring,
+      savingsContributionId: transactions.savingsContributionId,
+      paymentOccurrenceId: transactions.paymentOccurrenceId,
       createdAt: transactions.createdAt,
       account: accounts,
       category: categories,
@@ -312,6 +316,8 @@ export class DatabaseStorage implements IStorage {
       transactionDate: transactions.transactionDate,
       smsId: transactions.smsId,
       isRecurring: transactions.isRecurring,
+      savingsContributionId: transactions.savingsContributionId,
+      paymentOccurrenceId: transactions.paymentOccurrenceId,
       createdAt: transactions.createdAt,
       account: accounts,
       category: categories,
@@ -337,6 +343,43 @@ export class DatabaseStorage implements IStorage {
     }
 
     return newTransaction;
+  }
+
+  async updateTransaction(id: number, updates: Partial<InsertTransaction>): Promise<Transaction> {
+    const oldTransaction = await this.getTransaction(id);
+    if (!oldTransaction) {
+      throw new Error('Transaction not found');
+    }
+
+    // Reverse old balance changes if account changed or amount changed
+    if (oldTransaction.accountId) {
+      const oldBalanceType = oldTransaction.type === 'debit' ? 'add' : 'subtract';
+      await this.updateAccountBalance(oldTransaction.accountId, oldTransaction.amount, oldBalanceType);
+    }
+
+    // Update the transaction
+    const updateData: any = { ...updates };
+    if (updates.transactionDate) {
+      updateData.transactionDate = new Date(updates.transactionDate);
+    }
+
+    const [updatedTransaction] = await db
+      .update(transactions)
+      .set(updateData)
+      .where(eq(transactions.id, id))
+      .returning();
+
+    // Apply new balance changes
+    const newAccountId = updates.accountId !== undefined ? updates.accountId : oldTransaction.accountId;
+    const newAmount = updates.amount !== undefined ? updates.amount : oldTransaction.amount;
+    const newType = updates.type !== undefined ? updates.type : oldTransaction.type;
+
+    if (newAccountId) {
+      const newBalanceType = newType === 'debit' ? 'subtract' : 'add';
+      await this.updateAccountBalance(newAccountId, newAmount, newBalanceType);
+    }
+
+    return updatedTransaction;
   }
 
   async deleteTransaction(id: number): Promise<boolean> {
@@ -366,10 +409,23 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(budgets.year, filters.year));
     }
 
+    const query = db.select({
+      id: budgets.id,
+      userId: budgets.userId,
+      categoryId: budgets.categoryId,
+      amount: budgets.amount,
+      month: budgets.month,
+      year: budgets.year,
+      createdAt: budgets.createdAt,
+      category: categories,
+    })
+    .from(budgets)
+    .leftJoin(categories, eq(budgets.categoryId, categories.id));
+
     if (conditions.length > 0) {
-      return db.select().from(budgets).where(and(...conditions));
+      return query.where(and(...conditions));
     }
-    return db.select().from(budgets);
+    return query;
   }
 
   async getBudget(id: number): Promise<Budget | undefined> {
@@ -419,6 +475,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteScheduledPayment(id: number): Promise<boolean> {
+    // First delete all payment occurrences for this scheduled payment
+    await db.delete(paymentOccurrences).where(eq(paymentOccurrences.scheduledPaymentId, id));
+    
+    // Then delete the scheduled payment
     const result = await db.delete(scheduledPayments).where(eq(scheduledPayments.id, id)).returning();
     return result.length > 0;
   }
@@ -688,9 +748,26 @@ export class DatabaseStorage implements IStorage {
 
   // Savings Contributions
   async getSavingsContributions(goalId: number): Promise<SavingsContribution[]> {
-    return db.select().from(savingsContributions)
+    const contributions = await db.select({
+      contribution: savingsContributions,
+      account: accounts,
+    })
+      .from(savingsContributions)
+      .leftJoin(accounts, eq(savingsContributions.accountId, accounts.id))
       .where(eq(savingsContributions.savingsGoalId, goalId))
       .orderBy(desc(savingsContributions.contributedAt));
+    
+    return contributions.map(c => ({
+      ...c.contribution,
+      account: c.account || undefined,
+    })) as any;
+  }
+
+  async getSavingsContribution(id: number): Promise<SavingsContribution | undefined> {
+    const [contribution] = await db.select()
+      .from(savingsContributions)
+      .where(eq(savingsContributions.id, id));
+    return contribution;
   }
 
   async createSavingsContribution(contribution: InsertSavingsContribution): Promise<SavingsContribution> {

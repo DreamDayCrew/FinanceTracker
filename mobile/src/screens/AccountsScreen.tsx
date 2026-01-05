@@ -1,15 +1,16 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { useState, useMemo } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
 import { api } from '../lib/api';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { RootStackParamList } from '../../App';
 import { FABButton } from '../components/FABButton';
 import type { Account } from '../lib/types';
 import { useTheme } from '../contexts/ThemeContext';
-import { useMemo } from 'react';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -18,6 +19,9 @@ export default function AccountsScreen() {
   const queryClient = useQueryClient();
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
+  
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: ['accounts'],
@@ -28,22 +32,41 @@ export default function AccountsScreen() {
     mutationFn: api.deleteAccount,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      setIsDeleteModalOpen(false);
+      setSelectedAccount(null);
+      Toast.show({
+        type: 'success',
+        text1: 'Account Deleted',
+        text2: 'Account has been removed successfully',
+        position: 'bottom',
+      });
+    },
+    onError: () => {
+      setIsDeleteModalOpen(false);
+      setSelectedAccount(null);
+      Toast.show({
+        type: 'error',
+        text1: 'Delete Failed',
+        text2: 'Could not delete account. Please try again.',
+        position: 'bottom',
+      });
     },
   });
 
   const handleDelete = (account: Account) => {
-    Alert.alert(
-      'Delete Account',
-      `Are you sure you want to delete "${account.name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: () => deleteMutation.mutate(account.id)
-        },
-      ]
-    );
+    setSelectedAccount(account);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (selectedAccount && !deleteMutation.isPending) {
+      deleteMutation.mutate(selectedAccount.id);
+    }
+  };
+
+  const handleEdit = (account: Account) => {
+    navigation.navigate('AddAccount', { accountId: account.id });
   };
 
   const bankAccounts = accounts?.filter(a => a.type === 'bank') || [];
@@ -64,11 +87,7 @@ export default function AccountsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Bank Accounts</Text>
           {bankAccounts.length > 0 ? (
             bankAccounts.map((account) => (
-              <TouchableOpacity 
-                key={account.id} 
-                style={[styles.accountCard, { backgroundColor: colors.card }]}
-                onLongPress={() => handleDelete(account)}
-              >
+              <View key={account.id} style={[styles.accountCard, { backgroundColor: colors.card }]}>
                 <View style={[styles.accountIcon, { backgroundColor: colors.primary + '20' }]}>
                   <Ionicons name="business-outline" size={24} color={colors.primary} />
                 </View>
@@ -77,9 +96,23 @@ export default function AccountsScreen() {
                   {account.accountNumber && (
                     <Text style={[styles.accountNumber, { color: colors.textMuted }]}>****{account.accountNumber}</Text>
                   )}
+                  <Text style={[styles.accountBalance, { color: colors.primary }]}>{formatCurrency(account.balance)}</Text>
                 </View>
-                <Text style={[styles.accountBalance, { color: colors.primary }]}>{formatCurrency(account.balance)}</Text>
-              </TouchableOpacity>
+                <View style={styles.accountActions}>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, { backgroundColor: colors.primary + '20' }]}
+                    onPress={() => handleEdit(account)}
+                  >
+                    <Ionicons name="pencil" size={16} color={colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, { backgroundColor: '#fee2e2' }]}
+                    onPress={() => handleDelete(account)}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
+              </View>
             ))
           ) : (
             <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
@@ -99,10 +132,9 @@ export default function AccountsScreen() {
                 : 0;
               
               return (
-                <TouchableOpacity 
+                <View 
                   key={account.id} 
                   style={[styles.accountCard, { backgroundColor: colors.card }]}
-                  onLongPress={() => handleDelete(account)}
                 >
                   <View style={[styles.accountIcon, { backgroundColor: colors.danger + '20' }]}>
                     <Ionicons name="card-outline" size={24} color={colors.danger} />
@@ -129,7 +161,21 @@ export default function AccountsScreen() {
                       </View>
                     </View>
                   </View>
-                </TouchableOpacity>
+                  <View style={styles.accountActions}>
+                    <TouchableOpacity 
+                      style={[styles.actionButton, { backgroundColor: colors.primary + '20' }]}
+                      onPress={() => handleEdit(account)}
+                    >
+                      <Ionicons name="pencil" size={16} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.actionButton, { backgroundColor: '#fee2e2' }]}
+                      onPress={() => handleDelete(account)}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
               );
             })
           ) : (
@@ -144,6 +190,46 @@ export default function AccountsScreen() {
       </ScrollView>
 
       <FABButton onPress={() => navigation.navigate('AddAccount')} icon="add" />
+      
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={isDeleteModalOpen}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setIsDeleteModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalIcon, { backgroundColor: '#fee2e2' }]}>
+              <Ionicons name="trash-outline" size={32} color="#ef4444" />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Delete Account</Text>
+            <Text style={[styles.modalMessage, { color: colors.textMuted }]}>
+              Are you sure you want to delete "{selectedAccount?.name}"? This action cannot be undone.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { backgroundColor: colors.border }]}
+                onPress={() => setIsDeleteModalOpen(false)}
+                disabled={deleteMutation.isPending}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonDelete]}
+                onPress={confirmDelete}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: '#fff' }]}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -223,5 +309,69 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 15,
     marginTop: 8,
+  },
+  accountActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  modalIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  modalMessage: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: '#f3f4f6',
+  },
+  modalButtonDelete: {
+    backgroundColor: '#ef4444',
+  },
+  modalButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

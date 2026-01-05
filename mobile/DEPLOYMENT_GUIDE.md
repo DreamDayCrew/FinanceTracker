@@ -49,7 +49,7 @@ Then scan the QR code with Expo Go app on your phone.
 ```bash
 npx expo start --web
 ```
-Opens at `http://localhost:8081`
+Opens at `http://localhost:8082`
 
 ---
 
@@ -154,7 +154,7 @@ This uploads the AAB directly to Google Play Console.
 
 ### Web shows JSON instead of app
 - Make sure you run `npx expo start --web` (not just `npx expo start`)
-- The app opens at `http://localhost:8081`, not the root manifest
+- The app opens at `http://localhost:`, not the root manifest
 
 ### "Network request failed" on mobile
 - Ensure backend URL in `.env` is accessible from your phone

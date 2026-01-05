@@ -1,68 +1,134 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { useMemo, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
 import { api } from '../lib/api';
-import { formatCurrency, COLORS } from '../lib/utils';
+import { formatCurrency, getThemedColors } from '../lib/utils';
 import { MoreStackParamList } from '../../App';
 import type { Budget } from '../lib/types';
+import { useTheme } from '../contexts/ThemeContext';
 
 type NavigationProp = NativeStackNavigationProp<MoreStackParamList>;
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function BudgetsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const queryClient = useQueryClient();
+  const { resolvedTheme } = useTheme();
+  const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
   
   const now = new Date();
-  const month = now.getMonth() + 1;
-  const year = now.getFullYear();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [budgetToDelete, setBudgetToDelete] = useState<Budget | null>(null);
 
   const { data: budgets, isLoading } = useQuery({
     queryKey: ['budgets', month, year],
     queryFn: () => api.getBudgets(month, year),
   });
 
+  const { data: transactions = [] } = useQuery({
+    queryKey: ['transactions', month, year],
+    queryFn: api.getTransactions,
+  });
+
+  // Calculate spending per category for the current month
+  const categorySpending = useMemo(() => {
+    const spending: Record<number, number> = {};
+    
+    transactions.forEach((transaction: any) => {
+      if (transaction.type === 'debit' && transaction.categoryId) {
+        const transactionDate = new Date(transaction.transactionDate);
+        if (transactionDate.getMonth() + 1 === month && transactionDate.getFullYear() === year) {
+          spending[transaction.categoryId] = (spending[transaction.categoryId] || 0) + parseFloat(transaction.amount);
+        }
+      }
+    });
+    
+    return spending;
+  }, [transactions, month, year]);
+
   const deleteMutation = useMutation({
     mutationFn: api.deleteBudget,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgets'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      setIsDeleteModalOpen(false);
+      setBudgetToDelete(null);
+      Toast.show({
+        type: 'success',
+        text1: 'Budget Deleted',
+        text2: 'Budget has been removed successfully',
+        position: 'bottom',
+      });
+    },
+    onError: () => {
+      Toast.show({
+        type: 'error',
+        text1: 'Delete Failed',
+        text2: 'Could not delete budget. Please try again.',
+        position: 'bottom',
+      });
     },
   });
 
   const handleDelete = (budget: Budget) => {
-    Alert.alert(
-      'Delete Budget',
-      `Delete budget for ${budget.category?.name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: () => deleteMutation.mutate(budget.id)
-        },
-      ]
-    );
+    setBudgetToDelete(budget);
+    setIsDeleteModalOpen(true);
   };
 
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'];
+  const confirmDelete = () => {
+    if (budgetToDelete) {
+      deleteMutation.mutate(budgetToDelete.id);
+    }
+  };
+
+  const goToPreviousMonth = () => {
+    if (month === 1) {
+      setMonth(12);
+      setYear(year - 1);
+    } else {
+      setMonth(month - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (month === 12) {
+      setMonth(1);
+      setYear(year + 1);
+    } else {
+      setMonth(month + 1);
+    }
+  };
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.monthLabel}>{monthNames[month - 1]} {year}</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={styles.monthNav}>
+          <TouchableOpacity onPress={goToPreviousMonth} style={styles.monthNavButton}>
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.monthLabel, { color: colors.text }]}>{MONTH_NAMES[month - 1]} {year}</Text>
+          <TouchableOpacity onPress={goToNextMonth} style={styles.monthNavButton}>
+            <Ionicons name="chevron-forward" size={24} color={colors.text} />
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity 
-          style={styles.addButton}
+          style={[styles.addButton, { backgroundColor: colors.primary }]}
           onPress={() => navigation.navigate('AddBudget')}
         >
           <Ionicons name="add" size={20} color="#fff" />
@@ -72,36 +138,119 @@ export default function BudgetsScreen() {
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {budgets && budgets.length > 0 ? (
-          budgets.map((budget) => (
-            <TouchableOpacity 
-              key={budget.id} 
-              style={styles.budgetCard}
-              onLongPress={() => handleDelete(budget)}
+          budgets.map((budget) => {
+            const spent = budget.categoryId ? (categorySpending[budget.categoryId] || 0) : 0;
+            const budgetAmount = parseFloat(budget.amount);
+            const percentage = budgetAmount > 0 ? Math.min((spent / budgetAmount) * 100, 100) : 0;
+            const isOverBudget = spent > budgetAmount;
+            
+            return (
+            <TouchableOpacity
+              key={budget.id}
+              style={[styles.budgetCard, { backgroundColor: colors.card }]}
+              onPress={() => {
+                if (budget.categoryId && budget.category?.name) {
+                  navigation.navigate('CategoryTransactions', {
+                    categoryId: budget.categoryId,
+                    categoryName: budget.category.name,
+                    month,
+                    year,
+                  });
+                }
+              }}
+              activeOpacity={0.7}
             >
-              <View style={styles.budgetHeader}>
-                <View style={styles.categoryBadge}>
-                  <Text style={styles.categoryName}>{budget.category?.name}</Text>
+              <View style={styles.budgetContent}>
+                <View style={styles.budgetHeader}>
+                  <View style={[styles.categoryBadge, { backgroundColor: colors.primary + '20' }]}>
+                    <Text style={[styles.categoryName, { color: colors.primary }]}>{budget.category?.name || 'Unknown Category'}</Text>
+                  </View>
+                  <Text style={[styles.budgetAmount, { color: colors.text }]}>{formatCurrency(budget.amount)}</Text>
                 </View>
-                <Text style={styles.budgetAmount}>{formatCurrency(budget.amount)}</Text>
+                <View style={styles.budgetActions}>
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('AddBudget', { budgetId: budget.id })}
+                    style={[styles.actionButton, { backgroundColor: colors.primary + '20' }]}
+                  >
+                    <Ionicons name="pencil" size={18} color={colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDelete(budget)}
+                    style={[styles.actionButton, { backgroundColor: '#fee2e2' }]}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
               </View>
               <View style={styles.progressContainer}>
-                <View style={styles.progressBar}>
-                  <View style={[styles.progressFill, { width: '0%' }]} />
+                <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+                  <View style={[
+                    styles.progressFill, 
+                    { 
+                      width: `${percentage}%`, 
+                      backgroundColor: isOverBudget ? '#ef4444' : colors.primary 
+                    }
+                  ]} />
                 </View>
-                <Text style={styles.progressText}>₹0 spent</Text>
+                <Text style={[styles.progressText, { color: isOverBudget ? '#ef4444' : colors.textMuted }]}>
+                  {formatCurrency(spent)} spent {isOverBudget && '(Over budget!)'}
+                </Text>
               </View>
             </TouchableOpacity>
-          ))
+            );
+          })
         ) : (
-          <View style={styles.emptyCard}>
-            <Ionicons name="pie-chart-outline" size={48} color={COLORS.textMuted} />
-            <Text style={styles.emptyText}>No budgets set</Text>
-            <Text style={styles.emptySubtext}>Tap + Add to create a budget</Text>
+          <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+            <Ionicons name="pie-chart-outline" size={48} color={colors.textMuted} />
+            <Text style={[styles.emptyText, { color: colors.text }]}>No budgets set</Text>
+            <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>Tap + Add to create a budget</Text>
           </View>
         )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={isDeleteModalOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsDeleteModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Ionicons name="warning-outline" size={48} color="#ef4444" />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Delete Budget?</Text>
+            <Text style={[styles.modalMessage, { color: colors.textMuted }]}>
+              Are you sure you want to delete the budget for {budgetToDelete?.category?.name}? This action cannot be undone.
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
+                onPress={() => {
+                  setIsDeleteModalOpen(false);
+                  setBudgetToDelete(null);
+                }}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton]}
+                onPress={confirmDelete}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.deleteButtonText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -109,7 +258,6 @@ export default function BudgetsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   header: {
     flexDirection: 'row',
@@ -117,17 +265,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+  },
+  monthNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  monthNavButton: {
+    padding: 4,
   },
   monthLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
+    minWidth: 140,
+    textAlign: 'center',
   },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.primary,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
@@ -148,19 +303,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   budgetCard: {
-    backgroundColor: COLORS.card,
     padding: 16,
     borderRadius: 12,
+    marginBottom: 12,
+  },
+  budgetContent: {
     marginBottom: 12,
   },
   budgetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  budgetActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  actionButton: {
+    padding: 8,
+    borderRadius: 8,
   },
   categoryBadge: {
-    backgroundColor: `${COLORS.primary}20`,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -168,33 +333,27 @@ const styles = StyleSheet.create({
   categoryName: {
     fontSize: 13,
     fontWeight: '500',
-    color: COLORS.primary,
   },
   budgetAmount: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.text,
   },
   progressContainer: {
     gap: 6,
   },
   progressBar: {
     height: 8,
-    backgroundColor: COLORS.border,
     borderRadius: 4,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: COLORS.primary,
     borderRadius: 4,
   },
   progressText: {
     fontSize: 12,
-    color: COLORS.textMuted,
   },
   emptyCard: {
-    backgroundColor: COLORS.card,
     padding: 40,
     borderRadius: 16,
     alignItems: 'center',
@@ -202,13 +361,66 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 17,
-    color: COLORS.text,
     fontWeight: '500',
     marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,
-    color: COLORS.textMuted,
     marginTop: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  modalHeader: {
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteButton: {
+    backgroundColor: '#ef4444',
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

@@ -51,8 +51,21 @@ export default function Transactions() {
       queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
       toast({ title: "Transaction deleted" });
     },
-    onError: () => {
-      toast({ title: "Failed to delete transaction", variant: "destructive" });
+    onError: (error: any) => {
+      // Check if this is a savings contribution transaction
+      if (error.message?.includes('savings contribution') || error.isSavingsContribution) {
+        toast({ 
+          title: "Cannot Delete", 
+          description: error.message || "This is a savings contribution transaction. Delete it from Savings Goals screen.",
+          variant: "destructive",
+          duration: 5000,
+        });
+      } else {
+        toast({ 
+          title: "Failed to delete transaction", 
+          variant: "destructive" 
+        });
+      }
     },
   });
 

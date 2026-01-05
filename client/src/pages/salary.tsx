@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Wallet, Calendar, Check } from "lucide-react";
+import { ArrowLeft, Wallet, Calendar, Check, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -15,6 +15,14 @@ interface SalaryProfile {
   paydayRule: string;
   fixedDay: number | null;
   monthlyAmount: string | null;
+  accountId: number | null;
+}
+
+interface Account {
+  id: number;
+  name: string;
+  type: string;
+  balance: string;
 }
 
 interface Payday {
@@ -23,10 +31,22 @@ interface Payday {
   date: string;
 }
 
+interface SalaryCycle {
+  id: number;
+  month: number;
+  year: number;
+  expectedPayDate: string;
+  actualPayDate: string | null;
+  expectedAmount: string | null;
+  actualAmount: string | null;
+}
+
 export default function Salary() {
   const [paydayRule, setPaydayRule] = useState("last_working_day");
   const [fixedDay, setFixedDay] = useState("25");
   const [monthlyAmount, setMonthlyAmount] = useState("");
+  const [accountId, setAccountId] = useState<string>("");
+  const [showSalary, setShowSalary] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -46,11 +66,21 @@ export default function Salary() {
     },
   });
 
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ["/api/accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/accounts");
+      const allAccounts = await res.json();
+      return allAccounts.filter((acc: Account) => acc.type === 'bank');
+    },
+  });
+
   useEffect(() => {
     if (profile) {
       setPaydayRule(profile.paydayRule || "last_working_day");
       setFixedDay(profile.fixedDay?.toString() || "25");
       setMonthlyAmount(profile.monthlyAmount || "");
+      setAccountId(profile.accountId?.toString() || "");
     }
   }, [profile]);
 
@@ -60,6 +90,7 @@ export default function Salary() {
         paydayRule,
         fixedDay: paydayRule === "fixed_day" ? parseInt(fixedDay) : null,
         monthlyAmount: monthlyAmount || null,
+        accountId: accountId ? parseInt(accountId) : null,
       };
 
       if (profile) {
@@ -100,14 +131,26 @@ export default function Salary() {
 
       <Card className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white">
         <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <Wallet className="w-10 h-10" />
-            <div>
-              <p className="text-sm opacity-90">Monthly Salary</p>
-              <p className="text-2xl font-bold">
-                {monthlyAmount ? `₹${parseFloat(monthlyAmount).toLocaleString()}` : "Not set"}
-              </p>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Wallet className="w-10 h-10" />
+              <div>
+                <p className="text-sm opacity-90">Monthly Salary</p>
+                <p className="text-2xl font-bold">
+                  {monthlyAmount ? (showSalary ? `₹${parseFloat(monthlyAmount).toLocaleString()}` : "₹ *********") : "Not set"}
+                </p>
+              </div>
             </div>
+            {monthlyAmount && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 hover:bg-white/20"
+                onClick={() => setShowSalary(!showSalary)}
+              >
+                {showSalary ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -118,13 +161,43 @@ export default function Salary() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
+            <Label>Credit Account</Label>
+            <Select value={accountId} onValueChange={setAccountId}>
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Select account where salary is credited" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id.toString()}>
+                    {account.name} - {account.type === "bank" ? "Bank" : "Credit Card"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
             <Label>Monthly Amount (₹)</Label>
-            <Input 
-              type="number"
-              placeholder="50000"
-              value={monthlyAmount}
-              onChange={(e) => setMonthlyAmount(e.target.value)}
-            />
+            <div className="relative">
+              <Input 
+                type={showSalary ? "number" : "password"}
+                placeholder="50000"
+                value={monthlyAmount}
+                onChange={(e) => setMonthlyAmount(e.target.value)}
+                className="pr-10"
+              />
+              {monthlyAmount && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="absolute right-0 top-0 h-full w-10"
+                  onClick={() => setShowSalary(!showSalary)}
+                  type="button"
+                >
+                  {showSalary ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </Button>
+              )}
+            </div>
           </div>
 
           <div>

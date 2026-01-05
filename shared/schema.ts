@@ -57,6 +57,7 @@ export const insertAccountSchema = createInsertSchema(accounts).omit({
   balance: z.string().optional(),
   creditLimit: z.string().optional(),
   linkedAccountId: z.number().optional(),
+  userId: z.number().optional(),
 });
 
 export type InsertAccount = z.infer<typeof insertAccountSchema>;
@@ -111,6 +112,8 @@ export const transactions = pgTable("transactions", {
   transactionDate: timestamp("transaction_date").notNull(),
   smsId: integer("sms_id"),
   isRecurring: boolean("is_recurring").default(false),
+  savingsContributionId: integer("savings_contribution_id"), // Link to savings contribution if this is a contribution transaction
+  paymentOccurrenceId: integer("payment_occurrence_id"), // Link to scheduled payment occurrence if this is a scheduled payment transaction
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -127,6 +130,8 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({
   amount: z.string().min(1, "Amount is required"),
   type: z.enum(["debit", "credit"]),
   transactionDate: z.string().optional(),
+  savingsContributionId: z.number().optional(),
+  paymentOccurrenceId: z.number().optional(),
 });
 
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
@@ -267,6 +272,7 @@ export type SavingsGoal = typeof savingsGoals.$inferSelect;
 export const savingsContributions = pgTable("savings_contributions", {
   id: serial("id").primaryKey(),
   savingsGoalId: integer("savings_goal_id").references(() => savingsGoals.id).notNull(),
+  accountId: integer("account_id").references(() => accounts.id),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   notes: text("notes"),
   contributedAt: timestamp("contributed_at").notNull().defaultNow(),
@@ -275,13 +281,17 @@ export const savingsContributions = pgTable("savings_contributions", {
 
 export const savingsContributionsRelations = relations(savingsContributions, ({ one }) => ({
   savingsGoal: one(savingsGoals, { fields: [savingsContributions.savingsGoalId], references: [savingsGoals.id] }),
+  account: one(accounts, { fields: [savingsContributions.accountId], references: [accounts.id] }),
 }));
 
 export const insertSavingsContributionSchema = createInsertSchema(savingsContributions).omit({
   id: true,
   createdAt: true,
+  contributedAt: true,
 }).extend({
   amount: z.string().min(1, "Amount is required"),
+  accountId: z.number().optional(),
+  contributedAt: z.string().optional(),
 });
 
 export type InsertSavingsContribution = z.infer<typeof insertSavingsContributionSchema>;
@@ -291,6 +301,7 @@ export type SavingsContribution = typeof savingsContributions.$inferSelect;
 export const salaryProfiles = pgTable("salary_profiles", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
+  accountId: integer("account_id").references(() => accounts.id),
   paydayRule: varchar("payday_rule", { length: 30 }).default("last_working_day"), // 'fixed_day', 'last_working_day', 'nth_weekday'
   fixedDay: integer("fixed_day"), // day of month if payday_rule is 'fixed_day'
   weekdayPreference: integer("weekday_preference"), // 0=Sun, 1=Mon... for nth_weekday rule
@@ -302,6 +313,7 @@ export const salaryProfiles = pgTable("salary_profiles", {
 
 export const salaryProfilesRelations = relations(salaryProfiles, ({ one, many }) => ({
   user: one(users, { fields: [salaryProfiles.userId], references: [users.id] }),
+  account: one(accounts, { fields: [salaryProfiles.accountId], references: [accounts.id] }),
   cycles: many(salaryCycles),
 }));
 
@@ -311,8 +323,9 @@ export const insertSalaryProfileSchema = createInsertSchema(salaryProfiles).omit
   updatedAt: true,
 }).extend({
   paydayRule: z.enum(["fixed_day", "last_working_day", "nth_weekday"]).optional(),
-  fixedDay: z.number().min(1).max(31).optional(),
+  fixedDay: z.number().min(1).max(31).nullish(),
   monthlyAmount: z.string().optional(),
+  accountId: z.number().optional(),
 });
 
 export type InsertSalaryProfile = z.infer<typeof insertSalaryProfileSchema>;
