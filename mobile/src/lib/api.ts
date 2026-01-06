@@ -212,6 +212,10 @@ export const api = {
   getLoanPayments: (loanId: number) => apiRequest<LoanPayment[]>(`/api/loans/${loanId}/payments`),
   createLoanPayment: (loanId: number, data: Omit<InsertLoanPayment, 'loanId'>) => 
     apiRequest<LoanPayment>(`/api/loans/${loanId}/payments`, { method: 'POST', body: JSON.stringify(data) }),
+  updateLoanPayment: (id: number, data: Partial<InsertLoanPayment>) =>
+    apiRequest<LoanPayment>(`/api/loan-payments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteLoanPayment: (id: number) =>
+    apiRequest<void>(`/api/loan-payments/${id}`, { method: 'DELETE' }),
   markInstallmentPaid: (loanId: number, installmentId: number, data: { 
     paidDate: string; 
     paidAmount: string; 

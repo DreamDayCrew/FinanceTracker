@@ -152,6 +152,8 @@ export interface IStorage {
   getLoanPayments(loanId: number): Promise<LoanPayment[]>;
   getLoanPayment(id: number): Promise<LoanPayment | undefined>;
   createLoanPayment(payment: InsertLoanPayment): Promise<LoanPayment>;
+  updateLoanPayment(id: number, payment: Partial<InsertLoanPayment>): Promise<LoanPayment | undefined>;
+  deleteLoanPayment(id: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1444,6 +1446,67 @@ export class DatabaseStorage implements IStorage {
     }
 
     return newPayment;
+  }
+
+  async updateLoanPayment(id: number, payment: Partial<InsertLoanPayment>): Promise<LoanPayment | undefined> {
+    const existingPayment = await this.getLoanPayment(id);
+    if (!existingPayment) return undefined;
+
+    // If principal amount changes, adjust outstanding balance
+    if (payment.principalPaid !== undefined) {
+      const oldPrincipal = parseFloat(existingPayment.principalPaid || '0');
+      const newPrincipal = parseFloat(payment.principalPaid || '0');
+      const difference = newPrincipal - oldPrincipal;
+
+      if (difference !== 0) {
+        const loan = await this.getLoan(existingPayment.loanId);
+        if (loan) {
+          const currentOutstanding = parseFloat(loan.outstandingAmount) || 0;
+          const newOutstanding = Math.max(0, currentOutstanding - difference);
+          await db.update(loans).set({
+            outstandingAmount: newOutstanding.toFixed(2),
+            updatedAt: new Date()
+          }).where(eq(loans.id, existingPayment.loanId));
+        }
+      }
+    }
+
+    const [updated] = await db.update(loanPayments)
+      .set(payment)
+      .where(eq(loanPayments.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteLoanPayment(id: number): Promise<boolean> {
+    const existingPayment = await this.getLoanPayment(id);
+    if (!existingPayment) return false;
+
+    // Reverse the principal reduction on outstanding balance
+    const principalPaid = parseFloat(existingPayment.principalPaid || '0');
+    if (principalPaid > 0) {
+      const loan = await this.getLoan(existingPayment.loanId);
+      if (loan) {
+        const currentOutstanding = parseFloat(loan.outstandingAmount) || 0;
+        const newOutstanding = currentOutstanding + principalPaid;
+        await db.update(loans).set({
+          outstandingAmount: newOutstanding.toFixed(2),
+          updatedAt: new Date()
+        }).where(eq(loans.id, existingPayment.loanId));
+      }
+    }
+
+    // If linked to installment, revert to pending
+    if (existingPayment.installmentId) {
+      await this.updateLoanInstallment(existingPayment.installmentId, {
+        status: 'pending',
+        paidAmount: null,
+        paidDate: null
+      });
+    }
+
+    const result = await db.delete(loanPayments).where(eq(loanPayments.id, id)).returning();
+    return result.length > 0;
   }
 }
 

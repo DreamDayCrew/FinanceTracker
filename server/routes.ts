@@ -1633,6 +1633,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/loan-payments/:id", async (req, res) => {
+    try {
+      const updateData = {
+        ...req.body,
+        paymentDate: req.body.paymentDate ? new Date(req.body.paymentDate) : undefined
+      };
+      const payment = await storage.updateLoanPayment(parseInt(req.params.id), updateData);
+      if (payment) {
+        res.json(payment);
+      } else {
+        res.status(404).json({ error: "Payment not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid payment data" });
+    }
+  });
+
+  app.delete("/api/loan-payments/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteLoanPayment(parseInt(req.params.id));
+      if (deleted) {
+        res.status(204).send();
+      } else {
+        res.status(404).json({ error: "Payment not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete payment" });
+    }
+  });
+
   // ========== Loan Components (for CC EMIs) ==========
   app.get("/api/loans/:loanId/components", async (req, res) => {
     try {

@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput } from 'react-native';
+import { useState, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Animated, PanResponder, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -26,13 +26,16 @@ export default function LoanDetailsScreen() {
   const queryClient = useQueryClient();
   const { loanId } = route.params;
 
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'paid' | 'terms' | 'payments'>('upcoming');
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'payments' | 'terms'>('upcoming');
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [addTermModalVisible, setAddTermModalVisible] = useState(false);
   const [addPaymentModalVisible, setAddPaymentModalVisible] = useState(false);
+  const [editPaymentModalVisible, setEditPaymentModalVisible] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<LoanPayment | null>(null);
   const [processingInstallmentId, setProcessingInstallmentId] = useState<number | null>(null);
   const [newTerm, setNewTerm] = useState({ interestRate: '', tenureMonths: '', emiAmount: '', reason: '' });
   const [newPayment, setNewPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
+  const [editPayment, setEditPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
 
   const { data: loan, isLoading } = useQuery<Loan>({
     queryKey: ['loan', loanId],
@@ -186,6 +189,87 @@ export default function LoanDetailsScreen() {
     },
   });
 
+  const updatePaymentMutation = useMutation({
+    mutationFn: async (data: { id: number; amount: string; principalPaid: string; interestPaid: string; paymentType: string; notes: string }) => {
+      return api.updateLoanPayment(data.id, {
+        amount: data.amount,
+        principalPaid: data.principalPaid || '0',
+        interestPaid: data.interestPaid || '0',
+        paymentType: data.paymentType as 'emi' | 'prepayment' | 'partial',
+        notes: data.notes || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loans'] });
+      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      setEditPaymentModalVisible(false);
+      setEditingPayment(null);
+      Toast.show({
+        type: 'success',
+        text1: 'Payment Updated',
+        text2: 'Payment has been updated successfully',
+        position: 'bottom',
+      });
+    },
+    onError: (error: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Failed',
+        text2: error.message || 'Could not update payment',
+        position: 'bottom',
+      });
+    },
+  });
+
+  const deletePaymentMutation = useMutation({
+    mutationFn: (paymentId: number) => api.deleteLoanPayment(paymentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loans'] });
+      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      Toast.show({
+        type: 'success',
+        text1: 'Payment Deleted',
+        text2: 'Payment has been removed and balance updated',
+        position: 'bottom',
+      });
+    },
+    onError: (error: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Delete Failed',
+        text2: error.message || 'Could not delete payment',
+        position: 'bottom',
+      });
+    },
+  });
+
+  const handleEditPayment = (payment: LoanPayment) => {
+    setEditingPayment(payment);
+    setEditPayment({
+      amount: payment.amount,
+      principalPaid: payment.principalPaid || '',
+      interestPaid: payment.interestPaid || '',
+      paymentType: payment.paymentType as 'emi' | 'prepayment' | 'partial',
+      notes: payment.notes || '',
+    });
+    setEditPaymentModalVisible(true);
+  };
+
+  const handleDeletePayment = (paymentId: number) => {
+    Alert.alert(
+      'Delete Payment',
+      'Are you sure you want to delete this payment? This will restore the principal amount to the outstanding balance.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deletePaymentMutation.mutate(paymentId) },
+      ]
+    );
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return `${date.getDate()} ${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
@@ -321,12 +405,12 @@ export default function LoanDetailsScreen() {
           <TouchableOpacity
             style={[
               styles.tab,
-              activeTab === 'paid' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
+              activeTab === 'payments' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
             ]}
-            onPress={() => setActiveTab('paid')}
+            onPress={() => setActiveTab('payments')}
           >
-            <Text style={[styles.tabText, { color: activeTab === 'paid' ? colors.primary : colors.textMuted }]}>
-              Paid
+            <Text style={[styles.tabText, { color: activeTab === 'payments' ? colors.primary : colors.textMuted }]}>
+              Payments
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -338,17 +422,6 @@ export default function LoanDetailsScreen() {
           >
             <Text style={[styles.tabText, { color: activeTab === 'terms' ? colors.primary : colors.textMuted }]}>
               Terms
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === 'payments' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
-            ]}
-            onPress={() => setActiveTab('payments')}
-          >
-            <Text style={[styles.tabText, { color: activeTab === 'payments' ? colors.primary : colors.textMuted }]}>
-              Payments
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -412,38 +485,6 @@ export default function LoanDetailsScreen() {
                     </View>
                   );
                 })
-              )}
-            </>
-          )}
-
-          {activeTab === 'paid' && (
-            <>
-              {paidInstallments.length === 0 ? (
-                <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
-                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>No paid installments yet</Text>
-                </View>
-              ) : (
-                paidInstallments.map((installment) => (
-                  <View
-                    key={installment.id}
-                    style={[styles.installmentCard, { backgroundColor: colors.primary + '20' }]}
-                  >
-                    <View style={styles.installmentLeft}>
-                      <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-                      <View style={styles.installmentInfo}>
-                        <Text style={[styles.installmentNumber, { color: colors.text }]}>
-                          EMI #{installment.installmentNumber}
-                        </Text>
-                        <Text style={[styles.installmentDate, { color: colors.textMuted }]}>
-                          Paid on {formatDate(installment.paidDate || installment.dueDate)}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={[styles.installmentAmount, { color: colors.text }]}>
-                      {formatCurrency(parseFloat(installment.paidAmount || installment.emiAmount))}
-                    </Text>
-                  </View>
-                ))
               )}
             </>
           )}
@@ -515,48 +556,100 @@ export default function LoanDetailsScreen() {
                 <Ionicons name="add" size={18} color="#fff" />
                 <Text style={styles.addRowButtonText}>Record Payment</Text>
               </TouchableOpacity>
-              {payments.length === 0 ? (
+              
+              {/* Paid Installments Section */}
+              {paidInstallments.length > 0 && (
+                <>
+                  <Text style={[styles.sectionHeader, { color: colors.textMuted }]}>Paid EMIs</Text>
+                  {paidInstallments.map((installment) => (
+                    <View
+                      key={`inst-${installment.id}`}
+                      style={[styles.installmentCard, { backgroundColor: colors.primary + '20' }]}
+                    >
+                      <View style={styles.installmentLeft}>
+                        <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                        <View style={styles.installmentInfo}>
+                          <Text style={[styles.installmentNumber, { color: colors.text }]}>
+                            EMI #{installment.installmentNumber}
+                          </Text>
+                          <Text style={[styles.installmentDate, { color: colors.textMuted }]}>
+                            Paid on {formatDate(installment.paidDate || installment.dueDate)}
+                          </Text>
+                          <Text style={[styles.installmentBreakdown, { color: colors.textMuted }]}>
+                            P: {formatCurrency(parseFloat((installment as any).principalAmount || '0'))} | 
+                            I: {formatCurrency(parseFloat((installment as any).interestAmount || '0'))}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.installmentAmount, { color: colors.text }]}>
+                        {formatCurrency(parseFloat(installment.paidAmount || installment.emiAmount))}
+                      </Text>
+                    </View>
+                  ))}
+                </>
+              )}
+              
+              {/* Manual Payments Section with swipe actions */}
+              {payments.length > 0 && (
+                <>
+                  <Text style={[styles.sectionHeader, { color: colors.textMuted }]}>Manual Payments</Text>
+                  {payments.map((payment) => (
+                    <View key={payment.id} style={styles.swipeContainer}>
+                      <View style={styles.swipeActions}>
+                        <TouchableOpacity
+                          style={[styles.swipeAction, { backgroundColor: colors.primary }]}
+                          onPress={() => handleEditPayment(payment)}
+                        >
+                          <Ionicons name="pencil" size={18} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.swipeAction, { backgroundColor: colors.danger }]}
+                          onPress={() => handleDeletePayment(payment.id)}
+                        >
+                          <Ionicons name="trash" size={18} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                      <View style={[styles.paymentCard, { backgroundColor: colors.card }]}>
+                        <View style={styles.paymentHeader}>
+                          <View style={[styles.paymentIcon, { backgroundColor: payment.paymentType === 'prepayment' ? colors.warning : payment.paymentType === 'partial' ? colors.warning : colors.primary }]}>
+                            <Ionicons 
+                              name={payment.paymentType === 'prepayment' ? 'flash' : payment.paymentType === 'partial' ? 'pie-chart' : 'wallet'} 
+                              size={16} 
+                              color="#fff" 
+                            />
+                          </View>
+                          <View style={styles.paymentInfo}>
+                            <Text style={[styles.paymentType, { color: colors.text }]}>
+                              {payment.paymentType === 'emi' ? 'EMI Payment' : payment.paymentType === 'prepayment' ? 'Prepayment' : 'Partial Payment'}
+                            </Text>
+                            <Text style={[styles.paymentDate, { color: colors.textMuted }]}>
+                              {formatDate(payment.paymentDate)}
+                            </Text>
+                          </View>
+                          <Text style={[styles.paymentAmount, { color: colors.text }]}>
+                            {formatCurrency(parseFloat(payment.amount))}
+                          </Text>
+                        </View>
+                        <View style={styles.paymentBreakdown}>
+                          <Text style={[styles.paymentBreakdownText, { color: colors.textMuted }]}>
+                            Principal: {formatCurrency(parseFloat(payment.principalPaid || '0'))} | Interest: {formatCurrency(parseFloat(payment.interestPaid || '0'))}
+                          </Text>
+                        </View>
+                        {payment.notes && (
+                          <Text style={[styles.paymentNotes, { color: colors.textMuted }]}>
+                            {payment.notes}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  ))}
+                </>
+              )}
+              
+              {paidInstallments.length === 0 && payments.length === 0 && (
                 <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
-                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>No payments recorded</Text>
+                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>No payments recorded yet</Text>
                 </View>
-              ) : (
-                payments.slice().reverse().map((payment) => (
-                  <View
-                    key={payment.id}
-                    style={[styles.paymentCard, { backgroundColor: colors.card }]}
-                  >
-                    <View style={styles.paymentHeader}>
-                      <View style={[styles.paymentIcon, { backgroundColor: payment.paymentType === 'prepayment' ? colors.warning : colors.primary }]}>
-                        <Ionicons 
-                          name={payment.paymentType === 'prepayment' ? 'flash' : payment.paymentType === 'partial' ? 'pie-chart' : 'wallet'} 
-                          size={16} 
-                          color="#fff" 
-                        />
-                      </View>
-                      <View style={styles.paymentInfo}>
-                        <Text style={[styles.paymentType, { color: colors.text }]}>
-                          {payment.paymentType === 'emi' ? 'EMI Payment' : payment.paymentType === 'prepayment' ? 'Prepayment' : 'Partial Payment'}
-                        </Text>
-                        <Text style={[styles.paymentDate, { color: colors.textMuted }]}>
-                          {formatDate(payment.paymentDate)}
-                        </Text>
-                      </View>
-                      <Text style={[styles.paymentAmount, { color: colors.text }]}>
-                        {formatCurrency(parseFloat(payment.amount))}
-                      </Text>
-                    </View>
-                    <View style={styles.paymentBreakdown}>
-                      <Text style={[styles.paymentBreakdownText, { color: colors.textMuted }]}>
-                        Principal: {formatCurrency(parseFloat(payment.principalPaid || '0'))} | Interest: {formatCurrency(parseFloat(payment.interestPaid || '0'))}
-                      </Text>
-                    </View>
-                    {payment.notes && (
-                      <Text style={[styles.paymentNotes, { color: colors.textMuted }]}>
-                        {payment.notes}
-                      </Text>
-                    )}
-                  </View>
-                ))
               )}
             </>
           )}
@@ -779,6 +872,117 @@ export default function LoanDetailsScreen() {
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
                   <Text style={styles.confirmButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Payment Modal */}
+      <Modal
+        visible={editPaymentModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setEditPaymentModalVisible(false);
+          setEditingPayment(null);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
+            <Text style={[styles.formModalTitle, { color: colors.text }]}>Edit Payment</Text>
+            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
+              Update payment details
+            </Text>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Payment Type</Text>
+              <View style={styles.paymentTypeRow}>
+                {(['emi', 'prepayment', 'partial'] as const).map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.paymentTypeButton,
+                      { backgroundColor: editPayment.paymentType === type ? colors.primary : colors.background, borderColor: colors.border }
+                    ]}
+                    onPress={() => setEditPayment({ ...editPayment, paymentType: type })}
+                  >
+                    <Text style={{ color: editPayment.paymentType === type ? '#fff' : colors.text, fontSize: 12 }}>
+                      {type === 'emi' ? 'EMI' : type === 'prepayment' ? 'Prepayment' : 'Partial'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Total Amount</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., 25000"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                value={editPayment.amount}
+                onChangeText={(text: string) => setEditPayment({ ...editPayment, amount: text })}
+              />
+            </View>
+
+            <View style={styles.formRow}>
+              <View style={[styles.formGroup, { flex: 1 }]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Principal</Text>
+                <TextInput
+                  style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={editPayment.principalPaid}
+                  onChangeText={(text: string) => setEditPayment({ ...editPayment, principalPaid: text })}
+                />
+              </View>
+              <View style={[styles.formGroup, { flex: 1 }]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Interest</Text>
+                <TextInput
+                  style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={editPayment.interestPaid}
+                  onChangeText={(text: string) => setEditPayment({ ...editPayment, interestPaid: text })}
+                />
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Notes (optional)</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., Extra payment to reduce tenure"
+                placeholderTextColor={colors.textMuted}
+                value={editPayment.notes}
+                onChangeText={(text: string) => setEditPayment({ ...editPayment, notes: text })}
+              />
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
+                onPress={() => {
+                  setEditPaymentModalVisible(false);
+                  setEditingPayment(null);
+                }}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.primary }]}
+                onPress={() => editingPayment && updatePaymentMutation.mutate({ id: editingPayment.id, ...editPayment })}
+                disabled={updatePaymentMutation.isPending || !editPayment.amount}
+              >
+                {updatePaymentMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Update</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1067,6 +1271,30 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 12,
     gap: 6,
+  },
+  sectionHeader: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  swipeContainer: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  swipeActions: {
+    flexDirection: 'row',
+    marginRight: 8,
+  },
+  swipeAction: {
+    width: 40,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    marginRight: 4,
   },
   addRowButtonText: {
     color: '#fff',
