@@ -655,6 +655,105 @@ export const insertLoanPaymentSchema = createInsertSchema(loanPayments).omit({
 export type InsertLoanPayment = z.infer<typeof insertLoanPaymentSchema>;
 export type LoanPayment = typeof loanPayments.$inferSelect;
 
+// Insurance Policies
+export const insurances = pgTable("insurances", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  accountId: integer("account_id").references(() => accounts.id), // linked account for payments
+  name: varchar("name", { length: 200 }).notNull(),
+  type: varchar("type", { length: 30 }).notNull(), // 'health', 'life', 'vehicle', 'home', 'term', 'travel'
+  providerName: varchar("provider_name", { length: 100 }),
+  policyNumber: varchar("policy_number", { length: 100 }),
+  premiumAmount: decimal("premium_amount", { precision: 12, scale: 2 }).notNull(), // total premium for the period
+  coverageAmount: decimal("coverage_amount", { precision: 14, scale: 2 }), // sum insured
+  premiumFrequency: varchar("premium_frequency", { length: 20 }).default("annual"), // 'annual', 'semi_annual', 'quarterly', 'monthly'
+  termsPerPeriod: integer("terms_per_period").default(1), // number of payment terms per period (e.g., 2 for paying annual in 2 installments)
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  renewalDate: timestamp("renewal_date"),
+  status: varchar("status", { length: 20 }).default("active"), // 'active', 'expired', 'cancelled', 'lapsed'
+  createTransaction: boolean("create_transaction").default(false), // create transaction on payment
+  affectBalance: boolean("affect_balance").default(false), // affect account balance on payment
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insurancesRelations = relations(insurances, ({ one, many }) => ({
+  user: one(users, { fields: [insurances.userId], references: [users.id] }),
+  account: one(accounts, { fields: [insurances.accountId], references: [accounts.id] }),
+  premiums: many(insurancePremiums),
+}));
+
+export const insertInsuranceSchema = createInsertSchema(insurances).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Insurance name is required"),
+  type: z.enum(["health", "life", "vehicle", "home", "term", "travel"]),
+  premiumAmount: z.string().min(1, "Premium amount is required"),
+  coverageAmount: z.string().optional(),
+  premiumFrequency: z.enum(["annual", "semi_annual", "quarterly", "monthly"]).optional(),
+  termsPerPeriod: z.number().min(1).max(12).optional(),
+  startDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)),
+  endDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
+  renewalDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
+  status: z.enum(["active", "expired", "cancelled", "lapsed"]).optional(),
+  createTransaction: z.boolean().optional(),
+  affectBalance: z.boolean().optional(),
+});
+
+export type InsertInsurance = z.infer<typeof insertInsuranceSchema>;
+export type Insurance = typeof insurances.$inferSelect;
+
+// Insurance Premiums (payment terms/installments)
+export const insurancePremiums = pgTable("insurance_premiums", {
+  id: serial("id").primaryKey(),
+  insuranceId: integer("insurance_id").references(() => insurances.id).notNull(),
+  termNumber: integer("term_number").notNull(), // 1, 2, etc. for each term in the period
+  periodYear: integer("period_year").notNull(), // year this term belongs to
+  periodNumber: integer("period_number").default(1), // for frequencies other than annual (e.g., quarter 1, 2, etc.)
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  paidDate: timestamp("paid_date"),
+  paidAmount: decimal("paid_amount", { precision: 12, scale: 2 }),
+  accountId: integer("account_id").references(() => accounts.id),
+  transactionId: integer("transaction_id").references(() => transactions.id),
+  status: varchar("status", { length: 20 }).default("pending"), // 'pending', 'paid', 'overdue', 'partially_paid'
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insurancePremiumsRelations = relations(insurancePremiums, ({ one }) => ({
+  insurance: one(insurances, { fields: [insurancePremiums.insuranceId], references: [insurances.id] }),
+  account: one(accounts, { fields: [insurancePremiums.accountId], references: [accounts.id] }),
+  transaction: one(transactions, { fields: [insurancePremiums.transactionId], references: [transactions.id] }),
+}));
+
+export const insertInsurancePremiumSchema = createInsertSchema(insurancePremiums).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  termNumber: z.number().min(1),
+  periodYear: z.number().min(2020),
+  periodNumber: z.number().min(1).optional(),
+  amount: z.string().min(1, "Amount is required"),
+  dueDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)),
+  paidDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional().nullable(),
+  paidAmount: z.string().optional(),
+  status: z.enum(["pending", "paid", "overdue", "partially_paid"]).optional(),
+});
+
+export type InsertInsurancePremium = z.infer<typeof insertInsurancePremiumSchema>;
+export type InsurancePremium = typeof insurancePremiums.$inferSelect;
+
+// Insurance with relations type
+export type InsuranceWithRelations = Insurance & {
+  account?: Account | null;
+  premiums?: InsurancePremium[];
+};
+
 // Extended transaction type with relations
 export type TransactionWithRelations = Transaction & {
   account?: Account | null;

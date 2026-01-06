@@ -54,6 +54,13 @@ const menuItems: MenuItem[] = [
     color: '#ef4444',
   },
   {
+    icon: 'shield-outline',
+    title: 'Insurance',
+    subtitle: 'Track policies & premiums',
+    route: 'Insurance',
+    color: '#6366f1',
+  },
+  {
     icon: 'settings-outline',
     title: 'Settings',
     subtitle: 'Theme, export, security',

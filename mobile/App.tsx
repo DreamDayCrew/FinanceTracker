@@ -28,6 +28,9 @@ import SalaryScreen from './src/screens/SalaryScreen';
 import LoansScreen from './src/screens/LoansScreen';
 import AddLoanScreen from './src/screens/AddLoanScreen';
 import LoanDetailsScreen from './src/screens/LoanDetailsScreen';
+import InsuranceScreen from './src/screens/InsuranceScreen';
+import AddInsuranceScreen from './src/screens/AddInsuranceScreen';
+import InsuranceDetailsScreen from './src/screens/InsuranceDetailsScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
 import ExpenseDetailsScreen from './src/screens/ExpenseDetailsScreen';
 import CreditCardDetailsScreen from './src/screens/CreditCardDetailsScreen';
@@ -58,6 +61,9 @@ export type MoreStackParamList = {
   Loans: undefined;
   AddLoan: undefined;
   LoanDetails: { loanId: number };
+  Insurance: undefined;
+  AddInsurance: { insuranceId?: number } | undefined;
+  InsuranceDetails: { insuranceId: number };
   Settings: undefined;
   ScanSMS: undefined;
 };
@@ -165,6 +171,23 @@ function MoreStackNavigator() {
         name="LoanDetails" 
         component={LoanDetailsScreen}
         options={{ title: 'Loan Details' }}
+      />
+      <MoreStack.Screen 
+        name="Insurance" 
+        component={InsuranceScreen}
+        options={{ title: 'Insurance' }}
+      />
+      <MoreStack.Screen 
+        name="AddInsurance" 
+        component={AddInsuranceScreen}
+        options={({ route }) => ({ 
+          title: route.params?.insuranceId ? 'Edit Insurance' : 'Add Insurance' 
+        })}
+      />
+      <MoreStack.Screen 
+        name="InsuranceDetails" 
+        component={InsuranceDetailsScreen}
+        options={{ title: 'Insurance Details' }}
       />
     </MoreStack.Navigator>
   );

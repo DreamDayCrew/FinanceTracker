@@ -2,6 +2,7 @@ import {
   users, accounts, categories, transactions, budgets, scheduledPayments, smsLogs,
   paymentOccurrences, savingsGoals, savingsContributions, salaryProfiles, salaryCycles,
   loans, loanComponents, loanInstallments, loanTerms, loanPayments, cardDetails,
+  insurances, insurancePremiums,
   type User, type InsertUser,
   type Account, type InsertAccount,
   type Category, type InsertCategory,
@@ -19,6 +20,8 @@ import {
   type LoanTerm, type InsertLoanTerm,
   type LoanPayment, type InsertLoanPayment,
   type CardDetails, type InsertCardDetails,
+  type Insurance, type InsertInsurance, type InsuranceWithRelations,
+  type InsurancePremium, type InsertInsurancePremium,
   type SmsLog, type InsertSmsLog,
   type DashboardStats,
   DEFAULT_CATEGORIES
@@ -154,6 +157,22 @@ export interface IStorage {
   createLoanPayment(payment: InsertLoanPayment): Promise<LoanPayment>;
   updateLoanPayment(id: number, payment: Partial<InsertLoanPayment>): Promise<LoanPayment | undefined>;
   deleteLoanPayment(id: number): Promise<boolean>;
+
+  // Insurance
+  getAllInsurances(userId?: number): Promise<InsuranceWithRelations[]>;
+  getInsurance(id: number): Promise<InsuranceWithRelations | undefined>;
+  createInsurance(insurance: InsertInsurance): Promise<Insurance>;
+  updateInsurance(id: number, insurance: Partial<InsertInsurance>): Promise<Insurance | undefined>;
+  deleteInsurance(id: number): Promise<boolean>;
+
+  // Insurance Premiums
+  getInsurancePremiums(insuranceId: number): Promise<InsurancePremium[]>;
+  getInsurancePremium(id: number): Promise<InsurancePremium | undefined>;
+  createInsurancePremium(premium: InsertInsurancePremium): Promise<InsurancePremium>;
+  updateInsurancePremium(id: number, premium: Partial<InsertInsurancePremium>): Promise<InsurancePremium | undefined>;
+  deleteInsurancePremium(id: number): Promise<boolean>;
+  generateInsurancePremiums(insuranceId: number): Promise<InsurancePremium[]>;
+  markPremiumPaid(id: number, paidAmount: string, accountId?: number, transactionId?: number): Promise<InsurancePremium | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1500,13 +1519,185 @@ export class DatabaseStorage implements IStorage {
     if (existingPayment.installmentId) {
       await this.updateLoanInstallment(existingPayment.installmentId, {
         status: 'pending',
-        paidAmount: null,
-        paidDate: null
+        paidAmount: undefined,
+        paidDate: undefined
       });
     }
 
     const result = await db.delete(loanPayments).where(eq(loanPayments.id, id)).returning();
     return result.length > 0;
+  }
+
+  // Insurance
+  async getAllInsurances(userId?: number): Promise<InsuranceWithRelations[]> {
+    const allInsurances = userId 
+      ? await db.select().from(insurances).where(eq(insurances.userId, userId)).orderBy(desc(insurances.createdAt))
+      : await db.select().from(insurances).orderBy(desc(insurances.createdAt));
+    
+    const insurancesWithRelations: InsuranceWithRelations[] = [];
+    for (const insurance of allInsurances) {
+      const [account] = insurance.accountId 
+        ? await db.select().from(accounts).where(eq(accounts.id, insurance.accountId))
+        : [null];
+      const premiums = await db.select().from(insurancePremiums)
+        .where(eq(insurancePremiums.insuranceId, insurance.id))
+        .orderBy(insurancePremiums.dueDate);
+      insurancesWithRelations.push({ ...insurance, account, premiums });
+    }
+    return insurancesWithRelations;
+  }
+
+  async getInsurance(id: number): Promise<InsuranceWithRelations | undefined> {
+    const [insurance] = await db.select().from(insurances).where(eq(insurances.id, id));
+    if (!insurance) return undefined;
+    
+    const [account] = insurance.accountId 
+      ? await db.select().from(accounts).where(eq(accounts.id, insurance.accountId))
+      : [null];
+    const premiums = await db.select().from(insurancePremiums)
+      .where(eq(insurancePremiums.insuranceId, id))
+      .orderBy(insurancePremiums.dueDate);
+    
+    return { ...insurance, account, premiums };
+  }
+
+  async createInsurance(insurance: InsertInsurance): Promise<Insurance> {
+    const [newInsurance] = await db.insert(insurances).values(insurance).returning();
+    return newInsurance;
+  }
+
+  async updateInsurance(id: number, insurance: Partial<InsertInsurance>): Promise<Insurance | undefined> {
+    const [updated] = await db.update(insurances)
+      .set({ ...insurance, updatedAt: new Date() })
+      .where(eq(insurances.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteInsurance(id: number): Promise<boolean> {
+    // Delete all premiums first
+    await db.delete(insurancePremiums).where(eq(insurancePremiums.insuranceId, id));
+    const result = await db.delete(insurances).where(eq(insurances.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Insurance Premiums
+  async getInsurancePremiums(insuranceId: number): Promise<InsurancePremium[]> {
+    return db.select().from(insurancePremiums)
+      .where(eq(insurancePremiums.insuranceId, insuranceId))
+      .orderBy(insurancePremiums.dueDate);
+  }
+
+  async getInsurancePremium(id: number): Promise<InsurancePremium | undefined> {
+    const [premium] = await db.select().from(insurancePremiums).where(eq(insurancePremiums.id, id));
+    return premium || undefined;
+  }
+
+  async createInsurancePremium(premium: InsertInsurancePremium): Promise<InsurancePremium> {
+    const [newPremium] = await db.insert(insurancePremiums).values(premium).returning();
+    return newPremium;
+  }
+
+  async updateInsurancePremium(id: number, premium: Partial<InsertInsurancePremium>): Promise<InsurancePremium | undefined> {
+    const [updated] = await db.update(insurancePremiums)
+      .set(premium)
+      .where(eq(insurancePremiums.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteInsurancePremium(id: number): Promise<boolean> {
+    const result = await db.delete(insurancePremiums).where(eq(insurancePremiums.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async generateInsurancePremiums(insuranceId: number): Promise<InsurancePremium[]> {
+    const insurance = await this.getInsurance(insuranceId);
+    if (!insurance) return [];
+
+    // Delete existing pending premiums
+    await db.delete(insurancePremiums).where(
+      and(
+        eq(insurancePremiums.insuranceId, insuranceId),
+        eq(insurancePremiums.status, 'pending')
+      )
+    );
+
+    const premiumAmount = parseFloat(insurance.premiumAmount);
+    const termsPerPeriod = insurance.termsPerPeriod || 1;
+    const amountPerTerm = premiumAmount / termsPerPeriod;
+    const startDate = new Date(insurance.startDate);
+    const endDate = insurance.endDate ? new Date(insurance.endDate) : new Date(startDate.getFullYear() + 1, startDate.getMonth(), startDate.getDate());
+
+    // Determine period length in months based on frequency
+    let periodMonths = 12; // annual
+    switch (insurance.premiumFrequency) {
+      case 'semi_annual': periodMonths = 6; break;
+      case 'quarterly': periodMonths = 3; break;
+      case 'monthly': periodMonths = 1; break;
+    }
+
+    const createdPremiums: InsurancePremium[] = [];
+    let currentDate = new Date(startDate);
+    let periodNumber = 1;
+    
+    while (currentDate < endDate) {
+      // Generate terms for this period
+      for (let term = 1; term <= termsPerPeriod; term++) {
+        const termOffset = ((term - 1) * periodMonths) / termsPerPeriod;
+        const dueDate = new Date(currentDate);
+        dueDate.setMonth(dueDate.getMonth() + Math.floor(termOffset));
+
+        if (dueDate >= endDate) break;
+
+        const premium = await this.createInsurancePremium({
+          insuranceId,
+          termNumber: term,
+          periodYear: dueDate.getFullYear(),
+          periodNumber,
+          amount: amountPerTerm.toFixed(2),
+          dueDate,
+          status: 'pending'
+        });
+        createdPremiums.push(premium);
+      }
+
+      // Move to next period
+      currentDate.setMonth(currentDate.getMonth() + periodMonths);
+      periodNumber++;
+    }
+
+    return createdPremiums;
+  }
+
+  async markPremiumPaid(id: number, paidAmount: string, accountId?: number, transactionId?: number): Promise<InsurancePremium | undefined> {
+    const premium = await this.getInsurancePremium(id);
+    if (!premium) return undefined;
+
+    const paidAmountNum = parseFloat(paidAmount);
+    const dueAmount = parseFloat(premium.amount);
+    const status = paidAmountNum >= dueAmount ? 'paid' : 'partially_paid';
+
+    const [updated] = await db.update(insurancePremiums)
+      .set({
+        status,
+        paidDate: new Date(),
+        paidAmount,
+        accountId,
+        transactionId
+      })
+      .where(eq(insurancePremiums.id, id))
+      .returning();
+
+    // Update account balance if needed
+    if (updated && accountId) {
+      const insurance = await this.getInsurance(premium.insuranceId);
+      if (insurance?.affectBalance) {
+        await this.updateAccountBalance(accountId, paidAmount, 'subtract');
+      }
+    }
+
+    return updated || undefined;
   }
 }
 

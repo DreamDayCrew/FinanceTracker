@@ -19,7 +19,9 @@ import {
   insertLoanInstallmentSchema,
   insertLoanTermSchema,
   insertLoanPaymentSchema,
-  insertCardDetailsSchema
+  insertCardDetailsSchema,
+  insertInsuranceSchema,
+  insertInsurancePremiumSchema
 } from "@shared/schema";
 import { suggestCategory, parseSmsMessage } from "./openai";
 import { getPaydayForMonth, getNextPaydays, getPastPaydays } from "./salaryUtils";
@@ -1897,6 +1899,191 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch card" });
+    }
+  });
+
+  // ========== Insurance ==========
+  app.get("/api/insurances", async (_req, res) => {
+    try {
+      const insurances = await storage.getAllInsurances();
+      res.json(insurances);
+    } catch (error) {
+      console.error("Error fetching insurances:", error);
+      res.status(500).json({ error: "Failed to fetch insurances" });
+    }
+  });
+
+  app.get("/api/insurances/:id", async (req, res) => {
+    try {
+      const insurance = await storage.getInsurance(parseInt(req.params.id));
+      if (insurance) {
+        res.json(insurance);
+      } else {
+        res.status(404).json({ error: "Insurance not found" });
+      }
+    } catch (error) {
+      console.error("Error fetching insurance:", error);
+      res.status(500).json({ error: "Failed to fetch insurance" });
+    }
+  });
+
+  app.post("/api/insurances", async (req, res) => {
+    try {
+      const validatedData = insertInsuranceSchema.parse(req.body);
+      const insurance = await storage.createInsurance(validatedData);
+      
+      // Auto-generate premium terms
+      if (insurance.id) {
+        await storage.generateInsurancePremiums(insurance.id);
+      }
+      
+      // Return with premiums
+      const fullInsurance = await storage.getInsurance(insurance.id);
+      res.status(201).json(fullInsurance);
+    } catch (error: any) {
+      console.error("Error creating insurance:", error);
+      res.status(400).json({ error: error.message || "Invalid insurance data" });
+    }
+  });
+
+  app.patch("/api/insurances/:id", async (req, res) => {
+    try {
+      const validatedData = insertInsuranceSchema.partial().parse(req.body);
+      const insurance = await storage.updateInsurance(parseInt(req.params.id), validatedData);
+      if (insurance) {
+        // If premium-related fields changed, regenerate premiums
+        if (req.body.premiumAmount || req.body.termsPerPeriod || req.body.premiumFrequency || req.body.startDate || req.body.endDate) {
+          await storage.generateInsurancePremiums(insurance.id);
+        }
+        const fullInsurance = await storage.getInsurance(insurance.id);
+        res.json(fullInsurance);
+      } else {
+        res.status(404).json({ error: "Insurance not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid insurance data" });
+    }
+  });
+
+  app.delete("/api/insurances/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteInsurance(parseInt(req.params.id));
+      if (deleted) {
+        res.status(204).send();
+      } else {
+        res.status(404).json({ error: "Insurance not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete insurance" });
+    }
+  });
+
+  // ========== Insurance Premiums ==========
+  app.get("/api/insurances/:insuranceId/premiums", async (req, res) => {
+    try {
+      const premiums = await storage.getInsurancePremiums(parseInt(req.params.insuranceId));
+      res.json(premiums);
+    } catch (error) {
+      console.error("Error fetching premiums:", error);
+      res.status(500).json({ error: "Failed to fetch premiums" });
+    }
+  });
+
+  app.post("/api/insurances/:insuranceId/premiums", async (req, res) => {
+    try {
+      const validatedData = insertInsurancePremiumSchema.parse({
+        ...req.body,
+        insuranceId: parseInt(req.params.insuranceId)
+      });
+      const premium = await storage.createInsurancePremium(validatedData);
+      res.status(201).json(premium);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid premium data" });
+    }
+  });
+
+  app.patch("/api/insurances/:insuranceId/premiums/:id", async (req, res) => {
+    try {
+      const premium = await storage.updateInsurancePremium(parseInt(req.params.id), req.body);
+      if (premium) {
+        res.json(premium);
+      } else {
+        res.status(404).json({ error: "Premium not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid premium data" });
+    }
+  });
+
+  app.post("/api/insurances/:insuranceId/premiums/:id/pay", async (req, res) => {
+    try {
+      const { amount, accountId, createTransaction: shouldCreateTransaction } = req.body;
+      const premiumId = parseInt(req.params.id);
+      const insuranceId = parseInt(req.params.insuranceId);
+      
+      let transactionId: number | undefined;
+      
+      // Create transaction if requested
+      if (shouldCreateTransaction) {
+        const insurance = await storage.getInsurance(insuranceId);
+        if (insurance) {
+          // Get or create insurance category
+          let category = await storage.getCategoryByName("Insurance");
+          if (!category) {
+            category = await storage.createCategory({
+              name: "Insurance",
+              icon: "shield",
+              color: "#6366f1",
+              type: "expense"
+            });
+          }
+          
+          const transaction = await storage.createTransaction({
+            accountId: accountId || insurance.accountId,
+            categoryId: category.id,
+            amount,
+            type: "debit",
+            description: `Insurance Premium - ${insurance.name}`,
+            merchant: insurance.providerName || insurance.name,
+            transactionDate: new Date()
+          });
+          transactionId = transaction.id;
+        }
+      }
+      
+      const premium = await storage.markPremiumPaid(premiumId, amount, accountId, transactionId);
+      if (premium) {
+        res.json(premium);
+      } else {
+        res.status(404).json({ error: "Premium not found" });
+      }
+    } catch (error: any) {
+      console.error("Error marking premium as paid:", error);
+      res.status(400).json({ error: error.message || "Failed to mark premium as paid" });
+    }
+  });
+
+  app.delete("/api/insurances/:insuranceId/premiums/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteInsurancePremium(parseInt(req.params.id));
+      if (deleted) {
+        res.status(204).send();
+      } else {
+        res.status(404).json({ error: "Premium not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete premium" });
+    }
+  });
+
+  // Regenerate premiums for an insurance
+  app.post("/api/insurances/:id/regenerate-premiums", async (req, res) => {
+    try {
+      const premiums = await storage.generateInsurancePremiums(parseInt(req.params.id));
+      res.json(premiums);
+    } catch (error) {
+      console.error("Error regenerating premiums:", error);
+      res.status(500).json({ error: "Failed to regenerate premiums" });
     }
   });
 

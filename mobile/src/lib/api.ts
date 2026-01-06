@@ -6,7 +6,8 @@ import type {
   SalaryProfile, SalaryCycle, InsertSalaryProfile,
   Loan, LoanInstallment, InsertLoan,
   CardDetails, InsertCardDetails,
-  LoanTerm, LoanPayment, InsertLoanTerm, InsertLoanPayment, LoanWithDetails
+  LoanTerm, LoanPayment, InsertLoanTerm, InsertLoanPayment, LoanWithDetails,
+  Insurance, InsurancePremium, InsertInsurance, InsertInsurancePremium
 } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
@@ -277,6 +278,30 @@ export const api = {
       spending: number;
       monthIndex: number;
     }>>('/api/credit-card-spending/monthly'),
+
+  // Insurance
+  getInsurances: () => apiRequest<Insurance[]>('/api/insurances'),
+  getInsurance: (id: number) => apiRequest<Insurance>(`/api/insurances/${id}`),
+  createInsurance: (data: InsertInsurance) => 
+    apiRequest<Insurance>('/api/insurances', { method: 'POST', body: JSON.stringify(data) }),
+  updateInsurance: (id: number, data: Partial<InsertInsurance>) => 
+    apiRequest<Insurance>(`/api/insurances/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteInsurance: (id: number) => 
+    apiRequest<void>(`/api/insurances/${id}`, { method: 'DELETE' }),
+
+  // Insurance Premiums
+  getInsurancePremiums: (insuranceId: number) => 
+    apiRequest<InsurancePremium[]>(`/api/insurances/${insuranceId}/premiums`),
+  createInsurancePremium: (insuranceId: number, data: InsertInsurancePremium) => 
+    apiRequest<InsurancePremium>(`/api/insurances/${insuranceId}/premiums`, { method: 'POST', body: JSON.stringify(data) }),
+  updateInsurancePremium: (insuranceId: number, id: number, data: Partial<InsertInsurancePremium>) => 
+    apiRequest<InsurancePremium>(`/api/insurances/${insuranceId}/premiums/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  markPremiumPaid: (insuranceId: number, premiumId: number, data: { amount: string; accountId?: number; createTransaction?: boolean }) => 
+    apiRequest<InsurancePremium>(`/api/insurances/${insuranceId}/premiums/${premiumId}/pay`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteInsurancePremium: (insuranceId: number, id: number) => 
+    apiRequest<void>(`/api/insurances/${insuranceId}/premiums/${id}`, { method: 'DELETE' }),
+  regenerateInsurancePremiums: (insuranceId: number) => 
+    apiRequest<InsurancePremium[]>(`/api/insurances/${insuranceId}/regenerate-premiums`, { method: 'POST' }),
 };
 
 export { API_BASE_URL };

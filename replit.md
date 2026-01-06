@@ -52,6 +52,16 @@ Personal Finance Tracker is a comprehensive expense tracking application designe
 - Export transactions to JSON format
 - Downloadable reports for backup and analysis
 
+### 8. Insurance Tracking
+- Track multiple insurance policies (health, life, vehicle, home, term, travel)
+- Support for 4 payment frequencies (annual, semi-annual, quarterly, monthly)
+- Configurable payment terms per period (e.g., pay annual premium in 2 installments)
+- Auto-generates premium installments based on policy period
+- Mark premiums as paid with optional transaction creation
+- Track premium payment history and upcoming dues
+- Provider and policy number tracking
+- Coverage amount (sum insured) tracking
+
 ## Technical Stack
 
 ### Web Frontend (React PWA)
@@ -248,6 +258,14 @@ Required secrets:
 
 ## Recent Changes
 
+- **2026-01**: Insurance Tracking Module
+  - Added complete insurance tracking with support for 6 insurance types
+  - Database: insurances table (policy details) + insurance_premiums table (payment terms)
+  - API endpoints: Full CRUD for insurances and premiums, mark-as-paid functionality
+  - Mobile screens: InsuranceScreen (list), AddInsuranceScreen (add/edit), InsuranceDetailsScreen (view/pay)
+  - Features: configurable payment terms per period, auto-generated installments, premium payment tracking
+  - Integration with accounts for balance updates and optional transaction creation
+
 - **2026-01**: Loan Payments UI Enhancement
   - Consolidated "Paid" and "Payments" tabs into single "Payments" tab in LoanDetailsScreen
   - Payments tab now shows: Paid EMIs section + Manual Payments section with section headers
@@ -284,5 +302,9 @@ Required secrets:
 5. **More** (/more) - Menu with:
    - Plan Budget (/budgets)
    - Scheduled Payments (/scheduled-payments)
+   - Savings Goals (/savings-goals)
+   - Salary & Income (/salary)
+   - Loans & EMI (/loans)
+   - Insurance (/insurance)
    - Settings (/settings)
    - Export Data

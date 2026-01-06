@@ -385,3 +385,79 @@ export interface LoanWithDetails extends Loan {
   payments?: LoanPayment[];
   account?: Account | null;
 }
+
+// Insurance types
+export interface Insurance {
+  id: number;
+  userId: number | null;
+  accountId: number | null;
+  name: string;
+  type: 'health' | 'life' | 'vehicle' | 'home' | 'term' | 'travel';
+  providerName: string | null;
+  policyNumber: string | null;
+  premiumAmount: string;
+  coverageAmount: string | null;
+  premiumFrequency: 'annual' | 'semi_annual' | 'quarterly' | 'monthly';
+  termsPerPeriod: number;
+  startDate: string;
+  endDate: string | null;
+  renewalDate: string | null;
+  status: 'active' | 'expired' | 'cancelled' | 'lapsed';
+  createTransaction: boolean;
+  affectBalance: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  account?: Account | null;
+  premiums?: InsurancePremium[];
+}
+
+export interface InsurancePremium {
+  id: number;
+  insuranceId: number;
+  termNumber: number;
+  periodYear: number;
+  periodNumber: number;
+  amount: string;
+  dueDate: string;
+  paidDate: string | null;
+  paidAmount: string | null;
+  accountId: number | null;
+  transactionId: number | null;
+  status: 'pending' | 'paid' | 'overdue' | 'partially_paid';
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface InsertInsurance {
+  name: string;
+  type: 'health' | 'life' | 'vehicle' | 'home' | 'term' | 'travel';
+  providerName?: string;
+  policyNumber?: string;
+  premiumAmount: string;
+  coverageAmount?: string;
+  premiumFrequency?: 'annual' | 'semi_annual' | 'quarterly' | 'monthly';
+  termsPerPeriod?: number;
+  startDate: string;
+  endDate?: string;
+  renewalDate?: string;
+  status?: 'active' | 'expired' | 'cancelled' | 'lapsed';
+  accountId?: number;
+  createTransaction?: boolean;
+  affectBalance?: boolean;
+  notes?: string;
+}
+
+export interface InsertInsurancePremium {
+  insuranceId: number;
+  termNumber: number;
+  periodYear: number;
+  periodNumber?: number;
+  amount: string;
+  dueDate: string;
+  paidDate?: string;
+  paidAmount?: string;
+  accountId?: number;
+  status?: 'pending' | 'paid' | 'overdue' | 'partially_paid';
+  notes?: string;
+}
