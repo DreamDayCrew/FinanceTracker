@@ -1,8 +1,8 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, Animated } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Toast from 'react-native-toast-message';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
@@ -10,6 +10,7 @@ import { formatCurrency, getThemedColors } from '../lib/utils';
 import { api } from '../lib/api';
 import type { Loan } from '../lib/types';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSwipeSettings } from '../hooks/useSwipeSettings';
 
 interface LoanSummary {
   totalLoans: number;
@@ -21,8 +22,7 @@ interface LoanSummary {
 type RootStackParamList = {
   Loans: undefined;
   LoanDetails: { loanId: number };
-  AddLoan: undefined;
-  EditLoan: { loanId: number };
+  AddLoan: { loanId?: number };
 };
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -32,11 +32,24 @@ export default function LoansScreen() {
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const queryClient = useQueryClient();
-  const swipeableRefs = useRef<{ [key: number]: Swipeable | null }>({});
+  const swipeSettings = useSwipeSettings();
+  const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
+  const currentOpenSwipeable = useRef<number | null>(null);
 
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [loanToDelete, setLoanToDelete] = useState<Loan | null>(null);
   const [hideBalances, setHideBalances] = useState(false);
+
+  // Close all swipeables when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Close all swipeables when leaving screen
+        swipeableRefs.current.forEach(ref => ref?.close());
+        currentOpenSwipeable.current = null;
+      };
+    }, [])
+  );
 
   const { data: loans, isLoading } = useQuery<Loan[]>({
     queryKey: ['loans'],
@@ -45,11 +58,7 @@ export default function LoansScreen() {
 
   const { data: loanSummary } = useQuery<LoanSummary>({
     queryKey: ['loan-summary'],
-    queryFn: async () => {
-      const res = await fetch(`${api.API_BASE_URL || 'http://localhost:5000'}/api/loan-summary`);
-      if (!res.ok) throw new Error('Failed to fetch summary');
-      return res.json();
-    },
+    queryFn: () => api.getLoanSummary(),
   });
 
   const deleteMutation = useMutation({
@@ -121,9 +130,10 @@ export default function LoansScreen() {
   const handleDelete = (loan: Loan) => {
     setLoanToDelete(loan);
     setDeleteModalVisible(true);
-    // Close the swipeable
-    if (swipeableRefs.current[loan.id]) {
-      swipeableRefs.current[loan.id]?.close();
+    // Close the swipeable after showing modal
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
     }
   };
 
@@ -134,97 +144,159 @@ export default function LoansScreen() {
   };
 
   const handleEdit = (loan: Loan) => {
-    // Close the swipeable
-    if (swipeableRefs.current[loan.id]) {
-      swipeableRefs.current[loan.id]?.close();
+    // Close the swipeable before navigation
+    if (currentOpenSwipeable.current !== null) {
+      swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+      currentOpenSwipeable.current = null;
     }
-    navigation.navigate('EditLoan', { loanId: loan.id });
+    navigation.navigate('AddLoan', { loanId: loan.id });
   };
 
-  const renderRightActions = (item: Loan, progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
-    const trans = dragX.interpolate({
-      inputRange: [-160, 0],
-      outputRange: [0, 160],
-      extrapolate: 'clamp',
-    });
-
+  const renderRightActions = (loan: Loan) => {
+    const action = swipeSettings.rightAction;
     return (
-      <Animated.View style={[styles.swipeActions, { transform: [{ translateX: trans }] }]}>
-        <TouchableOpacity
-          style={[styles.swipeAction, styles.editAction, { backgroundColor: colors.primary }]}
-          onPress={() => handleEdit(item)}
-        >
-          <Ionicons name="pencil" size={24} color="#fff" />
-          <Text style={styles.swipeActionText}>Edit</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.swipeAction, styles.deleteAction, { backgroundColor: colors.danger }]}
-          onPress={() => handleDelete(item)}
-        >
-          <Ionicons name="trash" size={24} color="#fff" />
-          <Text style={styles.swipeActionText}>Delete</Text>
-        </TouchableOpacity>
-      </Animated.View>
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => {
+          if (action === 'edit') {
+            handleEdit(loan);
+          } else {
+            handleDelete(loan);
+          }
+        }}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderLeftActions = (loan: Loan) => {
+    const action = swipeSettings.leftAction;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
+        onPress={() => {
+          if (action === 'edit') {
+            handleEdit(loan);
+          } else {
+            handleDelete(loan);
+          }
+        }}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
     );
   };
 
   const renderLoan = ({ item }: { item: Loan }) => {
     const progress = calculateProgress(item);
     const statusColor = getStatusColor(item.status);
-    
-    return (
-      <Swipeable
-        ref={(ref) => (swipeableRefs.current[item.id] = ref)}
-        renderRightActions={(progress, dragX) => renderRightActions(item, progress, dragX)}
-        overshootRight={false}
-        friction={2}
-        rightThreshold={40}
-      >
-        <View style={[styles.loanCard, { backgroundColor: colors.card }]}>
-          <TouchableOpacity
-            style={styles.loanCardContent}
-            onPress={() => navigation.navigate('LoanDetails', { loanId: item.id })}
-            activeOpacity={0.7}
-          >
-            <View style={styles.loanHeader}>
-              <View style={[styles.loanIcon, { backgroundColor: statusColor + '20' }]}>
-                <Ionicons name={getLoanIcon(item.loanType)} size={24} color={statusColor} />
-              </View>
-              <View style={styles.loanInfo}>
-                <Text style={[styles.loanName, { color: colors.text }]}>{item.name}</Text>
-                <Text style={[styles.loanType, { color: colors.textMuted }]}>{getLoanTypeLabel(item.loanType)}</Text>
-              </View>
-              <View style={styles.loanRight}>
-                <View style={styles.loanAmounts}>
-                  <Text style={[styles.outstandingAmount, { color: colors.text }]}>
-                    {hideBalances ? '****' : formatCurrency(parseFloat(item.outstandingAmount))}
-                  </Text>
-                  <Text style={[styles.remainingLabel, { color: colors.textMuted }]}>remaining</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} style={styles.chevron} />
-              </View>
-            </View>
 
-            {/* Progress Bar */}
-            <View style={[styles.progressBar, { backgroundColor: colors.background }]}>
-              <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: colors.primary }]} />
+    const content = (
+      <View style={[styles.loanCard, { backgroundColor: colors.card }]}>
+        <TouchableOpacity
+          style={styles.loanCardContent}
+          onPress={swipeSettings.enabled ? undefined : () => navigation.navigate('LoanDetails', { loanId: item.id })}
+          activeOpacity={swipeSettings.enabled ? 1 : 0.7}
+          disabled={swipeSettings.enabled}
+        >
+          <View style={styles.loanHeader}>
+            <View style={[styles.loanIcon, { backgroundColor: statusColor + '20' }]}>
+              <Ionicons name={getLoanIcon(item.loanType || '')} size={24} color={statusColor} />
             </View>
-            <View style={styles.progressLabels}>
-              <Text style={[styles.progressText, { color: colors.textMuted }]}>{progress}% paid</Text>
-              <Text style={[styles.progressText, { color: colors.textMuted }]}>
-                EMI: {hideBalances ? '****' : formatCurrency(parseFloat(item.emiAmount || '0'))}
-              </Text>
+            <View style={styles.loanInfo}>
+              <Text style={[styles.loanName, { color: colors.text }]}>{item.name}</Text>
+              <Text style={[styles.loanType, { color: colors.textMuted }]}>{getLoanTypeLabel(item.loanType || '')}</Text>
+              {/* Impact Indicators for Loan Payments */}
+              <View style={styles.impactContainer}>
+                {item.affectBalance && (
+                  <View style={[styles.impactBadge, { backgroundColor: colors.primary + '15' }]}>
+                    <Ionicons name="wallet-outline" size={10} color={colors.primary} />
+                    <Text style={[styles.impactText, { color: colors.primary }]}>Updates Balance</Text>
+                  </View>
+                )}
+                
+                {item.createTransaction && (
+                  <View style={[styles.impactBadge, { backgroundColor: colors.textMuted + '15' }]}>
+                    <Ionicons name="receipt-outline" size={10} color={colors.textMuted} />
+                    <Text style={[styles.impactText, { color: colors.textMuted }]}>Creates Txn</Text>
+                  </View>
+                )}
+              </View>
             </View>
-          </TouchableOpacity>
-        </View>
-      </Swipeable>
+            <View style={styles.loanRight}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('LoanDetails', { loanId: item.id })}
+                style={[styles.viewDetailsButton, { backgroundColor: colors.primary + '15' }]}
+              >
+                <Ionicons name="list-outline" size={16} color={colors.primary} />
+              </TouchableOpacity>
+              <View style={styles.loanAmounts}>
+                <Text style={[styles.outstandingAmount, { color: colors.text }]}>
+                  {hideBalances ? '****' : formatCurrency(parseFloat(item.outstandingAmount))}
+                </Text>
+                <Text style={[styles.remainingLabel, { color: colors.textMuted }]}>remaining</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Progress Bar */}
+          <View style={[styles.progressBar, { backgroundColor: colors.background }]}>
+            <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: colors.primary }]} />
+          </View>
+          <View style={styles.progressLabels}>
+            <Text style={[styles.progressText, { color: colors.textMuted }]}>{progress}% paid</Text>
+            <Text style={[styles.progressText, { color: colors.textMuted }]}>
+              EMI: {hideBalances ? '****' : formatCurrency(parseFloat(item.emiAmount || '0'))}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </View>
     );
+
+    if (swipeSettings.enabled) {
+      return (
+        <Swipeable
+          key={item.id}
+          ref={(ref) => {
+            if (ref) {
+              swipeableRefs.current.set(item.id, ref);
+            } else {
+              swipeableRefs.current.delete(item.id);
+            }
+          }}
+          renderRightActions={() => renderRightActions(item)}
+          renderLeftActions={() => renderLeftActions(item)}
+          onSwipeableOpen={(direction) => {
+            // Close previously opened swipeable
+            if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== item.id) {
+              swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+            }
+            currentOpenSwipeable.current = item.id;
+            
+            // Automatically trigger action based on swipe direction
+            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
+            if (action === 'edit') {
+              handleEdit(item);
+            } else {
+              handleDelete(item);
+            }
+          }}
+        >
+          {content}
+        </Swipeable>
+      );
+    }
+
+    return content;
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {loanSummary && (
-        <View style={[styles.summaryCard, { backgroundColor: colors.danger }]}>
+        <View style={[styles.summaryCard, { backgroundColor: '#1e293b' }]}>
           <View style={styles.summaryHeader}>
             <View style={styles.summaryIconCircle}>
               <Ionicons name="business" size={20} color="#fff" />
@@ -286,7 +358,7 @@ export default function LoansScreen() {
       {/* Add Button */}
       <TouchableOpacity
         style={[styles.addButton, { backgroundColor: colors.primary }]}
-        onPress={() => navigation.navigate('AddLoan')}
+        onPress={() => navigation.navigate('AddLoan', {})}
         activeOpacity={0.8}
       >
         <Ionicons name="add" size={24} color="#fff" />
@@ -479,11 +551,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  viewDetailsButton: {
+    padding: 6,
+    borderRadius: 6,
+  },
   loanAmounts: {
     alignItems: 'flex-end',
-  },
-  chevron: {
-    marginLeft: 4,
   },
   outstandingAmount: {
     fontSize: 16,
@@ -493,25 +566,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 2,
   },
-  swipeActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
   swipeAction: {
     justifyContent: 'center',
     alignItems: 'center',
+    width: 80,
     height: '100%',
-    paddingHorizontal: 20,
-    minWidth: 80,
-  },
-  editAction: {
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
-  },
-  deleteAction: {
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
   },
   swipeActionText: {
     color: '#fff',
@@ -626,5 +685,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  impactContainer: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  impactBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+    gap: 3,
+  },
+  impactText: {
+    fontSize: 9, // Slightly smaller for the loan card sub-info
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
 });

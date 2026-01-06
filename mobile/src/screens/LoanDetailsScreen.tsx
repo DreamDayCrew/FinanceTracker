@@ -30,6 +30,7 @@ export default function LoanDetailsScreen() {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [addTermModalVisible, setAddTermModalVisible] = useState(false);
   const [addPaymentModalVisible, setAddPaymentModalVisible] = useState(false);
+  const [processingInstallmentId, setProcessingInstallmentId] = useState<number | null>(null);
   const [newTerm, setNewTerm] = useState({ interestRate: '', tenureMonths: '', emiAmount: '', reason: '' });
   const [newPayment, setNewPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
 
@@ -81,9 +82,11 @@ export default function LoanDetailsScreen() {
 
   const markPaidMutation = useMutation({
     mutationFn: async ({ installmentId, amount }: { installmentId: number; amount: string }) => {
+      setProcessingInstallmentId(installmentId);      
       return api.markInstallmentPaid(loanId, installmentId, {
         paidDate: new Date().toISOString().split('T')[0],
         paidAmount: amount,
+        accountId: loan?.accountId || undefined,
       });
     },
     onSuccess: () => {
@@ -91,6 +94,9 @@ export default function LoanDetailsScreen() {
       queryClient.invalidateQueries({ queryKey: ['loan-installments', loanId] });
       queryClient.invalidateQueries({ queryKey: ['loans'] });
       queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      setProcessingInstallmentId(null);
       Toast.show({
         type: 'success',
         text1: 'EMI Marked as Paid',
@@ -99,6 +105,7 @@ export default function LoanDetailsScreen() {
       });
     },
     onError: (error: any) => {
+      setProcessingInstallmentId(null);
       Toast.show({
         type: 'error',
         text1: 'Payment Failed',
@@ -111,7 +118,6 @@ export default function LoanDetailsScreen() {
   const addTermMutation = useMutation({
     mutationFn: async (data: { interestRate: string; tenureMonths: string; emiAmount: string; reason: string }) => {
       return api.createLoanTerm(loanId, {
-        loanId,
         effectiveFrom: new Date().toISOString().split('T')[0],
         interestRate: data.interestRate,
         tenureMonths: parseInt(data.tenureMonths),
@@ -146,7 +152,6 @@ export default function LoanDetailsScreen() {
   const addPaymentMutation = useMutation({
     mutationFn: async (data: { amount: string; principalPaid: string; interestPaid: string; paymentType: string; notes: string }) => {
       return api.createLoanPayment(loanId, {
-        loanId,
         paymentDate: new Date().toISOString().split('T')[0],
         amount: data.amount,
         principalPaid: data.principalPaid || '0',
@@ -155,7 +160,6 @@ export default function LoanDetailsScreen() {
         notes: data.notes || undefined,
         installmentId: undefined,
         accountId: undefined,
-        transactionId: undefined,
       });
     },
     onSuccess: () => {
@@ -389,16 +393,20 @@ export default function LoanDetailsScreen() {
                             {formatCurrency(parseFloat(installment.emiAmount))}
                           </Text>
                           <Text style={[styles.installmentBreakdown, { color: colors.textMuted }]}>
-                            P: {formatCurrency(parseFloat(installment.principalComponent || '0'))} | 
-                            I: {formatCurrency(parseFloat(installment.interestComponent || '0'))}
+                            P: {formatCurrency(parseFloat((installment as any).principalAmount || '0'))} | 
+                            I: {formatCurrency(parseFloat((installment as any).interestAmount || '0'))}
                           </Text>
                         </View>
                         <TouchableOpacity
                           style={[styles.payButton, { backgroundColor: colors.primary }]}
                           onPress={() => markPaidMutation.mutate({ installmentId: installment.id, amount: installment.emiAmount })}
-                          disabled={markPaidMutation.isPending}
+                          disabled={processingInstallmentId === installment.id}
                         >
-                          <Text style={styles.payButtonText}>Pay</Text>
+                          {processingInstallmentId === installment.id ? (
+                            <ActivityIndicator color="#fff" size="small" />
+                          ) : (
+                            <Text style={styles.payButtonText}>Pay</Text>
+                          )}
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -553,22 +561,6 @@ export default function LoanDetailsScreen() {
             </>
           )}
         </View>
-
-        {/* Delete Button */}
-        <TouchableOpacity
-          style={[styles.deleteButton, { backgroundColor: colors.danger }]}
-          onPress={handleDelete}
-          disabled={deleteMutation.isPending}
-        >
-          {deleteMutation.isPending ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="trash" size={20} color="#fff" />
-              <Text style={styles.deleteButtonText}>Delete Loan</Text>
-            </>
-          )}
-        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>

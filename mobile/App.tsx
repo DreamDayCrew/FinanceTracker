@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import DashboardScreen from './src/screens/DashboardScreen';
 import AccountsScreen from './src/screens/AccountsScreen';
@@ -156,7 +157,9 @@ function MoreStackNavigator() {
       <MoreStack.Screen 
         name="AddLoan" 
         component={AddLoanScreen}
-        options={{ title: 'Add Loan' }}
+        options={({ route }) => ({ 
+          title: route.params?.loanId ? 'Edit Loan' : 'Add Loan' 
+        })}
       />
       <MoreStack.Screen 
         name="LoanDetails" 
@@ -320,16 +323,18 @@ function MainApp() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <SafeAreaProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <MainApp />
-            <StatusBar style="auto" />
-            <Toast />
-          </AuthProvider>
-        </ThemeProvider>
-      </SafeAreaProvider>
-    </QueryClientProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <QueryClientProvider client={queryClient}>
+        <SafeAreaProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <MainApp />
+              <StatusBar style="auto" />
+              <Toast />
+            </AuthProvider>
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }

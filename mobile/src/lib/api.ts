@@ -175,6 +175,12 @@ export const api = {
 
   getLoans: () => apiRequest<Loan[]>('/api/loans'),
   getLoan: (id: number) => apiRequest<Loan>(`/api/loans/${id}`),
+  getLoanSummary: () => apiRequest<{
+    totalLoans: number;
+    totalOutstanding: number;
+    totalEmiThisMonth: number;
+    nextEmiDue: { loanName: string; amount: string; dueDate: string } | null;
+  }>('/api/loan-summary'),
   createLoan: (data: InsertLoan) => 
     apiRequest<Loan>('/api/loans', { method: 'POST', body: JSON.stringify(data) }),
   updateLoan: (id: number, data: Partial<InsertLoan>) => 

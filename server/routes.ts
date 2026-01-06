@@ -1572,7 +1572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const payment = await storage.createLoanPayment({
         loanId,
         installmentId,
-        paymentDate: paidDate,
+        paymentDate: new Date(paidDate),
         amount: paidAmount,
         paymentType: 'emi',
         accountId: accountId || null,

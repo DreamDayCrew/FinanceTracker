@@ -402,20 +402,12 @@ export default function ScheduledPaymentsScreen() {
           }}
           renderRightActions={() => renderRightActionsManage(payment)}
           renderLeftActions={() => renderLeftActionsManage(payment)}
-          onSwipeableOpen={(direction) => {
+          onSwipeableOpen={() => {
             // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== payment.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = payment.id;
-            
-            // Trigger action based on swipe direction
-            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
-            if (action === 'edit') {
-              handleEdit(payment);
-            } else {
-              handleDelete(payment);
-            }
           }}
         >
           {content}
@@ -650,6 +642,22 @@ export default function ScheduledPaymentsScreen() {
                           </Text>
                         )}
                       </Text>
+                      {/* New Impact Indicators */}
+                      <View style={styles.impactContainer}>
+                        {payment?.affectAccountBalance && (
+                          <View style={[styles.impactBadge, { backgroundColor: colors.primary + '15' }]}>
+                            <Ionicons name="wallet-outline" size={12} color={colors.primary} />
+                            <Text style={[styles.impactText, { color: colors.primary }]}>Updates Balance</Text>
+                          </View>
+                        )}
+                        
+                        {payment?.affectTransaction && (
+                          <View style={[styles.impactBadge, { backgroundColor: colors.textMuted + '15' }]}>
+                            <Ionicons name="receipt-outline" size={12} color={colors.textMuted} />
+                            <Text style={[styles.impactText, { color: colors.textMuted }]}>Creates Txn</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
                     <Text style={[
                       styles.checklistAmount, 
@@ -1271,5 +1279,27 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  impactContainer: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4, // Space below the due date line
+    flexWrap: 'wrap',
+  },
+  impactBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 4,
+  },
+  impactText: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  checklistInfoRow: {
+    // Container for your text block
   },
 });

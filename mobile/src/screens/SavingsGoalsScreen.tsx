@@ -110,7 +110,7 @@ export default function SavingsGoalsScreen() {
   });
 
   const updateGoalMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<{ name: string; targetAmount: string; icon: string; color: string; accountId?: number | null; toAccountId?: number | null }> }) =>
+    mutationFn: ({ id, data }: { id: number; data: Partial<{ name: string; targetAmount: string; icon: string; color: string; accountId?: number | null; toAccountId?: number | null; affectTransaction?: boolean; affectAccountBalance?: boolean }> }) =>
       api.updateSavingsGoal(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
@@ -166,7 +166,7 @@ export default function SavingsGoalsScreen() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, status }: { id: number; status: 'active' | 'completed' | 'paused' }) =>
+    mutationFn: ({ id, status }: { id: number; status: 'active' | 'completed' | 'cancelled' }) =>
       api.updateSavingsGoal(id, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
@@ -264,7 +264,7 @@ export default function SavingsGoalsScreen() {
   };
 
   const toggleStatus = (goal: SavingsGoal) => {
-    const newStatus = goal.status === 'active' ? 'paused' : 'active';
+    const newStatus = goal.status === 'active' ? 'cancelled' : 'active';
     updateMutation.mutate({
       id: goal.id,
       status: newStatus,
@@ -315,7 +315,6 @@ export default function SavingsGoalsScreen() {
 
   const activeGoals = goals?.filter(g => g.status === 'active') || [];
   const completedGoals = goals?.filter(g => g.status === 'completed') || [];
-  const pausedGoals = goals?.filter(g => g.status === 'paused') || [];
   
   const totalTarget = activeGoals.reduce((sum, g) => sum + parseFloat(g.targetAmount), 0);
   const totalSaved = activeGoals.reduce((sum, g) => sum + parseFloat(g.currentAmount || '0'), 0);
@@ -432,6 +431,22 @@ export default function SavingsGoalsScreen() {
                           {formatCurrency(parseFloat(goal.currentAmount || '0'))} of {formatCurrency(parseFloat(goal.targetAmount))}
                           {targetDate && ` • Due ${targetDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`}
                         </Text>
+                        {/* New Impact Indicators */}
+                        <View style={styles.impactContainer}>
+                          {goal.affectAccountBalance && (
+                            <View style={[styles.impactBadge, { backgroundColor: colors.primary + '15' }]}>
+                              <Ionicons name="wallet-outline" size={12} color={colors.primary} />
+                              <Text style={[styles.impactText, { color: colors.primary }]}>Updates Balance</Text>
+                            </View>
+                          )}
+                          
+                          {goal.affectTransaction && (
+                            <View style={[styles.impactBadge, { backgroundColor: colors.textMuted + '15' }]}>
+                              <Ionicons name="receipt-outline" size={12} color={colors.textMuted} />
+                              <Text style={[styles.impactText, { color: colors.textMuted }]}>Creates Txn</Text>
+                            </View>
+                          )}
+                        </View>
                         <View style={styles.progressBarContainer}>
                           <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
                             <View 
@@ -959,7 +974,9 @@ export default function SavingsGoalsScreen() {
                   </View>
                   <Switch
                     value={goalToEdit?.affectTransaction ?? true}
-                    onValueChange={(value) => goalToEdit && setGoalToEdit({ ...goalToEdit, affectTransaction: value })}
+                    onValueChange={(value) => {
+                      if (goalToEdit) setGoalToEdit({ ...goalToEdit, affectTransaction: value });
+                    }}
                     trackColor={{ false: colors.border, true: colors.primary }}
                     thumbColor="#fff"
                   />
@@ -974,7 +991,9 @@ export default function SavingsGoalsScreen() {
                   </View>
                   <Switch
                     value={goalToEdit?.affectAccountBalance ?? true}
-                    onValueChange={(value) => goalToEdit && setGoalToEdit({ ...goalToEdit, affectAccountBalance: value })}
+                    onValueChange={(value) => {
+                      if (goalToEdit) setGoalToEdit({ ...goalToEdit, affectAccountBalance: value });
+                    }}
                     trackColor={{ false: colors.border, true: colors.primary }}
                     thumbColor="#fff"
                   />
@@ -994,8 +1013,8 @@ export default function SavingsGoalsScreen() {
                       data: {
                         name: goalToEdit.name,
                         targetAmount: goalToEdit.targetAmount,
-                        icon: goalToEdit.icon,
-                        color: goalToEdit.color,
+                        icon: goalToEdit.icon || undefined,
+                        color: goalToEdit.color || undefined,
                         accountId: goalToEdit.accountId,
                         toAccountId: goalToEdit.toAccountId,
                         affectTransaction: goalToEdit.affectTransaction,
@@ -1491,10 +1510,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  deleteButton: {
-    padding: 8,
-    borderRadius: 8,
-  },
   emptyCard: {
     padding: 40,
     borderRadius: 16,
@@ -1647,10 +1662,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  accountBalance: {
-    fontSize: 11,
-    marginTop: 2,
-  },
   dateButton: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1801,5 +1812,27 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     lineHeight: 20,
+  },
+  impactContainer: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4, // Space below the due date line
+    flexWrap: 'wrap',
+  },
+  impactBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 4,
+  },
+  impactText: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  checklistInfoRow: {
+    // Container for your text block
   },
 });

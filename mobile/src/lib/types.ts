@@ -242,6 +242,8 @@ export interface Loan {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  affectBalance: boolean;
+  createTransaction: boolean;
 }
 
 export interface LoanInstallment {

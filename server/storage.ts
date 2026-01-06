@@ -1058,6 +1058,8 @@ export class DatabaseStorage implements IStorage {
       startDate: loans.startDate,
       endDate: loans.endDate,
       status: loans.status,
+      createTransaction: loans.createTransaction,
+      affectBalance: loans.affectBalance,
       notes: loans.notes,
       createdAt: loans.createdAt,
       updatedAt: loans.updatedAt,
@@ -1089,6 +1091,8 @@ export class DatabaseStorage implements IStorage {
       startDate: loans.startDate,
       endDate: loans.endDate,
       status: loans.status,
+      createTransaction: loans.createTransaction,
+      affectBalance: loans.affectBalance,
       notes: loans.notes,
       createdAt: loans.createdAt,
       updatedAt: loans.updatedAt,
@@ -1199,10 +1203,10 @@ export class DatabaseStorage implements IStorage {
   async updateLoanInstallment(id: number, installment: Partial<InsertLoanInstallment>): Promise<LoanInstallment | undefined> {
     const updateData: any = { ...installment };
     if (installment.dueDate) {
-      updateData.dueDate = new Date(installment.dueDate);
+      updateData.dueDate = installment.dueDate instanceof Date ? installment.dueDate : new Date(installment.dueDate);
     }
     if (installment.paidDate) {
-      updateData.paidDate = new Date(installment.paidDate);
+      updateData.paidDate = installment.paidDate instanceof Date ? installment.paidDate : new Date(installment.paidDate);
     }
     const [updated] = await db.update(loanInstallments)
       .set(updateData)
@@ -1370,7 +1374,7 @@ export class DatabaseStorage implements IStorage {
     if (payment.installmentId && !payment.principalPaid) {
       const installment = await this.getLoanInstallment(payment.installmentId);
       if (installment) {
-        principalPaid = parseFloat(installment.principalComponent || '0');
+        principalPaid = parseFloat(installment.principalAmount || '0');
       }
     }
     
@@ -1384,16 +1388,50 @@ export class DatabaseStorage implements IStorage {
       principalPaid: principalPaid.toFixed(2)
     }).returning();
 
-    // Update outstanding amount - only subtract principal component
+    // Get loan details for transaction and balance operations
     const loan = await this.getLoan(payment.loanId);
-    if (loan && principalPaid > 0) {
-      const currentOutstanding = parseFloat(loan.outstandingAmount) || 0;
-      const newOutstanding = Math.max(0, currentOutstanding - principalPaid);
-      
-      await db.update(loans).set({
-        outstandingAmount: newOutstanding.toFixed(2),
-        updatedAt: new Date()
-      }).where(eq(loans.id, payment.loanId));
+    
+    if (loan) {
+      // Update outstanding amount - only subtract principal component
+      if (principalPaid > 0) {
+        const currentOutstanding = parseFloat(loan.outstandingAmount) || 0;
+        const newOutstanding = Math.max(0, currentOutstanding - principalPaid);
+        
+        await db.update(loans).set({
+          outstandingAmount: newOutstanding.toFixed(2),
+          updatedAt: new Date()
+        }).where(eq(loans.id, payment.loanId));
+      }
+
+      // Create transaction if enabled
+      if (loan.createTransaction && loan.accountId) {
+        const paymentAmount = parseFloat(payment.amount);
+        await this.createTransaction({
+          userId: loan.userId,
+          accountId: loan.accountId,
+          categoryId: 15,
+          type: 'debit',
+          amount: paymentAmount.toFixed(2),
+          merchant: '[AUTO] Loan Payment',
+          description: `Loan EMI - ${loan.name}`,
+          transactionDate: payment.paymentDate.toISOString(),
+        });
+      }
+
+      // Affect account balance if enabled
+      if (loan.affectBalance && loan.accountId) {
+        const account = await this.getAccount(loan.accountId);
+        if (account) {
+          const paymentAmount = parseFloat(payment.amount);
+          const currentBalance = parseFloat(account.balance || '0');
+          const newBalance = currentBalance - paymentAmount;
+          
+          await db.update(accounts).set({
+            balance: newBalance.toFixed(2),
+            updatedAt: new Date()
+          }).where(eq(accounts.id, loan.accountId));
+        }
+      }
     }
 
     // If linked to an installment, mark it as paid
@@ -1401,7 +1439,7 @@ export class DatabaseStorage implements IStorage {
       await this.updateLoanInstallment(payment.installmentId, {
         status: 'paid',
         paidAmount: payment.amount,
-        paidDate: typeof payment.paymentDate === 'string' ? new Date(payment.paymentDate) : payment.paymentDate
+        paidDate: payment.paymentDate
       });
     }
 

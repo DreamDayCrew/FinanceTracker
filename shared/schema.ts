@@ -404,6 +404,8 @@ export const loans = pgTable("loans", {
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date"),
   status: varchar("status", { length: 20 }).default("active"), // 'active', 'closed', 'defaulted'
+  createTransaction: boolean("create_transaction").default(false), // create transaction on payment
+  affectBalance: boolean("affect_balance").default(false), // affect account balance on payment
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -432,6 +434,8 @@ export const insertLoanSchema = createInsertSchema(loans).omit({
   startDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)),
   endDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
   status: z.enum(["active", "closed", "defaulted"]).optional(),
+  createTransaction: z.boolean().optional(),
+  affectBalance: z.boolean().optional(),
 });
 
 export type InsertLoan = z.infer<typeof insertLoanSchema>;

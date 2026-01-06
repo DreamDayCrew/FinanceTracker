@@ -1,14 +1,15 @@
-import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useState, useMemo, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Switch, Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import Toast from 'react-native-toast-message';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { getThemedColors } from '../lib/utils';
 import { api } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
-import type { Account, InsertLoan } from '../lib/types';
+import type { Account, InsertLoan, Loan } from '../lib/types';
 
 const LOAN_TYPES = [
   { value: 'home_loan', label: 'Home Loan' },
@@ -19,14 +20,18 @@ const LOAN_TYPES = [
 
 type RootStackParamList = {
   Loans: undefined;
-  AddLoan: undefined;
+  AddLoan: { loanId?: number };
 };
 
 export default function AddLoanScreen() {
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<NativeStackScreenProps<RootStackParamList, 'AddLoan'>['route']>();
   const queryClient = useQueryClient();
+  
+  const loanId = route.params?.loanId;
+  const isEditMode = !!loanId;
 
   const [formData, setFormData] = useState({
     name: '',
@@ -38,25 +43,70 @@ export default function AddLoanScreen() {
     tenure: '',
     emiAmount: '',
     emiDay: '1',
-    startDate: new Date().toISOString().split('T')[0],
     accountId: '',
   });
+  const [startDate, setStartDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [createTransaction, setCreateTransaction] = useState(false);
+  const [affectBalance, setAffectBalance] = useState(false);
 
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['accounts'],
     queryFn: () => api.getAccounts(),
   });
 
+  // Fetch existing loan data if in edit mode
+  const { data: existingLoan, isLoading: isLoadingLoan } = useQuery<Loan>({
+    queryKey: ['loan', loanId],
+    queryFn: () => api.getLoan(loanId!),
+    enabled: isEditMode,
+  });
+
+  // Populate form with existing loan data
+  useEffect(() => {
+    if (existingLoan && isEditMode) {
+      console.log('Existing Loan Data:', existingLoan);
+      console.log('createTransaction value:', (existingLoan as any).createTransaction);
+      console.log('affectBalance value:', (existingLoan as any).affectBalance);
+      
+      setFormData({
+        name: existingLoan.name,
+        type: existingLoan.loanType || 'personal_loan',
+        lenderName: existingLoan.lenderName || '',
+        loanAccountNumber: existingLoan.loanAccountNumber || '',
+        principalAmount: existingLoan.principalAmount,
+        interestRate: existingLoan.interestRate,
+        tenure: existingLoan.tenure?.toString() || '',
+        emiAmount: existingLoan.emiAmount || '',
+        emiDay: existingLoan.emiDay?.toString() || '1',
+        accountId: existingLoan.accountId?.toString() || '',
+      });
+      
+      if (existingLoan.startDate) {
+        setStartDate(new Date(existingLoan.startDate));
+      }
+      
+      // Set toggle values - check both snake_case and camelCase
+      const createTxn = (existingLoan as any).createTransaction ?? (existingLoan as any).create_transaction ?? false;
+      const affectBal = (existingLoan as any).affectBalance ?? (existingLoan as any).affect_balance ?? false;
+      
+      console.log('Setting createTransaction to:', createTxn);
+      console.log('Setting affectBalance to:', affectBal);
+      
+      setCreateTransaction(createTxn);
+      setAffectBalance(affectBal);
+    }
+  }, [existingLoan, isEditMode]);
+
   // Auto-select default account
-  useMemo(() => {
-    if (!formData.accountId && accounts.length > 0) {
+  useEffect(() => {
+    if (!formData.accountId && accounts.length > 0 && !isEditMode) {
       const defaultAccount = accounts.find(acc => acc.isDefault);
       if (defaultAccount) {
         setFormData(prev => ({ ...prev, accountId: defaultAccount.id.toString() }));
       }
     }
-  }, [accounts]);
+  }, [accounts, isEditMode]);
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -71,10 +121,12 @@ export default function AddLoanScreen() {
         tenure: parseInt(data.tenure),
         emiAmount: data.emiAmount || undefined,
         emiDay: parseInt(data.emiDay) || undefined,
-        startDate: data.startDate,
+        startDate: startDate.toISOString(),
         accountId: data.accountId ? parseInt(data.accountId) : undefined,
         status: 'active' as const,
         userId: null,
+        createTransaction,
+        affectBalance,
       };
       return api.createLoan(payload);
     },
@@ -99,6 +151,47 @@ export default function AddLoanScreen() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async (data: typeof formData) => {
+      const payload: any = {
+        name: data.name,
+        type: data.type,
+        lenderName: data.lenderName || undefined,
+        loanAccountNumber: data.loanAccountNumber || undefined,
+        principalAmount: data.principalAmount,
+        interestRate: data.interestRate,
+        tenure: parseInt(data.tenure),
+        emiAmount: data.emiAmount || undefined,
+        emiDay: parseInt(data.emiDay) || undefined,
+        startDate: startDate.toISOString(),
+        accountId: data.accountId ? parseInt(data.accountId) : undefined,
+        createTransaction,
+        affectBalance,
+      };
+      return api.updateLoan(loanId!, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loans'] });
+      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      Toast.show({
+        type: 'success',
+        text1: 'Loan Updated',
+        text2: 'Your loan has been updated successfully',
+        position: 'bottom',
+      });
+      navigation.goBack();
+    },
+    onError: (error: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Failed to Update Loan',
+        text2: error.message || 'Could not update loan',
+        position: 'bottom',
+      });
+    },
+  });
+
   const handleSubmit = () => {
     if (!formData.name || !formData.principalAmount || !formData.interestRate || 
         !formData.tenure || !formData.emiAmount) {
@@ -110,20 +203,42 @@ export default function AddLoanScreen() {
       });
       return;
     }
-    createMutation.mutate(formData);
+    
+    if (isEditMode) {
+      updateMutation.mutate(formData);
+    } else {
+      createMutation.mutate(formData);
+    }
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isLoadingLoan ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
       <View style={styles.form}>
+        {/* Edit Mode Information Banner */}
+        {isEditMode && (
+          <View style={[styles.infoBanner, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
+            <Ionicons name="information-circle" size={20} color={colors.primary} />
+            <Text style={[styles.infoBannerText, { color: colors.text }]}>
+              Changing these settings will only apply to future payments. Past transactions remain unchanged.
+            </Text>
+          </View>
+        )}
+        
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textMuted }]}>Loan Name *</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }, isEditMode && { opacity: 0.5 }]}
             placeholder="e.g., Home Loan - SBI"
             placeholderTextColor={colors.textMuted}
             value={formData.name}
             onChangeText={(text) => setFormData({ ...formData, name: text })}
+            editable={!isEditMode}
           />
         </View>
 
@@ -136,9 +251,11 @@ export default function AddLoanScreen() {
                 style={[
                   styles.loanTypeButton,
                   { backgroundColor: colors.card, borderColor: colors.border },
-                  formData.type === type.value && { borderColor: colors.primary, backgroundColor: colors.primary + '20' }
+                  formData.type === type.value && { borderColor: colors.primary, backgroundColor: colors.primary + '20' },
+                  isEditMode && { opacity: 0.5 }
                 ]}
                 onPress={() => setFormData({ ...formData, type: type.value })}
+                disabled={isEditMode}
               >
                 <Text style={[
                   styles.loanTypeText,
@@ -155,34 +272,37 @@ export default function AddLoanScreen() {
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textMuted }]}>Lender/Bank Name</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }, isEditMode && { opacity: 0.5 }]}
             placeholder="e.g., State Bank of India"
             placeholderTextColor={colors.textMuted}
             value={formData.lenderName}
             onChangeText={(text) => setFormData({ ...formData, lenderName: text })}
+            editable={!isEditMode}
           />
         </View>
 
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textMuted }]}>Loan Account Number</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }, isEditMode && { opacity: 0.5 }]}
             placeholder="Optional"
             placeholderTextColor={colors.textMuted}
             value={formData.loanAccountNumber}
             onChangeText={(text) => setFormData({ ...formData, loanAccountNumber: text })}
+            editable={!isEditMode}
           />
         </View>
 
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textMuted }]}>Principal Amount (₹) *</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }, isEditMode && { opacity: 0.5 }]}
             placeholder="e.g., 1000000"
             placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
             value={formData.principalAmount}
             onChangeText={(text) => setFormData({ ...formData, principalAmount: text })}
+            editable={!isEditMode}
           />
         </View>
 
@@ -241,23 +361,37 @@ export default function AddLoanScreen() {
           <TouchableOpacity
             style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => setShowDatePicker(true)}
+            disabled={isEditMode}
           >
             <Ionicons name="calendar-outline" size={20} color={colors.text} />
             <Text style={[styles.datePickerText, { color: colors.text }]}>
-              {formData.startDate ? new Date(formData.startDate).toLocaleDateString('en-IN', { 
-                weekday: 'short',
-                year: 'numeric',
+              {startDate.toLocaleDateString('en-US', { 
+                day: 'numeric',
                 month: 'short',
-                day: 'numeric'
-              }) : 'Select Date'}
+                year: 'numeric'
+              })}
             </Text>
           </TouchableOpacity>
         </View>
 
+        {showDatePicker && (
+          <DateTimePicker
+            value={startDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={(event, selectedDate) => {
+              setShowDatePicker(Platform.OS === 'ios');
+              if (selectedDate) {
+                setStartDate(selectedDate);
+              }
+            }}
+          />
+        )}
+
         {accounts.length > 0 && (
           <View style={styles.field}>
             <Text style={[styles.label, { color: colors.textMuted }]}>Link to Account (optional)</Text>
-            <View style={styles.accountList}>
+            <View style={[styles.accountList, isEditMode && { opacity: 0.5 }]}>
               <TouchableOpacity
                 style={[
                   styles.accountOption,
@@ -265,6 +399,7 @@ export default function AddLoanScreen() {
                   !formData.accountId && { borderColor: colors.primary, backgroundColor: colors.primary + '20' }
                 ]}
                 onPress={() => setFormData({ ...formData, accountId: '' })}
+                disabled={isEditMode}
               >
                 <Text style={[
                   styles.accountOptionText,
@@ -283,6 +418,7 @@ export default function AddLoanScreen() {
                     formData.accountId === account.id.toString() && { borderColor: colors.primary, backgroundColor: colors.primary + '20' }
                   ]}
                   onPress={() => setFormData({ ...formData, accountId: account.id.toString() })}
+                  disabled={isEditMode}
                 >
                   <Text style={[
                     styles.accountOptionText,
@@ -297,90 +433,72 @@ export default function AddLoanScreen() {
           </View>
         )}
 
+        {/* Payment Settings */}
+        {formData.accountId && (
+          <>
+            <View style={styles.sectionDivider} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Payment Settings</Text>
+            
+            {/* Create Transaction Toggle */}
+            <View style={[styles.field, styles.toggleField]}>
+              <View style={styles.toggleLeft}>
+                <Ionicons name="receipt-outline" size={20} color={colors.text} />
+                <View style={styles.toggleTextContainer}>
+                  <Text style={[styles.label, { color: colors.text, marginBottom: 2 }]}>Create Transaction</Text>
+                  <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                    Record each EMI payment as a transaction
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={createTransaction}
+                onValueChange={setCreateTransaction}
+                trackColor={{ false: colors.border, true: colors.primary + '80' }}
+                thumbColor={createTransaction ? colors.primary : '#f4f3f4'}
+              />
+            </View>
+
+            {/* Affect Balance Toggle */}
+            <View style={[styles.field, styles.toggleField]}>
+              <View style={styles.toggleLeft}>
+                <Ionicons name="wallet-outline" size={20} color={colors.text} />
+                <View style={styles.toggleTextContainer}>
+                  <Text style={[styles.label, { color: colors.text, marginBottom: 2 }]}>Affect Account Balance</Text>
+                  <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                    Deduct EMI amount from linked account
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={affectBalance}
+                onValueChange={setAffectBalance}
+                trackColor={{ false: colors.border, true: colors.primary + '80' }}
+                thumbColor={affectBalance ? colors.primary : '#f4f3f4'}
+              />
+            </View>
+          </>
+        )}
+
         <TouchableOpacity
           style={[styles.submitButton, { backgroundColor: colors.primary }]}
           onPress={handleSubmit}
-          disabled={createMutation.isPending}
+          disabled={createMutation.isPending || updateMutation.isPending}
         >
-          {createMutation.isPending ? (
+          {(createMutation.isPending || updateMutation.isPending) ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <>
               <Ionicons name="checkmark" size={20} color="#fff" />
-              <Text style={styles.submitButtonText}>Add Loan</Text>
+              <Text style={styles.submitButtonText}>{isEditMode ? 'Update Loan' : 'Add Loan'}</Text>
             </>
           )}
         </TouchableOpacity>
       </View>
 
-      {/* Date Picker Modal */}
-      {showDatePicker && (
-        <View style={styles.modalOverlay}>
-          <View style={[styles.datePickerModal, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Select Start Date</Text>
-              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                <Ionicons name="close" size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.datePickerContent}>
-              <ScrollView style={styles.datePickerScroll}>
-                {(() => {
-                  const today = new Date();
-                  const dates = [];
-                  
-                  // Show dates from 2 years ago to today
-                  for (let monthsAgo = 24; monthsAgo >= 0; monthsAgo--) {
-                    const date = new Date(today.getFullYear(), today.getMonth() - monthsAgo, 1);
-                    const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-                    
-                    for (let day = 1; day <= daysInMonth; day++) {
-                      const currentDate = new Date(date.getFullYear(), date.getMonth(), day);
-                      if (currentDate <= today) {
-                        const dateStr = currentDate.toISOString().split('T')[0];
-                        const isSelected = formData.startDate === dateStr;
-                        
-                        dates.push(
-                          <TouchableOpacity
-                            key={dateStr}
-                            style={[
-                              styles.dateOption,
-                              { backgroundColor: colors.background, borderColor: colors.border },
-                              isSelected && { backgroundColor: colors.primary + '20', borderColor: colors.primary }
-                            ]}
-                            onPress={() => {
-                              setFormData({ ...formData, startDate: dateStr });
-                              setShowDatePicker(false);
-                            }}
-                          >
-                            <Text style={[
-                              styles.dateOptionText,
-                              { color: colors.text },
-                              isSelected && { color: colors.primary, fontWeight: '600' }
-                            ]}>
-                              {currentDate.toLocaleDateString('en-IN', { 
-                                weekday: 'short',
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric'
-                              })}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      }
-                    }
-                  }
-                  
-                  return dates.reverse(); // Show most recent first
-                })()}
-              </ScrollView>
-            </View>
-          </View>
-        </View>
-      )}
-
       <View style={{ height: 40 }} />
-    </ScrollView>
+        </ScrollView>
+      )}
+    </View>
   );
 }
 
@@ -388,8 +506,44 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  backButton: {
+    width: 40,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scrollView: {
+    flex: 1,
+  },
   form: {
     padding: 16,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 16,
+    gap: 10,
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
   field: {
     marginBottom: 16,
@@ -466,54 +620,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     flex: 1,
   },
-  modalOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
+  sectionDivider: {
+    height: 1,
+    backgroundColor: '#e5e5e5',
+    marginVertical: 24,
   },
-  datePickerModal: {
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '70%',
-    borderRadius: 12,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 16,
   },
-  modalHeader: {
+  toggleField: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    paddingVertical: 12,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+  toggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    flex: 1,
+    marginRight: 12,
+  },
+  toggleTextContainer: {
     flex: 1,
   },
-  datePickerContent: {
-    maxHeight: 400,
-  },
-  datePickerScroll: {
-    padding: 16,
-  },
-  dateOption: {
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  dateOptionText: {
-    fontSize: 15,
+  helperText: {
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

@@ -11,7 +11,7 @@ export interface SwipeSettings {
 
 export const useSwipeSettings = () => {
   const [settings, setSettings] = useState<SwipeSettings>({
-    enabled: false,
+    enabled: true,
     leftAction: 'delete',
     rightAction: 'edit',
   });
