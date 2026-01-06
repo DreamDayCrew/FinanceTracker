@@ -30,9 +30,10 @@ export interface Transaction {
   id: number;
   userId: number | null;
   accountId: number | null;
+  toAccountId?: number | null;
   categoryId: number | null;
   amount: string;
-  type: 'credit' | 'debit';
+  type: 'credit' | 'debit' | 'transfer';
   description: string | null;
   merchant: string | null;
   referenceNumber: string | null;

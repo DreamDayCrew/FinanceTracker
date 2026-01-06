@@ -28,6 +28,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, gte, lte, desc, sql, ilike, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 export interface IStorage {
   // Users
@@ -287,10 +288,13 @@ export class DatabaseStorage implements IStorage {
     search?: string;
     limit?: number;
   }): Promise<TransactionWithRelations[]> {
+    const toAccountAlias = alias(accounts, 'to_account');
+    
     let query = db.select({
       id: transactions.id,
       userId: transactions.userId,
       accountId: transactions.accountId,
+      toAccountId: transactions.toAccountId,
       categoryId: transactions.categoryId,
       amount: transactions.amount,
       type: transactions.type,
@@ -304,10 +308,12 @@ export class DatabaseStorage implements IStorage {
       paymentOccurrenceId: transactions.paymentOccurrenceId,
       createdAt: transactions.createdAt,
       account: accounts,
+      toAccount: toAccountAlias,
       category: categories,
     })
     .from(transactions)
     .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+    .leftJoin(toAccountAlias, eq(transactions.toAccountId, toAccountAlias.id))
     .leftJoin(categories, eq(transactions.categoryId, categories.id))
     .orderBy(desc(transactions.transactionDate))
     .$dynamic();
@@ -351,10 +357,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTransaction(id: number): Promise<TransactionWithRelations | undefined> {
+    const toAccountAlias = alias(accounts, 'to_account');
+    
     const [result] = await db.select({
       id: transactions.id,
       userId: transactions.userId,
       accountId: transactions.accountId,
+      toAccountId: transactions.toAccountId,
       categoryId: transactions.categoryId,
       amount: transactions.amount,
       type: transactions.type,
@@ -368,10 +377,12 @@ export class DatabaseStorage implements IStorage {
       paymentOccurrenceId: transactions.paymentOccurrenceId,
       createdAt: transactions.createdAt,
       account: accounts,
+      toAccount: toAccountAlias,
       category: categories,
     })
     .from(transactions)
     .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+    .leftJoin(toAccountAlias, eq(transactions.toAccountId, toAccountAlias.id))
     .leftJoin(categories, eq(transactions.categoryId, categories.id))
     .where(eq(transactions.id, id));
 
@@ -384,10 +395,21 @@ export class DatabaseStorage implements IStorage {
       transactionDate: transaction.transactionDate ? new Date(transaction.transactionDate) : new Date(),
     }).returning();
 
-    // Update account balance
-    if (transaction.accountId) {
-      const balanceType = transaction.type === 'debit' ? 'subtract' : 'add';
-      await this.updateAccountBalance(transaction.accountId, transaction.amount, balanceType);
+    // Update account balances based on transaction type
+    if (transaction.type === 'transfer') {
+      // For transfers: deduct from source account and add to destination account
+      if (transaction.accountId) {
+        await this.updateAccountBalance(transaction.accountId, transaction.amount, 'subtract');
+      }
+      if (transaction.toAccountId) {
+        await this.updateAccountBalance(transaction.toAccountId, transaction.amount, 'add');
+      }
+    } else {
+      // For regular debit/credit transactions
+      if (transaction.accountId) {
+        const balanceType = transaction.type === 'debit' ? 'subtract' : 'add';
+        await this.updateAccountBalance(transaction.accountId, transaction.amount, balanceType);
+      }
     }
 
     return newTransaction;
@@ -399,10 +421,21 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Transaction not found');
     }
 
-    // Reverse old balance changes if account changed or amount changed
-    if (oldTransaction.accountId) {
-      const oldBalanceType = oldTransaction.type === 'debit' ? 'add' : 'subtract';
-      await this.updateAccountBalance(oldTransaction.accountId, oldTransaction.amount, oldBalanceType);
+    // Reverse old balance changes
+    if (oldTransaction.type === 'transfer') {
+      // Reverse transfer: add back to source, subtract from destination
+      if (oldTransaction.accountId) {
+        await this.updateAccountBalance(oldTransaction.accountId, oldTransaction.amount, 'add');
+      }
+      if (oldTransaction.toAccountId) {
+        await this.updateAccountBalance(oldTransaction.toAccountId, oldTransaction.amount, 'subtract');
+      }
+    } else {
+      // Reverse regular transaction
+      if (oldTransaction.accountId) {
+        const oldBalanceType = oldTransaction.type === 'debit' ? 'add' : 'subtract';
+        await this.updateAccountBalance(oldTransaction.accountId, oldTransaction.amount, oldBalanceType);
+      }
     }
 
     // Update the transaction
@@ -419,12 +452,24 @@ export class DatabaseStorage implements IStorage {
 
     // Apply new balance changes
     const newAccountId = updates.accountId !== undefined ? updates.accountId : oldTransaction.accountId;
+    const newToAccountId = updates.toAccountId !== undefined ? updates.toAccountId : oldTransaction.toAccountId;
     const newAmount = updates.amount !== undefined ? updates.amount : oldTransaction.amount;
     const newType = updates.type !== undefined ? updates.type : oldTransaction.type;
 
-    if (newAccountId) {
-      const newBalanceType = newType === 'debit' ? 'subtract' : 'add';
-      await this.updateAccountBalance(newAccountId, newAmount, newBalanceType);
+    if (newType === 'transfer') {
+      // Apply transfer: subtract from source, add to destination
+      if (newAccountId) {
+        await this.updateAccountBalance(newAccountId, newAmount, 'subtract');
+      }
+      if (newToAccountId) {
+        await this.updateAccountBalance(newToAccountId, newAmount, 'add');
+      }
+    } else {
+      // Apply regular transaction
+      if (newAccountId) {
+        const newBalanceType = newType === 'debit' ? 'subtract' : 'add';
+        await this.updateAccountBalance(newAccountId, newAmount, newBalanceType);
+      }
     }
 
     return updatedTransaction;
@@ -434,9 +479,20 @@ export class DatabaseStorage implements IStorage {
     const transaction = await this.getTransaction(id);
     if (transaction) {
       // Reverse the balance change
-      if (transaction.accountId) {
-        const balanceType = transaction.type === 'debit' ? 'add' : 'subtract';
-        await this.updateAccountBalance(transaction.accountId, transaction.amount, balanceType);
+      if (transaction.type === 'transfer') {
+        // Reverse transfer: add back to source, subtract from destination
+        if (transaction.accountId) {
+          await this.updateAccountBalance(transaction.accountId, transaction.amount, 'add');
+        }
+        if (transaction.toAccountId) {
+          await this.updateAccountBalance(transaction.toAccountId, transaction.amount, 'subtract');
+        }
+      } else {
+        // Reverse regular transaction
+        if (transaction.accountId) {
+          const balanceType = transaction.type === 'debit' ? 'add' : 'subtract';
+          await this.updateAccountBalance(transaction.accountId, transaction.amount, balanceType);
+        }
       }
     }
     const result = await db.delete(transactions).where(eq(transactions.id, id)).returning();
@@ -555,7 +611,7 @@ export class DatabaseStorage implements IStorage {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-    // Get today's spending
+    // Get today's spending (excluding transfers)
     const todayTransactions = await this.getAllTransactions({
       userId,
       startDate: startOfToday,
@@ -565,7 +621,7 @@ export class DatabaseStorage implements IStorage {
       .filter(t => t.type === 'debit')
       .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-    // Get monthly spending
+    // Get monthly spending (excluding transfers)
     const monthTransactions = await this.getAllTransactions({
       userId,
       startDate: startOfMonth,
@@ -575,7 +631,7 @@ export class DatabaseStorage implements IStorage {
       .filter(t => t.type === 'debit')
       .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-    // Get monthly expenses by category
+    // Get monthly expenses by category (excluding transfers)
     const categoryTotals = new Map<number, { name: string; total: number; color: string }>();
     for (const t of monthTransactions.filter(t => t.type === 'debit')) {
       if (t.categoryId && t.category) {
@@ -1253,8 +1309,10 @@ export class DatabaseStorage implements IStorage {
     let remainingPrincipal = principal;
 
     for (let i = 1; i <= loan.tenure; i++) {
-      // Calculate interest and principal for this installment
+      // Calculate interest for this installment
       const interestAmount = remainingPrincipal * interestRate;
+      // Principal is the remaining amount after interest
+      // This ensures principalAmount + interestAmount = emiAmount exactly
       const principalAmount = emiAmount - interestAmount;
       remainingPrincipal = Math.max(0, remainingPrincipal - principalAmount);
 

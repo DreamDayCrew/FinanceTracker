@@ -109,9 +109,10 @@ export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
   accountId: integer("account_id").references(() => accounts.id),
+  toAccountId: integer("to_account_id").references(() => accounts.id), // For transfer transactions
   categoryId: integer("category_id").references(() => categories.id),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
-  type: varchar("type", { length: 20 }).notNull(), // 'debit', 'credit'
+  type: varchar("type", { length: 20 }).notNull(), // 'debit', 'credit', 'transfer'
   description: text("description"),
   merchant: varchar("merchant", { length: 200 }),
   referenceNumber: varchar("reference_number", { length: 100 }),
@@ -126,6 +127,7 @@ export const transactions = pgTable("transactions", {
 export const transactionsRelations = relations(transactions, ({ one }) => ({
   user: one(users, { fields: [transactions.userId], references: [users.id] }),
   account: one(accounts, { fields: [transactions.accountId], references: [accounts.id] }),
+  toAccount: one(accounts, { fields: [transactions.toAccountId], references: [accounts.id] }),
   category: one(categories, { fields: [transactions.categoryId], references: [categories.id] }),
 }));
 
@@ -134,8 +136,9 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({
   createdAt: true,
 }).extend({
   amount: z.string().min(1, "Amount is required"),
-  type: z.enum(["debit", "credit"]),
+  type: z.enum(["debit", "credit", "transfer"]),
   transactionDate: z.string().optional(),
+  toAccountId: z.number().optional(),
   savingsContributionId: z.number().optional(),
   paymentOccurrenceId: z.number().optional(),
 });
@@ -327,6 +330,8 @@ export const salaryProfiles = pgTable("salary_profiles", {
   paydayRule: varchar("payday_rule", { length: 30 }).default("last_working_day"), // 'fixed_day', 'last_working_day', 'nth_weekday'
   fixedDay: integer("fixed_day"), // day of month if payday_rule is 'fixed_day'
   weekdayPreference: integer("weekday_preference"), // 0=Sun, 1=Mon... for nth_weekday rule
+  monthCycleStartRule: varchar("month_cycle_start_rule", { length: 30 }).default("salary_day"), // 'salary_day' or 'fixed_day'
+  monthCycleStartDay: integer("month_cycle_start_day"), // day of month (1-31) if monthCycleStartRule is 'fixed_day'
   monthlyAmount: decimal("monthly_amount", { precision: 12, scale: 2 }),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -346,8 +351,10 @@ export const insertSalaryProfileSchema = createInsertSchema(salaryProfiles).omit
 }).extend({
   paydayRule: z.enum(["fixed_day", "last_working_day", "nth_weekday"]).optional(),
   fixedDay: z.number().min(1).max(31).nullish(),
-  monthlyAmount: z.string().optional(),
-  accountId: z.number().optional(),
+  monthCycleStartRule: z.enum(["salary_day", "fixed_day"]).optional(),
+  monthCycleStartDay: z.number().min(1).max(31).nullish(),
+  monthlyAmount: z.string().nullish(),
+  accountId: z.number().nullish(),
 });
 
 export type InsertSalaryProfile = z.infer<typeof insertSalaryProfileSchema>;
@@ -757,6 +764,7 @@ export type InsuranceWithRelations = Insurance & {
 // Extended transaction type with relations
 export type TransactionWithRelations = Transaction & {
   account?: Account | null;
+  toAccount?: Account | null;
   category?: Category | null;
 };
 

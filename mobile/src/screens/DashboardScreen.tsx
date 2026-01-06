@@ -5,13 +5,18 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
-import { api } from '../lib/api';
+import { api, API_BASE_URL } from '../lib/api';
 import { formatCurrency, formatDate, getThemedColors, getOrdinalSuffix } from '../lib/utils';
 import { RootStackParamList, TabParamList } from '../../App';
 import { FABButton } from '../components/FABButton';
 import { useState, useCallback, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 
+interface Payday {
+  month: number;
+  year: number;
+  date: string;
+}
 type NavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<TabParamList, 'Dashboard'>,
   NativeStackNavigationProp<RootStackParamList>
@@ -39,12 +44,96 @@ export default function DashboardScreen() {
     queryFn: api.getMonthlyCreditCardSpending,
   });
 
+  const { data: nextPaydays = [] } = useQuery<Payday[]>({
+    queryKey: ['salary-profile-paydays'],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE_URL}/api/salary-profile/next-paydays?count=1`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: paymentOccurrences = [] } = useQuery({
+    queryKey: ['payment-occurrences-current'],
+    queryFn: async () => {
+      const now = new Date();
+      const res = await fetch(`${API_BASE_URL}/api/payment-occurrences?month=${now.getMonth() + 1}&year=${now.getFullYear()}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: savingsGoals = [] } = useQuery({
+    queryKey: ['savings-goals'],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE_URL}/api/savings-goals`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: insurances = [] } = useQuery({
+    queryKey: ['insurances'],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE_URL}/api/insurances`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const nextPayday = nextPaydays.length > 0 ? nextPaydays[0] : null;
+  const daysUntilPayday = useMemo(() => {
+    if (!nextPayday) return null;
+    const today = new Date();
+    const paydayDate = new Date(nextPayday.date);
+    const diffTime = paydayDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  }, [nextPayday]);
+
+  const paymentStats = useMemo(() => {
+    const total = paymentOccurrences.length;
+    const completed = paymentOccurrences.filter((p: any) => p.status === 'paid').length;
+    return { total, completed };
+  }, [paymentOccurrences]);
+
+  const savingsStats = useMemo(() => {
+    const activeGoals = savingsGoals.filter((g: any) => g.status === 'active');
+    const totalTarget = activeGoals.reduce((sum: number, g: any) => sum + parseFloat(g.targetAmount || '0'), 0);
+    const totalSaved = activeGoals.reduce((sum: number, g: any) => sum + parseFloat(g.currentAmount || '0'), 0);
+    return { totalTarget, totalSaved, count: activeGoals.length };
+  }, [savingsGoals]);
+
+  const insuranceAlerts = useMemo(() => {
+    const today = new Date();
+    const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+    
+    // Get active insurances with renewal dates in the next 30 days
+    const upcomingRenewals = insurances
+      .filter((ins: any) => {
+        if (ins.status !== 'active' || !ins.renewalDate) return false;
+        const renewalDate = new Date(ins.renewalDate);
+        return renewalDate >= today && renewalDate <= thirtyDaysFromNow;
+      })
+      .map((ins: any) => ({
+        ...ins,
+        daysUntil: Math.ceil((new Date(ins.renewalDate).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      }))
+      .sort((a: any, b: any) => a.daysUntil - b.daysUntil);
+
+    return { upcomingRenewals };
+  }, [insurances]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([
       refetch(), 
       queryClient.refetchQueries({ queryKey: ['monthlyExpenses'] }),
-      queryClient.refetchQueries({ queryKey: ['monthlyCreditCardSpending'] })
+      queryClient.refetchQueries({ queryKey: ['monthlyCreditCardSpending'] }),
+      queryClient.refetchQueries({ queryKey: ['salary-profile-paydays'] }),
+      queryClient.refetchQueries({ queryKey: ['payment-occurrences-current'] }),
+      queryClient.refetchQueries({ queryKey: ['savings-goals'] }),
+      queryClient.refetchQueries({ queryKey: ['insurances'] })
     ]);
     setRefreshing(false);
   }, [refetch, queryClient]);
@@ -168,6 +257,130 @@ export default function DashboardScreen() {
           </View>
         )}
 
+        {/* Three Column Stats Row */}
+        {((nextPayday && daysUntilPayday !== null) || paymentStats.total > 0 || savingsStats.count > 0) && (
+          <View style={styles.threeColumnRow}>
+            {/* Next Payday Card */}
+            {nextPayday && daysUntilPayday !== null ? (
+              <TouchableOpacity 
+                style={[styles.columnCard, { backgroundColor: colors.primary + '20', borderColor: colors.primary }]}
+                onPress={() => navigation.navigate('Salary' as any)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.columnCardHeader}>
+                  <Ionicons name="wallet" size={20} color={colors.primary} />
+                </View>
+                <Text style={[styles.columnCardLabel, { color: colors.textMuted }]}>Next Payday</Text>
+                <Text style={[styles.columnCardValue, { color: colors.primary }]}>
+                  {daysUntilPayday === 0 ? 'Today!' : daysUntilPayday === 1 ? 'Tomorrow' : `${daysUntilPayday} days`}
+                </Text>
+                <Text style={[styles.columnCardSubtext, { color: colors.textMuted }]}>
+                  {new Date(nextPayday.date).toLocaleDateString('en-US', { 
+                    day: 'numeric', 
+                    month: 'short' 
+                  })}
+                </Text>
+              </TouchableOpacity>
+            ) : <View style={styles.columnCard} />}
+
+            {/* Scheduled Payments Card */}
+            {paymentStats.total > 0 ? (
+              <TouchableOpacity 
+                style={[styles.columnCard, { backgroundColor: colors.card }]}
+                onPress={() => navigation.navigate('ScheduledPayments' as any)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.columnCardHeader}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.text} />
+                </View>
+                <Text style={[styles.columnCardLabel, { color: colors.textMuted }]}>Payments</Text>
+                <Text style={[styles.columnCardValue, { color: colors.primary }]}>
+                  {paymentStats.completed}/{paymentStats.total}
+                </Text>
+                <View style={styles.columnProgressBar}>
+                  <View style={[styles.columnProgressFill, { 
+                    width: `${paymentStats.total > 0 ? (paymentStats.completed / paymentStats.total) * 100 : 0}%`,
+                    backgroundColor: colors.primary 
+                  }]} />
+                </View>
+              </TouchableOpacity>
+            ) : <View style={styles.columnCard} />}
+
+            {/* Savings Goals Card */}
+            {savingsStats.count > 0 ? (
+              <TouchableOpacity 
+                style={[styles.columnCard, { backgroundColor: colors.card }]}
+                onPress={() => navigation.navigate('SavingsGoals' as any)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.columnCardHeader}>
+                  <Ionicons name="trophy-outline" size={20} color="#10b981" />
+                </View>
+                <Text style={[styles.columnCardLabel, { color: colors.textMuted }]}>Savings</Text>
+                <Text style={[styles.columnCardValue, { color: '#10b981' }]}>
+                  {Math.round((savingsStats.totalSaved / savingsStats.totalTarget) * 100)}%
+                </Text>
+                <View style={styles.columnProgressBar}>
+                  <View style={[styles.columnProgressFill, { 
+                    width: `${savingsStats.totalTarget > 0 ? (savingsStats.totalSaved / savingsStats.totalTarget) * 100 : 0}%`,
+                    backgroundColor: '#10b981' 
+                  }]} />
+                </View>
+              </TouchableOpacity>
+            ) : <View style={styles.columnCard} />}
+          </View>
+        )}
+
+        {/* Insurance Alerts Card */}
+        {insuranceAlerts.upcomingRenewals.length > 0 && (
+          <TouchableOpacity 
+            style={[styles.insuranceCard, { backgroundColor: colors.card, borderLeftColor: '#f59e0b' }]}
+            onPress={() => navigation.navigate('Insurance' as any)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.insuranceCardHeader}>
+              <View style={styles.insuranceCardTitleRow}>
+                <Ionicons name="shield-checkmark-outline" size={24} color="#f59e0b" />
+                <View style={styles.insuranceCardTitleContent}>
+                  <Text style={[styles.insuranceCardTitle, { color: colors.text }]}>Insurance Renewals</Text>
+                  <Text style={[styles.insuranceCardSubtitle, { color: colors.textMuted }]}>
+                    {insuranceAlerts.upcomingRenewals.length} renewal{insuranceAlerts.upcomingRenewals.length > 1 ? 's' : ''} due soon
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </View>
+            <View style={styles.insuranceList}>
+              {insuranceAlerts.upcomingRenewals.slice(0, 3).map((ins: any, index: number) => (
+                <View 
+                  key={ins.id} 
+                  style={[
+                    styles.insuranceItem,
+                    index < insuranceAlerts.upcomingRenewals.slice(0, 3).length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border }
+                  ]}
+                >
+                  <View style={styles.insuranceItemLeft}>
+                    <Text style={[styles.insuranceItemName, { color: colors.text }]} numberOfLines={1}>
+                      {ins.name}
+                    </Text>
+                    <Text style={[styles.insuranceItemType, { color: colors.textMuted }]}>
+                      {ins.type.charAt(0).toUpperCase() + ins.type.slice(1)} Insurance
+                    </Text>
+                  </View>
+                  <View style={styles.insuranceItemRight}>
+                    <Text style={[styles.insuranceItemDays, { color: ins.daysUntil <= 7 ? '#ef4444' : '#f59e0b' }]}>
+                      {ins.daysUntil === 0 ? 'Today!' : ins.daysUntil === 1 ? 'Tomorrow' : `${ins.daysUntil} days`}
+                    </Text>
+                    <Text style={[styles.insuranceItemDate, { color: colors.textMuted }]}>
+                      {new Date(ins.renewalDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </TouchableOpacity>
+        )}
+        
         {data?.creditCardSpending && data.creditCardSpending.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -278,21 +491,6 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           )}
         </View>
-
-        {data?.nextScheduledPayment && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Upcoming Payment</Text>
-            <View style={[styles.paymentCard, { backgroundColor: colors.card }]}>
-              <View>
-                <Text style={[styles.paymentName, { color: colors.text }]}>{data.nextScheduledPayment.name}</Text>
-                <Text style={[styles.paymentDue, { color: colors.textMuted }]}>
-                  Due: {data.nextScheduledPayment.dueDate}{getOrdinalSuffix(data.nextScheduledPayment.dueDate)} of each month
-                </Text>
-              </View>
-              <Text style={[styles.paymentAmount, { color: colors.primary }]}>{formatCurrency(data.nextScheduledPayment.amount)}</Text>
-            </View>
-          </View>
-        )}
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -500,6 +698,206 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 13,
     marginTop: 4,
+  },
+  nextPaydayCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    gap: 12,
+  },
+  nextPaydayIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nextPaydayContent: {
+    flex: 1,
+  },
+  nextPaydayLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  nextPaydayDate: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  nextPaydayDaysContainer: {
+    alignItems: 'flex-end',
+  },
+  nextPaydayDays: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  nextPaydayDaysLabel: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  threeColumnRow: {
+    flexDirection: 'row',
+    marginHorizontal: 12,
+    marginBottom: 16,
+    gap: 8,
+  },
+  columnCard: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    minHeight: 120,
+  },
+  columnCardHeader: {
+    marginBottom: 8,
+  },
+  columnCardLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  columnCardValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  columnCardSubtext: {
+    fontSize: 11,
+  },
+  columnProgressBar: {
+    height: 4,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  columnProgressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  progressCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  progressCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  progressCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  progressCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  progressCardStats: {
+    marginBottom: 8,
+  },
+  progressCardValue: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  progressCardLabel: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  progressBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  progressPercent: {
+    fontSize: 13,
+    fontWeight: '600',
+    minWidth: 40,
+    textAlign: 'right',
+  },
+  insuranceCard: {
+    padding: 16,
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  insuranceCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  insuranceCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  insuranceCardTitleContent: {
+    flex: 1,
+  },
+  insuranceCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  insuranceCardSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  insuranceList: {
+    gap: 0,
+  },
+  insuranceItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  insuranceItemLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  insuranceItemName: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  insuranceItemType: {
+    fontSize: 12,
+  },
+  insuranceItemRight: {
+    alignItems: 'flex-end',
+  },
+  insuranceItemDays: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  insuranceItemDate: {
+    fontSize: 12,
+    marginTop: 2,
   },
   chartCard: {
     padding: 16,

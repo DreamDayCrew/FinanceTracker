@@ -323,7 +323,7 @@ export default function LoanDetailsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Outstanding Card */}
-        <View style={[styles.outstandingCard, { backgroundColor: colors.danger }]}>
+        <View style={[styles.outstandingCard, { backgroundColor: '#1e293b' }]}>
           <View style={styles.outstandingContent}>
             <View>
               <Text style={styles.outstandingLabel}>Outstanding</Text>
@@ -472,9 +472,13 @@ export default function LoanDetailsScreen() {
                           </Text>
                         </View>
                         <TouchableOpacity
-                          style={[styles.payButton, { backgroundColor: colors.primary }]}
+                          style={[
+                            styles.payButton, 
+                            { backgroundColor: colors.primary },
+                            processingInstallmentId !== null && { opacity: 0.5 }
+                          ]}
                           onPress={() => markPaidMutation.mutate({ installmentId: installment.id, amount: installment.emiAmount })}
-                          disabled={processingInstallmentId === installment.id}
+                          disabled={processingInstallmentId !== null}
                         >
                           {processingInstallmentId === installment.id ? (
                             <ActivityIndicator color="#fff" size="small" />

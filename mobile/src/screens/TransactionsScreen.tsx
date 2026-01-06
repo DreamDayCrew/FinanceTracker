@@ -29,6 +29,23 @@ export default function TransactionsScreen() {
   const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
   const currentOpenSwipeable = useRef<number | null>(null);
 
+  const typeConfig = {
+    credit: {
+      icon: 'arrow-down' as const,
+      color: '#22c55e',
+      bgColor: '#22c55e20',
+    },
+    debit: { 
+      icon: 'arrow-up' as const,
+      color: colors.danger, 
+      bgColor: colors.danger + '20', 
+    },
+    transfer: {
+      icon: 'swap-horizontal' as const,
+      color: '#007AFF',
+      bgColor: '#007AFF20', 
+    },
+  };
   // Close all swipeables when screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -44,7 +61,7 @@ export default function TransactionsScreen() {
     queryKey: ['transactions'],
     queryFn: api.getTransactions,
   });
-
+  
   const deleteMutation = useMutation({
     mutationFn: api.deleteTransaction,
     onSuccess: () => {
@@ -163,12 +180,12 @@ export default function TransactionsScreen() {
       >
         <View style={[
           styles.transactionIcon,
-          { backgroundColor: transaction.type === 'credit' ? colors.primary + '20' : colors.danger + '20' }
+          { backgroundColor: typeConfig[transaction.type as keyof typeof typeConfig]?.bgColor || typeConfig.debit.bgColor }
         ]}>
           <Ionicons 
-            name={transaction.type === 'credit' ? 'arrow-down' : 'arrow-up'} 
+            name={typeConfig[transaction.type as keyof typeof typeConfig]?.icon || typeConfig.debit.icon} 
             size={20} 
-            color={transaction.type === 'credit' ? colors.primary : colors.danger}
+            color={typeConfig[transaction.type as keyof typeof typeConfig]?.color || typeConfig.debit.color}
           />
         </View>
         <View style={styles.transactionInfo}>

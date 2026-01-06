@@ -1,16 +1,20 @@
-import { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
+import { Swipeable } from 'react-native-gesture-handler';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { api, API_BASE_URL } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSwipeSettings } from '../hooks/useSwipeSettings';
 
 interface SalaryProfile {
   id: number;
   paydayRule: string;
   fixedDay: number | null;
+  monthCycleStartRule?: string;
+  monthCycleStartDay?: number | null;
   monthlyAmount: string | null;
   accountId: number | null;
 }
@@ -46,18 +50,26 @@ export default function SalaryScreen() {
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
   const queryClient = useQueryClient();
+  const swipeSettings = useSwipeSettings();
+  const swipeableRef = useRef<Swipeable>(null);
 
   const [paydayRule, setPaydayRule] = useState('last_working_day');
   const [fixedDay, setFixedDay] = useState('25');
+  const [monthCycleStartRule, setMonthCycleStartRule] = useState('salary_day');
+  const [monthCycleStartDay, setMonthCycleStartDay] = useState('1');
   const [monthlyAmount, setMonthlyAmount] = useState('');
   const [accountId, setAccountId] = useState<number | null>(null);
   const [showSalary, setShowSalary] = useState(false);
   const [showPastSalary, setShowPastSalary] = useState(false);
   const [editingCycle, setEditingCycle] = useState<SalaryCycle | null>(null);
+  const [editingNextPayday, setEditingNextPayday] = useState<Payday | null>(null);
+  const [editNextPaydayDate, setEditNextPaydayDate] = useState('');
+  const [editNextPaydayAmount, setEditNextPaydayAmount] = useState('');
   const [editActualDate, setEditActualDate] = useState('');
   const [editActualAmount, setEditActualAmount] = useState('');
   const [markAsCredited, setMarkAsCredited] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showNextPaydayDatePicker, setShowNextPaydayDatePicker] = useState(false);
 
   const { data: profile, isLoading } = useQuery<SalaryProfile | null>({
     queryKey: ['salary-profile'],
@@ -150,10 +162,61 @@ export default function SalaryScreen() {
     }
   };
 
+  const handleEditNextPayday = useCallback((payday: Payday) => {
+    swipeableRef.current?.close();
+    setEditingNextPayday(payday);
+    setEditNextPaydayDate(payday.date);
+    setEditNextPaydayAmount(monthlyAmount || '');
+  }, [monthlyAmount]);
+
+  const handleSaveNextPayday = useCallback(() => {
+    // Create or update a salary cycle for this month
+    const mutation = async () => {
+      const res = await fetch(`${API_BASE_URL}/api/salary-cycles`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          salaryProfileId: profile?.id,
+          month: editingNextPayday?.month,
+          year: editingNextPayday?.year,
+          expectedPayDate: editNextPaydayDate,
+          expectedAmount: editNextPaydayAmount,
+          actualPayDate: null,
+          actualAmount: null,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      return res.json();
+    };
+
+    mutation()
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['salary-profile-paydays'] });
+        queryClient.invalidateQueries({ queryKey: ['salary-cycles'] });
+        setEditingNextPayday(null);
+        Toast.show({
+          type: 'success',
+          text1: 'Updated',
+          text2: 'Next payday updated successfully',
+          position: 'bottom',
+        });
+      })
+      .catch(() => {
+        Toast.show({
+          type: 'error',
+          text1: 'Update Failed',
+          text2: 'Could not update payday',
+          position: 'bottom',
+        });
+      });
+  }, [editingNextPayday, editNextPaydayDate, editNextPaydayAmount, profile, queryClient]);
+
   useEffect(() => {
     if (profile) {
       setPaydayRule(profile.paydayRule || 'last_working_day');
       setFixedDay(profile.fixedDay?.toString() || '25');
+      setMonthCycleStartRule(profile.monthCycleStartRule || 'salary_day');
+      setMonthCycleStartDay(profile.monthCycleStartDay?.toString() || '1');
       setMonthlyAmount(profile.monthlyAmount || '');
       setAccountId(profile.accountId || null);
     }
@@ -165,6 +228,8 @@ export default function SalaryScreen() {
         paydayRule,
         fixedDay: paydayRule === 'fixed_day' ? parseInt(fixedDay) : null,
         weekdayPreference: null,
+        monthCycleStartRule,
+        monthCycleStartDay: monthCycleStartRule === 'fixed_day' ? parseInt(monthCycleStartDay) : null,
         monthlyAmount: monthlyAmount || null,
         accountId: accountId || null,
         isActive: true,
@@ -356,6 +421,62 @@ export default function SalaryScreen() {
           </View>
         )}
 
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>Month Cycle Start Date</Text>
+          <Text style={[styles.helperText, { color: colors.textMuted }]}>
+            Choose when your monthly budget cycle should start
+          </Text>
+          <View style={styles.paydayRuleButtons}>
+            <TouchableOpacity
+              style={[
+                styles.paydayRuleButton,
+                { backgroundColor: colors.background, borderColor: colors.border },
+                monthCycleStartRule === 'salary_day' && { borderColor: colors.primary, backgroundColor: colors.primary + '20' }
+              ]}
+              onPress={() => setMonthCycleStartRule('salary_day')}
+            >
+              <Text style={[
+                styles.paydayRuleText,
+                { color: colors.text },
+                monthCycleStartRule === 'salary_day' && { color: colors.primary, fontWeight: '600' }
+              ]}>
+                Same as salary day
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.paydayRuleButton,
+                { backgroundColor: colors.background, borderColor: colors.border },
+                monthCycleStartRule === 'fixed_day' && { borderColor: colors.primary, backgroundColor: colors.primary + '20' }
+              ]}
+              onPress={() => setMonthCycleStartRule('fixed_day')}
+            >
+              <Text style={[
+                styles.paydayRuleText,
+                { color: colors.text },
+                monthCycleStartRule === 'fixed_day' && { color: colors.primary, fontWeight: '600' }
+              ]}>
+                Fixed day each month
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {monthCycleStartRule === 'fixed_day' && (
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.textMuted }]}>Day of Month (1-31)</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+              placeholder="1"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              value={monthCycleStartDay}
+              onChangeText={setMonthCycleStartDay}
+              maxLength={2}
+            />
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.saveButton, { backgroundColor: colors.primary }]}
           onPress={() => saveMutation.mutate()}
@@ -447,9 +568,8 @@ export default function SalaryScreen() {
           <View style={styles.paydayList}>
             {nextPaydays.map((payday, index) => {
               const isThisMonth = index === 0;
-              return (
+              const content = (
                 <View 
-                  key={`${payday.month}-${payday.year}`}
                   style={[
                     styles.paydayItem,
                     { 
@@ -476,6 +596,43 @@ export default function SalaryScreen() {
                   {isThisMonth && (
                     <Text style={[styles.nextBadge, { color: colors.primary }]}>Next</Text>
                   )}
+                </View>
+              );
+
+              // Make first payday swipeable
+              if (index === 0 && swipeSettings.enabled) {
+                return (
+                  <Swipeable
+                    key={`${payday.month}-${payday.year}`}
+                    ref={swipeableRef}
+                    renderRightActions={() => (
+                      <TouchableOpacity
+                        style={[styles.swipeAction, { backgroundColor: colors.primary }]}
+                        onPress={() => handleEditNextPayday(payday)}
+                      >
+                        <Ionicons name="pencil" size={24} color="#fff" />
+                        <Text style={styles.swipeActionText}>Edit</Text>
+                      </TouchableOpacity>
+                    )}
+                    renderLeftActions={() => (
+                      <TouchableOpacity
+                        style={[styles.swipeAction, { backgroundColor: colors.primary }]}
+                        onPress={() => handleEditNextPayday(payday)}
+                      >
+                        <Ionicons name="pencil" size={24} color="#fff" />
+                        <Text style={styles.swipeActionText}>Edit</Text>
+                      </TouchableOpacity>
+                    )}
+                    onSwipeableOpen={() => handleEditNextPayday(payday)}
+                  >
+                    {content}
+                  </Swipeable>
+                );
+              }
+
+              return (
+                <View key={`${payday.month}-${payday.year}`}>
+                  {content}
                 </View>
               );
             })}
@@ -630,6 +787,131 @@ export default function SalaryScreen() {
                           isSelected ? { color: colors.primary, fontWeight: '600' } : undefined
                         ]}>
                           {date.toLocaleDateString('en-IN', { 
+                            weekday: 'short',
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric'
+                          })}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                  return dates;
+                })()}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Edit Next Payday Modal */}
+      {editingNextPayday && (
+        <Modal
+          visible={true}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setEditingNextPayday(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modal, { backgroundColor: colors.card }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>
+                  Edit Next Payday - {MONTH_NAMES[editingNextPayday.month - 1]} {editingNextPayday.year}
+                </Text>
+                <TouchableOpacity onPress={() => setEditingNextPayday(null)}>
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.modalContent}>
+                <View style={styles.field}>
+                  <Text style={[styles.label, { color: colors.textMuted }]}>Expected Pay Date</Text>
+                  <TouchableOpacity
+                    style={[styles.datePickerButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+                    onPress={() => setShowNextPaydayDatePicker(true)}
+                  >
+                    <Ionicons name="calendar-outline" size={20} color={colors.text} />
+                    <Text style={[styles.datePickerText, { color: colors.text }]}>
+                      {editNextPaydayDate ? formatPaydayDate(editNextPaydayDate) : 'Select Date'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.field}>
+                  <Text style={[styles.label, { color: colors.textMuted }]}>Expected Amount (₹)</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                    placeholder="Amount"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="numeric"
+                    value={editNextPaydayAmount}
+                    onChangeText={setEditNextPaydayAmount}
+                  />
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+                    onPress={() => setEditingNextPayday(null)}
+                  >
+                    <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                    onPress={handleSaveNextPayday}
+                  >
+                    <Text style={[styles.modalButtonText, { color: '#fff' }]}>Save</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Date Picker Modal for Next Payday */}
+      {showNextPaydayDatePicker && editingNextPayday && (
+        <View style={styles.modalOverlay}>
+          <View style={[styles.datePickerModal, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Select Date</Text>
+              <TouchableOpacity onPress={() => setShowNextPaydayDatePicker(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.datePickerContent}>
+              <ScrollView style={styles.datePickerScroll}>
+                {/* Generate date options for the month */}
+                {(() => {
+                  const year = editingNextPayday.year;
+                  const month = editingNextPayday.month;
+                  const daysInMonth = new Date(year, month, 0).getDate();
+                  const dates = [];
+                  
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    const date = new Date(year, month - 1, day);
+                    const isSelected = editNextPaydayDate && 
+                      new Date(editNextPaydayDate).toDateString() === date.toDateString();
+                    
+                    dates.push(
+                      <TouchableOpacity
+                        key={day}
+                        style={[
+                          styles.dateOption,
+                          { backgroundColor: colors.background, borderColor: colors.border },
+                          isSelected && { backgroundColor: colors.primary, borderColor: colors.primary }
+                        ]}
+                        onPress={() => {
+                          setEditNextPaydayDate(date.toISOString());
+                          setShowNextPaydayDatePicker(false);
+                        }}
+                      >
+                        <Text style={[
+                          styles.dateOptionText,
+                          { color: colors.text },
+                          isSelected && { color: '#fff' }
+                        ]}>
+                          {date.toLocaleDateString('en-IN', {
                             weekday: 'short',
                             day: 'numeric',
                             month: 'short',
@@ -968,5 +1250,22 @@ const styles = StyleSheet.create({
   modalButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  swipeAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    borderRadius: 12,
+    marginVertical: 4,
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  helperText: {
+    fontSize: 12,
+    marginTop: 4,
   },
 });

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Platform, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,12 +23,13 @@ export default function AddTransactionScreen() {
   const transactionId = route.params?.transactionId;
   const isEditMode = !!transactionId;
   
-  const [type, setType] = useState<'debit' | 'credit'>('debit');
+  const [type, setType] = useState<'debit' | 'credit' | 'transfer'>('debit');
   const [amount, setAmount] = useState('');
   const [merchant, setMerchant] = useState('');
   const [description, setDescription] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [selectedToAccountId, setSelectedToAccountId] = useState<number | null>(null);
   const [transactionDate, setTransactionDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   
@@ -67,12 +68,13 @@ export default function AddTransactionScreen() {
     if (isEditMode && transactions) {
       const transaction = transactions.find((t: any) => t.id === transactionId);
       if (transaction) {
-        setType(transaction.type as 'debit' | 'credit');
+        setType(transaction.type as 'debit' | 'credit' | 'transfer');
         setAmount(transaction.amount);
         setMerchant(transaction.merchant || '');
         setDescription(transaction.description || '');
         setSelectedCategoryId(transaction.categoryId || null);
         setSelectedAccountId(transaction.accountId || null);
+        setSelectedToAccountId(transaction.toAccountId || null);
         setTransactionDate(new Date(transaction.transactionDate));
       }
     }
@@ -181,6 +183,26 @@ export default function AddTransactionScreen() {
       return;
     }
 
+    if (type === 'transfer' && (!selectedAccountId || !selectedToAccountId)) {
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Please select both From and To accounts',
+        position: 'bottom',
+      });
+      return;
+    }
+
+    if (type === 'transfer' && selectedAccountId === selectedToAccountId) {
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'From and To accounts must be different',
+        position: 'bottom',
+      });
+      return;
+    }
+
     const transactionData: any = {
       type,
       amount,
@@ -190,6 +212,10 @@ export default function AddTransactionScreen() {
       accountId: selectedAccountId,
       transactionDate: transactionDate.toISOString(),
     };
+
+    if (type === 'transfer') {
+      transactionData.toAccountId = selectedToAccountId;
+    }
 
     if (isEditMode && transactionId) {
       updateMutation.mutate({ id: transactionId, data: transactionData });
@@ -226,6 +252,13 @@ export default function AddTransactionScreen() {
         >
           <Ionicons name="arrow-down" size={20} color={type === 'credit' ? '#fff' : colors.primary} />
           <Text style={[styles.typeText, { color: colors.text }, type === 'credit' && { color: '#fff' }]}>Income</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.typeButton, { backgroundColor: colors.card, borderColor: colors.border }, type === 'transfer' && { backgroundColor: '#007AFF' }]}
+          onPress={() => setType('transfer')}
+        >
+          <Ionicons name="swap-horizontal" size={24} color={type === 'transfer' ? '#fff' : '#007AFF'} />
+          <Text style={[styles.typeText, { color: colors.text }, type === 'transfer' && { color: '#fff' }]}>Transfer</Text>
         </TouchableOpacity>
       </View>
 
@@ -322,7 +355,9 @@ export default function AddTransactionScreen() {
 
       {accounts && accounts.length > 0 && (
         <View style={styles.field}>
-          <Text style={[styles.label, { color: colors.textMuted }]}>Account</Text>
+          <Text style={[styles.label, { color: colors.textMuted }]}>
+            {type === 'transfer' ? 'From Account' : 'Account'}
+          </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
             {accounts.map((account) => (
               <TouchableOpacity
@@ -344,6 +379,39 @@ export default function AddTransactionScreen() {
                   styles.categoryChipText,
                   { color: colors.text },
                   selectedAccountId === account.id && { color: '#fff' }
+                ]}>
+                  {account.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {type === 'transfer' && accounts && accounts.length > 0 && (
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>To Account</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+            {accounts.filter(acc => acc.id !== selectedAccountId).map((account) => (
+              <TouchableOpacity
+                key={account.id}
+                style={[
+                  styles.categoryChip,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  selectedToAccountId === account.id && { backgroundColor: '#007AFF' }
+                ]}
+                onPress={() => setSelectedToAccountId(account.id)}
+              >
+                <Ionicons 
+                  name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
+                  size={14} 
+                  color={selectedToAccountId === account.id ? '#fff' : colors.textMuted}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={[
+                  styles.categoryChipText,
+                  { color: colors.text },
+                  selectedToAccountId === account.id && { color: '#fff' }
                 ]}>
                   {account.name}
                 </Text>

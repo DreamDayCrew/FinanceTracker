@@ -597,8 +597,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const affectAccountBalance = goal.affectAccountBalance ?? true;
       
       // Handle transaction and balance updates based on toggle settings
-      if (affectTransaction && goal.accountId) {
-        // Find or create a "Savings" category
+      if (affectTransaction && goal.accountId && goal.toAccountId) {
+        // When both from and to accounts are specified, create a single transfer transaction
+        await storage.createTransaction({
+          accountId: goal.accountId,
+          toAccountId: goal.toAccountId,
+          categoryId: null,
+          amount: validatedData.amount,
+          type: "transfer",
+          description: `Contribution to ${goal.name}`,
+          transactionDate: validatedData.contributedAt || new Date().toISOString(),
+          savingsContributionId: contribution.id,
+        });
+        
+        // If affectAccountBalance is false, reverse both balance changes
+        if (!affectAccountBalance) {
+          // Reverse from account balance change
+          const fromAccount = await storage.getAccount(goal.accountId);
+          if (fromAccount) {
+            const currentBalance = parseFloat(fromAccount.balance);
+            const contributionAmount = parseFloat(validatedData.amount);
+            // Add amount back to reverse the debit
+            await storage.updateAccount(goal.accountId, {
+              balance: (currentBalance + contributionAmount).toString()
+            });
+          }
+          
+          // Reverse to account balance change
+          const toAccount = await storage.getAccount(goal.toAccountId);
+          if (toAccount) {
+            const currentBalance = parseFloat(toAccount.balance);
+            const contributionAmount = parseFloat(validatedData.amount);
+            // Subtract amount back to reverse the credit
+            await storage.updateAccount(goal.toAccountId, {
+              balance: (currentBalance - contributionAmount).toString()
+            });
+          }
+        }
+      } else if (affectTransaction && goal.accountId && !goal.toAccountId) {
+        // Only from account specified, create a debit transaction
         const categories = await storage.getAllCategories();
         let savingsCategory = categories.find(c => c.name === "Savings");
         
@@ -611,7 +648,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
         
-        // Create transaction to debit from account
         await storage.createTransaction({
           accountId: goal.accountId,
           categoryId: savingsCategory.id,
@@ -634,22 +670,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
         }
-      } else if (!affectTransaction && affectAccountBalance && goal.accountId) {
-        // No transaction, but directly update balance
-        const account = await storage.getAccount(goal.accountId);
-        if (account) {
-          const currentBalance = parseFloat(account.balance);
-          const contributionAmount = parseFloat(validatedData.amount);
-          // Subtract amount directly
-          await storage.updateAccount(goal.accountId, {
-            balance: (currentBalance - contributionAmount).toString()
-          });
-        }
-      }
-      
-      // If toAccountId is provided in goal and affectTransaction is true, create a transaction to credit to account
-      if (affectTransaction && goal.toAccountId) {
-        // Find or create a "Savings" category
+      } else if (affectTransaction && !goal.accountId && goal.toAccountId) {
+        // Only to account specified, create a credit transaction
         const categories = await storage.getAllCategories();
         let savingsCategory = categories.find(c => c.name === "Savings");
         
@@ -662,7 +684,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
         
-        // Create transaction to credit to account
         await storage.createTransaction({
           accountId: goal.toAccountId,
           categoryId: savingsCategory.id,
@@ -673,11 +694,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           savingsContributionId: contribution.id,
         });
         
-        // If affectAccountBalance is false, reverse the balance change for to account
+        // If affectAccountBalance is false, reverse the balance change
         if (!affectAccountBalance) {
-          const toAccount = await storage.getAccount(goal.toAccountId);
-          if (toAccount) {
-            const currentBalance = parseFloat(toAccount.balance);
+          const account = await storage.getAccount(goal.toAccountId);
+          if (account) {
+            const currentBalance = parseFloat(account.balance);
             const contributionAmount = parseFloat(validatedData.amount);
             // Subtract amount back to reverse the credit
             await storage.updateAccount(goal.toAccountId, {
@@ -685,16 +706,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
         }
-      } else if (!affectTransaction && affectAccountBalance && goal.toAccountId) {
-        // No transaction, but directly update balance for to account
-        const toAccount = await storage.getAccount(goal.toAccountId);
-        if (toAccount) {
-          const currentBalance = parseFloat(toAccount.balance);
-          const contributionAmount = parseFloat(validatedData.amount);
-          // Add amount directly
-          await storage.updateAccount(goal.toAccountId, {
-            balance: (currentBalance + contributionAmount).toString()
-          });
+      } else if (!affectTransaction && affectAccountBalance) {
+        // No transaction, but directly update balances
+        if (goal.accountId) {
+          const account = await storage.getAccount(goal.accountId);
+          if (account) {
+            const currentBalance = parseFloat(account.balance);
+            const contributionAmount = parseFloat(validatedData.amount);
+            // Subtract amount directly
+            await storage.updateAccount(goal.accountId, {
+              balance: (currentBalance - contributionAmount).toString()
+            });
+          }
+        }
+        
+        if (goal.toAccountId) {
+          const toAccount = await storage.getAccount(goal.toAccountId);
+          if (toAccount) {
+            const currentBalance = parseFloat(toAccount.balance);
+            const contributionAmount = parseFloat(validatedData.amount);
+            // Add amount directly
+            await storage.updateAccount(goal.toAccountId, {
+              balance: (currentBalance + contributionAmount).toString()
+            });
+          }
         }
       }
       
@@ -722,44 +757,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Delete transactions associated with this contribution
-      // Both from account (debit) and to account (credit) if they exist
       const transactionDescription = `Contribution to ${goal.name}`;
       
-      // Find and delete transaction from accountId (debit)
-      if (contribution.accountId) {
-        const fromTransactions = await storage.getAllTransactions({
-          accountId: contribution.accountId,
-          search: transactionDescription,
-        });
+      // Check if it's a transfer transaction (both from and to accounts)
+      if (contribution.accountId && goal.toAccountId) {
+        // Find and delete the single transfer transaction
+        const allTransactions = await storage.getAllTransactions({});
         
-        const fromTransaction = fromTransactions.find((t: any) => 
+        const transferTransaction = allTransactions.find((t: any) => 
           t.description === transactionDescription && 
           parseFloat(t.amount) === parseFloat(contribution.amount) &&
           t.savingsContributionId === contribution.id &&
-          t.type === 'debit'
+          t.type === 'transfer' &&
+          t.accountId === contribution.accountId &&
+          t.toAccountId === goal.toAccountId
         );
         
-        if (fromTransaction) {
-          await storage.deleteTransaction(fromTransaction.id);
+        if (transferTransaction) {
+          await storage.deleteTransaction(transferTransaction.id);
         }
-      }
-      
-      // Find and delete transaction to toAccountId (credit) if it exists
-      if (goal.toAccountId) {
-        const toTransactions = await storage.getAllTransactions({
-          accountId: goal.toAccountId,
-          search: transactionDescription,
-        });
+      } else {
+        // Find and delete transaction from accountId (debit or credit)
+        if (contribution.accountId) {
+          const fromTransactions = await storage.getAllTransactions({
+            accountId: contribution.accountId,
+            search: transactionDescription,
+          });
+          
+          const fromTransaction = fromTransactions.find((t: any) => 
+            t.description === transactionDescription && 
+            parseFloat(t.amount) === parseFloat(contribution.amount) &&
+            t.savingsContributionId === contribution.id &&
+            (t.type === 'debit' || t.type === 'credit')
+          );
+          
+          if (fromTransaction) {
+            await storage.deleteTransaction(fromTransaction.id);
+          }
+        }
         
-        const toTransaction = toTransactions.find((t: any) => 
-          t.description === transactionDescription && 
-          parseFloat(t.amount) === parseFloat(contribution.amount) &&
-          t.savingsContributionId === contribution.id &&
-          t.type === 'credit'
-        );
-        
-        if (toTransaction) {
-          await storage.deleteTransaction(toTransaction.id);
+        // Find and delete transaction to toAccountId (credit) if it exists and accountId is not set
+        if (goal.toAccountId && !contribution.accountId) {
+          const toTransactions = await storage.getAllTransactions({
+            accountId: goal.toAccountId,
+            search: transactionDescription,
+          });
+          
+          const toTransaction = toTransactions.find((t: any) => 
+            t.description === transactionDescription && 
+            parseFloat(t.amount) === parseFloat(contribution.amount) &&
+            t.savingsContributionId === contribution.id &&
+            t.type === 'credit'
+          );
+          
+          if (toTransaction) {
+            await storage.deleteTransaction(toTransaction.id);
+          }
         }
       }
       
