@@ -78,8 +78,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/accounts", async (req, res) => {
     try {
-      const validatedData = insertAccountSchema.parse(req.body);
+      const { cardDetails: cardData, ...accountData } = req.body;
+      const validatedData = insertAccountSchema.parse(accountData);
       const account = await storage.createAccount(validatedData);
+      
+      // If card details provided, save them
+      if (cardData && (account.type === 'credit_card' || account.type === 'debit_card')) {
+        const lastFourDigits = cardData.cardNumber.slice(-4);
+        await storage.createCardDetails({
+          accountId: account.id,
+          cardNumber: cardData.cardNumber,
+          lastFourDigits,
+          expiryMonth: cardData.expiryMonth,
+          expiryYear: cardData.expiryYear,
+          cardholderName: cardData.cardholderName,
+          cardType: cardData.cardType,
+        });
+      }
+      
       res.status(201).json(account);
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Invalid account data" });
@@ -88,8 +104,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/accounts/:id", async (req, res) => {
     try {
-      const account = await storage.updateAccount(parseInt(req.params.id), req.body);
+      const { cardDetails: cardData, ...accountData } = req.body;
+      const account = await storage.updateAccount(parseInt(req.params.id), accountData);
       if (account) {
+        // Handle card details update
+        if (cardData && (account.type === 'credit_card' || account.type === 'debit_card')) {
+          const existingCard = await storage.getCardDetailsByAccountId(account.id);
+          const lastFourDigits = cardData.cardNumber.slice(-4);
+          
+          if (existingCard) {
+            await storage.updateCardDetails(existingCard.id, {
+              cardNumber: cardData.cardNumber,
+              lastFourDigits,
+              expiryMonth: cardData.expiryMonth,
+              expiryYear: cardData.expiryYear,
+              cardholderName: cardData.cardholderName,
+              cardType: cardData.cardType,
+            });
+          } else {
+            await storage.createCardDetails({
+              accountId: account.id,
+              cardNumber: cardData.cardNumber,
+              lastFourDigits,
+              expiryMonth: cardData.expiryMonth,
+              expiryYear: cardData.expiryYear,
+              cardholderName: cardData.cardholderName,
+              cardType: cardData.cardType,
+            });
+          }
+        }
         res.json(account);
       } else {
         res.status(404).json({ error: "Account not found" });

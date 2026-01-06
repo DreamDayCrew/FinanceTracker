@@ -20,7 +20,7 @@ export default function AddAccountScreen() {
   const accountId = route.params?.accountId;
   const isEditMode = !!accountId;
   
-  const [type, setType] = useState<'bank' | 'credit_card'>('bank');
+  const [type, setType] = useState<'bank' | 'credit_card' | 'debit_card'>('bank');
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
@@ -28,6 +28,15 @@ export default function AddAccountScreen() {
   const [accountNumber, setAccountNumber] = useState('');
   const [billingDate, setBillingDate] = useState('');
   const [isDefault, setIsDefault] = useState(false);
+  
+  // Card details (for credit_card and debit_card)
+  const [cardNumber, setCardNumber] = useState('');
+  const [expiryMonth, setExpiryMonth] = useState('');
+  const [expiryYear, setExpiryYear] = useState('');
+  const [cardholderName, setCardholderName] = useState('');
+  const [cardType, setCardType] = useState<'visa' | 'mastercard' | 'rupay' | 'amex' | 'other'>('visa');
+  const [linkedAccountId, setLinkedAccountId] = useState<number | undefined>();
+  const [showLinkedAccountPicker, setShowLinkedAccountPicker] = useState(false);
 
   // Fetch account data if editing
   const { data: accounts } = useQuery({
@@ -36,11 +45,16 @@ export default function AddAccountScreen() {
     enabled: isEditMode,
   });
 
+  // Get bank accounts for linking debit cards
+  const bankAccounts = useMemo(() => {
+    return accounts?.filter(a => a.type === 'bank') || [];
+  }, [accounts]);
+
   useEffect(() => {
     if (isEditMode && accounts) {
       const account = accounts.find(a => a.id === accountId);
       if (account) {
-        setType(account.type as 'bank' | 'credit_card');
+        setType(account.type as 'bank' | 'credit_card' | 'debit_card');
         setName(account.name);
         setBalance(account.balance);
         setIsDefault(account.isDefault || false);
@@ -55,6 +69,17 @@ export default function AddAccountScreen() {
         }
         if (account.billingDate) {
           setBillingDate(account.billingDate.toString());
+        }
+        if (account.linkedAccountId) {
+          setLinkedAccountId(account.linkedAccountId);
+        }
+        // Load card details if available
+        if (account.cardDetails) {
+          setCardNumber(account.cardDetails.lastFourDigits ? `**** **** **** ${account.cardDetails.lastFourDigits}` : '');
+          setExpiryMonth(account.cardDetails.expiryMonth || '');
+          setExpiryYear(account.cardDetails.expiryYear || '');
+          setCardholderName(account.cardDetails.cardholderName || '');
+          setCardType(account.cardDetails.cardType || 'visa');
         }
       }
     }
@@ -159,6 +184,21 @@ export default function AddAccountScreen() {
       accountData.accountNumber = accountNumber.trim();
     }
 
+    if (type === 'debit_card' && linkedAccountId) {
+      accountData.linkedAccountId = linkedAccountId;
+    }
+
+    // Add card details for credit/debit cards (without CVV)
+    if ((type === 'credit_card' || type === 'debit_card') && cardNumber && !cardNumber.includes('*')) {
+      accountData.cardDetails = {
+        cardNumber: cardNumber.replace(/\s/g, ''),
+        expiryMonth,
+        expiryYear,
+        cardholderName: cardholderName.trim() || undefined,
+        cardType,
+      };
+    }
+
     if (isEditMode && accountId) {
       updateMutation.mutate({ id: accountId, data: accountData });
     } else {
@@ -174,27 +214,43 @@ export default function AddAccountScreen() {
         <TouchableOpacity
           style={[styles.typeButton, { backgroundColor: colors.card, borderColor: colors.border }, type === 'bank' && { backgroundColor: colors.primary }]}
           onPress={() => setType('bank')}
+          data-testid="button-type-bank"
         >
           <Ionicons 
             name="business-outline" 
-            size={24} 
+            size={22} 
             color={type === 'bank' ? '#fff' : colors.primary} 
           />
           <Text style={[styles.typeText, { color: colors.text }, type === 'bank' && { color: '#fff' }]}>
-            Bank Account
+            Bank
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.typeButton, { backgroundColor: colors.card, borderColor: colors.border }, type === 'credit_card' && { backgroundColor: colors.primary }]}
           onPress={() => setType('credit_card')}
+          data-testid="button-type-credit"
         >
           <Ionicons 
             name="card-outline" 
-            size={24} 
+            size={22} 
             color={type === 'credit_card' ? '#fff' : colors.primary} 
           />
           <Text style={[styles.typeText, { color: colors.text }, type === 'credit_card' && { color: '#fff' }]}>
-            Credit Card
+            Credit
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.typeButton, { backgroundColor: colors.card, borderColor: colors.border }, type === 'debit_card' && { backgroundColor: colors.primary }]}
+          onPress={() => setType('debit_card')}
+          data-testid="button-type-debit"
+        >
+          <Ionicons 
+            name="wallet-outline" 
+            size={22} 
+            color={type === 'debit_card' ? '#fff' : colors.primary} 
+          />
+          <Text style={[styles.typeText, { color: colors.text }, type === 'debit_card' && { color: '#fff' }]}>
+            Debit
           </Text>
         </TouchableOpacity>
       </View>
@@ -292,6 +348,131 @@ export default function AddAccountScreen() {
           onChangeText={setAccountNumber}
         />
       </View>
+
+      {type === 'debit_card' && bankAccounts.length > 0 && (
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>Linked Bank Account</Text>
+          <TouchableOpacity
+            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, justifyContent: 'center' }]}
+            onPress={() => setShowLinkedAccountPicker(!showLinkedAccountPicker)}
+          >
+            <Text style={[styles.pickerText, { color: linkedAccountId ? colors.text : colors.textMuted }]}>
+              {linkedAccountId 
+                ? bankAccounts.find(a => a.id === linkedAccountId)?.name || 'Select Account'
+                : 'Select Bank Account (Optional)'}
+            </Text>
+          </TouchableOpacity>
+          {showLinkedAccountPicker && (
+            <View style={[styles.pickerList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <TouchableOpacity
+                style={styles.pickerOption}
+                onPress={() => { setLinkedAccountId(undefined); setShowLinkedAccountPicker(false); }}
+              >
+                <Text style={[styles.pickerOptionText, { color: colors.textMuted }]}>None</Text>
+              </TouchableOpacity>
+              {bankAccounts.map((account) => (
+                <TouchableOpacity
+                  key={account.id}
+                  style={styles.pickerOption}
+                  onPress={() => { setLinkedAccountId(account.id); setShowLinkedAccountPicker(false); }}
+                >
+                  <Text style={[styles.pickerOptionText, { color: colors.text }]}>{account.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          <Text style={[styles.hint, { color: colors.textMuted }]}>Link to the bank account this card belongs to</Text>
+        </View>
+      )}
+
+      {(type === 'credit_card' || type === 'debit_card') && (
+        <>
+          <View style={[styles.sectionHeader, { borderTopColor: colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Card Details (Optional)</Text>
+            <Text style={[styles.sectionHint, { color: colors.textMuted }]}>Save card info securely (CVV not stored)</Text>
+          </View>
+
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.textMuted }]}>Card Number</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              placeholder="1234 5678 9012 3456"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              maxLength={19}
+              value={cardNumber}
+              onChangeText={(text) => {
+                const cleaned = text.replace(/\s/g, '');
+                const formatted = cleaned.replace(/(\d{4})/g, '$1 ').trim();
+                setCardNumber(formatted);
+              }}
+              data-testid="input-card-number"
+            />
+          </View>
+
+          <View style={styles.rowFields}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.textMuted }]}>Expiry Month</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                placeholder="MM"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                maxLength={2}
+                value={expiryMonth}
+                onChangeText={setExpiryMonth}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.textMuted }]}>Expiry Year</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                placeholder="YY"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                maxLength={2}
+                value={expiryYear}
+                onChangeText={setExpiryYear}
+              />
+            </View>
+          </View>
+
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.textMuted }]}>Cardholder Name</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              placeholder="Name as on card"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="characters"
+              value={cardholderName}
+              onChangeText={setCardholderName}
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.textMuted }]}>Card Network</Text>
+            <View style={styles.cardTypeGrid}>
+              {(['visa', 'mastercard', 'rupay', 'amex', 'other'] as const).map((ct) => (
+                <TouchableOpacity
+                  key={ct}
+                  style={[
+                    styles.cardTypeButton,
+                    { backgroundColor: colors.card, borderColor: cardType === ct ? colors.primary : colors.border }
+                  ]}
+                  onPress={() => setCardType(ct)}
+                >
+                  <Text style={[
+                    styles.cardTypeText,
+                    { color: cardType === ct ? colors.primary : colors.textMuted }
+                  ]}>
+                    {ct === 'amex' ? 'Amex' : ct.charAt(0).toUpperCase() + ct.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </>
+      )}
 
       {type === 'bank' && (
         <TouchableOpacity 
@@ -435,5 +616,54 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  pickerText: {
+    fontSize: 16,
+  },
+  pickerList: {
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  pickerOption: {
+    padding: 12,
+    borderBottomWidth: 0.5,
+  },
+  pickerOptionText: {
+    fontSize: 14,
+  },
+  sectionHeader: {
+    marginTop: 16,
+    marginBottom: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  sectionHint: {
+    fontSize: 12,
+  },
+  rowFields: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cardTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  cardTypeButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  cardTypeText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
 });
