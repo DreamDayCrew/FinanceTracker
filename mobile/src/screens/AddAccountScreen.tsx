@@ -38,11 +38,10 @@ export default function AddAccountScreen() {
   const [linkedAccountId, setLinkedAccountId] = useState<number | undefined>();
   const [showLinkedAccountPicker, setShowLinkedAccountPicker] = useState(false);
 
-  // Fetch account data if editing
+  // Always fetch accounts - needed for editing and for linking debit cards to bank accounts
   const { data: accounts } = useQuery({
     queryKey: ['accounts'],
     queryFn: api.getAccounts,
-    enabled: isEditMode,
   });
 
   // Get bank accounts for linking debit cards
