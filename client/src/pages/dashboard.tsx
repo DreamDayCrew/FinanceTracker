@@ -9,7 +9,8 @@ import {
   AlertCircle,
   ArrowDownLeft,
   ArrowUpRight,
-  Landmark
+  Landmark,
+  CreditCard
 } from "lucide-react";
 import { Link } from "wouter";
 import type { DashboardStats, TransactionWithRelations, ScheduledPayment } from "@shared/schema";
@@ -149,6 +150,70 @@ export default function Dashboard() {
                       value={Math.min(budget.percentage, 100)} 
                       className={`h-2 ${isOverBudget ? '[&>div]:bg-destructive' : isNearLimit ? '[&>div]:bg-yellow-500' : ''}`}
                     />
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {stats?.creditCardSpending && stats.creditCardSpending.length > 0 && (
+        <Card data-testid="card-credit-card-spending">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <CreditCard className="w-4 h-4" />
+              Credit Card Spending
+            </CardTitle>
+            <Link href="/accounts" className="text-xs text-primary">Manage</Link>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {stats.creditCardSpending.map((card) => {
+                const hasLimit = card.limit !== null && card.limit > 0;
+                const isOverLimit = hasLimit && card.percentage > 100;
+                const isNearLimit = hasLimit && card.percentage >= 80 && card.percentage <= 100;
+                
+                return (
+                  <div key={card.accountId}>
+                    <div className="flex justify-between items-center mb-1 gap-2">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium truncate block">{card.accountName}</span>
+                        {card.bankName && (
+                          <span className="text-xs text-muted-foreground">{card.bankName}</span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        {hasLimit ? (
+                          <span className={`text-xs font-medium ${isOverLimit ? 'text-destructive' : isNearLimit ? 'text-yellow-600' : 'text-muted-foreground'}`}>
+                            {formatCurrency(card.spent)} / {formatCurrency(card.limit)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {formatCurrency(card.spent)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {hasLimit && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
+                          <div 
+                            className="h-full transition-all" 
+                            style={{ 
+                              width: `${Math.min(card.percentage, 100)}%`,
+                              backgroundColor: card.color
+                            }}
+                          />
+                        </div>
+                        <span className={`text-xs font-medium ${isOverLimit ? 'text-destructive' : isNearLimit ? 'text-yellow-600' : 'text-green-600'}`}>
+                          {card.percentage}%
+                        </span>
+                      </div>
+                    )}
+                    {!hasLimit && (
+                      <p className="text-xs text-muted-foreground">No limit set</p>
+                    )}
                   </div>
                 );
               })}

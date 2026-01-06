@@ -7,6 +7,7 @@ export interface Account {
   accountNumber: string | null;
   balance: string;
   creditLimit: string | null;
+  monthlySpendingLimit: string | null;
   billingDate: number | null;
   icon: string | null;
   color: string | null;
@@ -92,6 +93,15 @@ export interface DashboardData {
   totalSpentMonth: number;
   monthlyExpensesByCategory: Array<{ categoryId: number; categoryName: string; total: number; color: string }>;
   budgetUsage: Array<{ categoryId: number; categoryName: string; spent: number; budget: number; percentage: number }>;
+  creditCardSpending: Array<{
+    accountId: number;
+    accountName: string;
+    bankName?: string;
+    spent: number;
+    limit: number | null;
+    percentage: number;
+    color: string;
+  }>;
   nextScheduledPayment: ScheduledPayment | null;
   lastTransactions: Transaction[];
   upcomingBills: ScheduledPayment[];

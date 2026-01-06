@@ -116,6 +116,8 @@ export default function Accounts() {
     accountNumber: "",
     balance: "",
     creditLimit: "",
+    monthlySpendingLimit: "",
+    billingDate: "",
   });
   const [cardFormData, setCardFormData] = useState({
     cardNumber: "",
@@ -132,13 +134,17 @@ export default function Accounts() {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const response = await apiRequest("POST", "/api/accounts", data);
+      const payload = {
+        ...data,
+        billingDate: data.billingDate ? parseInt(data.billingDate) : undefined,
+      };
+      const response = await apiRequest("POST", "/api/accounts", payload);
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
       setIsDialogOpen(false);
-      setFormData({ name: "", type: "bank", bankName: "", accountNumber: "", balance: "", creditLimit: "" });
+      setFormData({ name: "", type: "bank", bankName: "", accountNumber: "", balance: "", creditLimit: "", monthlySpendingLimit: "", billingDate: "" });
       toast({ title: "Account added successfully" });
     },
     onError: () => {
@@ -290,16 +296,42 @@ export default function Accounts() {
                 />
               </div>
               {formData.type === "credit_card" && (
-                <div>
-                  <Label>Credit Limit</Label>
-                  <Input 
-                    type="number" 
-                    value={formData.creditLimit} 
-                    onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value })}
-                    placeholder="0"
-                    data-testid="input-credit-limit"
-                  />
-                </div>
+                <>
+                  <div>
+                    <Label>Credit Limit</Label>
+                    <Input 
+                      type="number" 
+                      value={formData.creditLimit} 
+                      onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value })}
+                      placeholder="0"
+                      data-testid="input-credit-limit"
+                    />
+                  </div>
+                  <div>
+                    <Label>Monthly Spending Limit (Optional)</Label>
+                    <Input 
+                      type="number" 
+                      value={formData.monthlySpendingLimit} 
+                      onChange={(e) => setFormData({ ...formData, monthlySpendingLimit: e.target.value })}
+                      placeholder="e.g., 5000"
+                      data-testid="input-monthly-spending-limit"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Set a monthly budget for this card</p>
+                  </div>
+                  <div>
+                    <Label>Billing Date (Optional)</Label>
+                    <Input 
+                      type="number" 
+                      min="1"
+                      max="31"
+                      value={formData.billingDate} 
+                      onChange={(e) => setFormData({ ...formData, billingDate: e.target.value })}
+                      placeholder="e.g., 13"
+                      data-testid="input-billing-date"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Day of month when your billing cycle starts (1-31)</p>
+                  </div>
+                </>
               )}
               <Button type="submit" className="w-full" disabled={createMutation.isPending} data-testid="button-save-account">
                 {createMutation.isPending ? "Adding..." : "Add Account"}
@@ -396,10 +428,10 @@ export default function Accounts() {
         {creditCards.length > 0 ? (
           <div className="space-y-2">
             {creditCards.map((card) => {
-              const balance = parseFloat(card.balance || "0");
+              const available = parseFloat(card.balance || "0"); // balance = available credit
               const limit = parseFloat(card.creditLimit || "0");
-              const used = balance < 0 ? Math.abs(balance) : 0;
-              const available = limit - used;
+              const used = limit - available; // used = limit - available
+              const usedPercent = limit > 0 ? (used / limit) * 100 : 0;
               
               return (
                 <Card key={card.id} data-testid={`card-credit-${card.id}`}>
@@ -421,9 +453,35 @@ export default function Accounts() {
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Used: <span className="text-destructive font-medium">{formatCurrency(used)}</span></span>
-                      <span className="text-muted-foreground">Available: <span className="text-green-600 font-medium">{formatCurrency(available)}</span></span>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Used: <span className="text-destructive font-medium">{formatCurrency(used)}</span></span>
+                        <span className="text-muted-foreground">Available: <span className="text-green-600 font-medium">{formatCurrency(available)}</span></span>
+                      </div>
+                      <div className="h-2 bg-secondary rounded-full overflow-hidden mb-1">
+                        <div 
+                          className="h-full transition-all" 
+                          style={{ 
+                            width: `${Math.min(usedPercent, 100)}%`,
+                            backgroundColor: usedPercent >= 90 ? '#ef4444' : usedPercent >= 70 ? '#f59e0b' : '#22c55e'
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-sm pt-1 border-t">
+                        <span className="text-muted-foreground">Credit Limit:</span>
+                        <span className="font-medium">{formatCurrency(limit)}</span>
+                      </div>
+                      {card.monthlySpendingLimit && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Monthly Spending Limit:</span>
+                          <span className="font-medium text-primary">{formatCurrency(parseFloat(card.monthlySpendingLimit))}</span>
+                        </div>
+                      )}
+                      {card.billingDate && (
+                        <div className="text-xs text-muted-foreground pt-1">
+                          Billing Date: {card.billingDate}th of every month
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

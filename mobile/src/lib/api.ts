@@ -258,6 +258,15 @@ export const api = {
       usedCredit: number;
       utilizationPercent: number;
     }>>('/api/credit-card-spending'),
+
+  getMonthlyCreditCardSpending: () => 
+    apiRequest<Array<{
+      month: string;
+      year: number;
+      fullMonth: string;
+      spending: number;
+      monthIndex: number;
+    }>>('/api/credit-card-spending/monthly'),
 };
 
 export { API_BASE_URL };

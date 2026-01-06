@@ -24,6 +24,7 @@ export default function AddAccountScreen() {
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
+  const [monthlySpendingLimit, setMonthlySpendingLimit] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [billingDate, setBillingDate] = useState('');
   const [isDefault, setIsDefault] = useState(false);
@@ -45,6 +46,9 @@ export default function AddAccountScreen() {
         setIsDefault(account.isDefault || false);
         if (account.creditLimit) {
           setCreditLimit(account.creditLimit);
+        }
+        if (account.monthlySpendingLimit) {
+          setMonthlySpendingLimit(account.monthlySpendingLimit);
         }
         if (account.accountNumber) {
           setAccountNumber(account.accountNumber);
@@ -143,6 +147,10 @@ export default function AddAccountScreen() {
       accountData.creditLimit = creditLimit;
     }
 
+    if (type === 'credit_card' && monthlySpendingLimit) {
+      accountData.monthlySpendingLimit = monthlySpendingLimit;
+    }
+
     if (type === 'credit_card' && billingDate && parseInt(billingDate) >= 1 && parseInt(billingDate) <= 31) {
       accountData.billingDate = parseInt(billingDate);
     }
@@ -233,6 +241,24 @@ export default function AddAccountScreen() {
               onChangeText={setCreditLimit}
             />
           </View>
+        </View>
+      )}
+
+      {type === 'credit_card' && (
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>Monthly Spending Limit (Optional)</Text>
+          <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
+            <Text style={[styles.currencyPrefix, { color: colors.textMuted }]}>₹</Text>
+            <TextInput
+              style={[styles.amountInput, { color: colors.text }]}
+              placeholder="e.g., 5000"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              value={monthlySpendingLimit}
+              onChangeText={setMonthlySpendingLimit}
+            />
+          </View>
+          <Text style={[styles.hint, { color: colors.textMuted }]}>Set a monthly budget for this card</Text>
         </View>
       )}
 

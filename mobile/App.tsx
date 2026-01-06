@@ -29,6 +29,7 @@ import AddLoanScreen from './src/screens/AddLoanScreen';
 import LoanDetailsScreen from './src/screens/LoanDetailsScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
 import ExpenseDetailsScreen from './src/screens/ExpenseDetailsScreen';
+import CreditCardDetailsScreen from './src/screens/CreditCardDetailsScreen';
 
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
@@ -65,6 +66,7 @@ export type RootStackParamList = {
   AddTransaction: { accountId?: number; transactionId?: number } | undefined;
   AddAccount: { accountId?: number } | undefined;
   ExpenseDetails: undefined;
+  CreditCardDetails: undefined;
 };
 
 export type TabParamList = {
@@ -304,6 +306,11 @@ function MainApp() {
         <RootStack.Screen 
           name="ExpenseDetails" 
           component={ExpenseDetailsScreen}
+          options={{ headerShown: false }}
+        />
+        <RootStack.Screen 
+          name="CreditCardDetails" 
+          component={CreditCardDetailsScreen}
           options={{ headerShown: false }}
         />
       </RootStack.Navigator>

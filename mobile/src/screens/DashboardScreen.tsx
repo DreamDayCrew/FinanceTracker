@@ -34,9 +34,9 @@ export default function DashboardScreen() {
     queryFn: api.getMonthlyExpenses,
   });
 
-  const { data: creditCardSpending } = useQuery({
-    queryKey: ['creditCardSpending'],
-    queryFn: api.getCreditCardSpending,
+  const { data: monthlyCreditCardSpending } = useQuery({
+    queryKey: ['monthlyCreditCardSpending'],
+    queryFn: api.getMonthlyCreditCardSpending,
   });
 
   const onRefresh = useCallback(async () => {
@@ -44,7 +44,7 @@ export default function DashboardScreen() {
     await Promise.all([
       refetch(), 
       queryClient.refetchQueries({ queryKey: ['monthlyExpenses'] }),
-      queryClient.refetchQueries({ queryKey: ['creditCardSpending'] })
+      queryClient.refetchQueries({ queryKey: ['monthlyCreditCardSpending'] })
     ]);
     setRefreshing(false);
   }, [refetch, queryClient]);
@@ -91,21 +91,49 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {monthlyExpenses && monthlyExpenses.length > 0 && (
+        {monthlyExpenses && monthlyExpenses.length > 0 && monthlyCreditCardSpending && monthlyCreditCardSpending.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Expense Trend</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('ExpenseDetails')}>
-                <Text style={[styles.viewAll, { color: colors.primary }]}>View Details</Text>
-              </TouchableOpacity>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Spending Trend</Text>
+              <View style={styles.viewDetailsContainer}>
+                <TouchableOpacity onPress={() => navigation.navigate('ExpenseDetails')} style={styles.viewDetailsButton}>
+                  <Text style={[styles.viewAll, { color: colors.primary }]}>Expenses</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+                </TouchableOpacity>
+                <View style={[styles.viewDetailsDivider, { backgroundColor: colors.border }]} />
+                <TouchableOpacity onPress={() => navigation.navigate('CreditCardDetails')} style={styles.viewDetailsButton}>
+                  <Text style={[styles.viewAll, { color: colors.primary }]}>Credit Card</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
             </View>
             <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
+              <View style={styles.legendContainer}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#F44336' }]} />
+                  <Text style={[styles.legendText, { color: colors.text }]}>Expenses</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#FF9800' }]} />
+                  <Text style={[styles.legendText, { color: colors.text }]}>Credit Card</Text>
+                </View>
+              </View>
               <LineChart
                 data={{
                   labels: monthlyExpenses.map(m => m.month),
-                  datasets: [{
-                    data: monthlyExpenses.map(m => m.expenses || 0),
-                  }]
+                  datasets: [
+                    {
+                      data: monthlyExpenses.map(m => m.expenses || 0),
+                      color: (opacity = 1) => `rgba(244, 67, 54, ${opacity})`,
+                      strokeWidth: 2,
+                    },
+                    {
+                      data: monthlyCreditCardSpending.map(m => m.spending || 0),
+                      color: (opacity = 1) => `rgba(255, 152, 0, ${opacity})`,
+                      strokeWidth: 2,
+                    }
+                  ],
+                  legend: ['Expenses', 'Credit Card']
                 }}
                 width={Dimensions.get('window').width - 64}
                 height={220}
@@ -122,9 +150,8 @@ export default function DashboardScreen() {
                     borderRadius: 12,
                   },
                   propsForDots: {
-                    r: '5',
+                    r: '4',
                     strokeWidth: '2',
-                    stroke: '#F44336'
                   }
                 }}
                 bezier
@@ -132,52 +159,86 @@ export default function DashboardScreen() {
                   marginVertical: 8,
                   borderRadius: 12,
                 }}
+                withInnerLines={true}
+                withOuterLines={true}
+                withVerticalLines={true}
+                withHorizontalLines={true}
               />
             </View>
           </View>
         )}
 
-        {creditCardSpending && creditCardSpending.length > 0 && (
+        {data?.creditCardSpending && data.creditCardSpending.length > 0 && (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Credit Card Spending</Text>
-            {creditCardSpending.map((card) => (
-              <View key={card.accountId} style={[styles.creditCardItem, { backgroundColor: colors.card }]}>
-                <View style={styles.creditCardHeader}>
-                  <View style={styles.creditCardInfo}>
-                    <View style={[styles.cardDot, { backgroundColor: card.color || colors.primary }]} />
-                    <View>
-                      <Text style={[styles.creditCardName, { color: colors.text }]}>{card.accountName}</Text>
-                      <Text style={[styles.creditCardCycle, { color: colors.textMuted }]}>
-                        Billing Date: {card.billingDate}{getOrdinalSuffix(card.billingDate)} of month
-                      </Text>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Credit Card Spending</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Accounts')}>
+                <Text style={[styles.viewAll, { color: colors.primary }]}>Manage</Text>
+              </TouchableOpacity>
+            </View>
+            {data.creditCardSpending.map((card) => {
+              const hasLimit = card.limit !== null && card.limit > 0;
+              const isOverLimit = hasLimit && card.percentage > 100;
+              const isNearLimit = hasLimit && card.percentage >= 70 && card.percentage <= 100;
+              
+              return (
+                <View key={card.accountId} style={[styles.creditCardItem, { backgroundColor: colors.card }]}>
+                  <View style={styles.creditCardHeader}>
+                    <View style={styles.creditCardInfo}>
+                      <View>
+                        <Text style={[styles.creditCardName, { color: colors.text }]}>{card.accountName}</Text>
+                        {card.bankName && (
+                          <Text style={[styles.creditCardBank, { color: colors.textMuted }]}>{card.bankName}</Text>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.creditCardAmounts}>
+                      {hasLimit ? (
+                        <>
+                          <Text style={[
+                            styles.creditCardSpent, 
+                            { color: isOverLimit ? '#ef4444' : isNearLimit ? '#f59e0b' : colors.text }
+                          ]}>
+                            {formatCurrency(card.spent)}
+                          </Text>
+                          <Text style={[styles.creditCardLimit, { color: colors.textMuted }]}>
+                            of {formatCurrency(card.limit ?? 0)}
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text style={[styles.creditCardSpent, { color: colors.text }]}>
+                            {formatCurrency(card.spent)}
+                          </Text>
+                          <Text style={[styles.creditCardLimit, { color: colors.textMuted }]}>No limit set</Text>
+                        </>
+                      )}
                     </View>
                   </View>
-                  <View style={styles.creditCardAmounts}>
-                    <Text style={[styles.creditCardSpent, { color: '#f44336' }]}>
-                      {formatCurrency(card.totalSpent)}
-                    </Text>
-                    <Text style={[styles.creditCardLimit, { color: colors.textMuted }]}>
-                      of {formatCurrency(card.creditLimit)}
-                    </Text>
-                  </View>
+                  {hasLimit && (
+                    <View style={styles.creditCardProgress}>
+                      <View style={[styles.progressBar, { backgroundColor: colors.border, flex: 1 }]}>
+                        <View 
+                          style={[
+                            styles.progressFill, 
+                            { 
+                              width: `${Math.min(card.percentage, 100)}%`,
+                              backgroundColor: card.color
+                            }
+                          ]} 
+                        />
+                      </View>
+                      <Text style={[
+                        styles.progressText,
+                        { color: isOverLimit ? '#ef4444' : isNearLimit ? '#f59e0b' : '#22c55e' }
+                      ]}>
+                        {card.percentage}%
+                      </Text>
+                    </View>
+                  )}
                 </View>
-                <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-                  <View 
-                    style={[
-                      styles.progressFill, 
-                      { 
-                        width: `${Math.min(card.utilizationPercent, 100)}%`,
-                        backgroundColor: card.utilizationPercent >= 90 ? '#f44336' : 
-                          card.utilizationPercent >= 70 ? '#ff9800' : '#4CAF50'
-                      }
-                    ]} 
-                  />
-                </View>
-                <Text style={[styles.utilizationText, { color: colors.textMuted }]}>
-                  {card.utilizationPercent.toFixed(1)}% utilized
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -346,6 +407,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
+  viewDetailsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  viewDetailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  viewDetailsDivider: {
+    width: 1,
+    height: 14,
+  },
   budgetItem: {
     padding: 12,
     borderRadius: 8,
@@ -364,8 +439,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   progressBar: {
-    height: 6,
-    borderRadius: 3,
+    height: 8,
+    borderRadius: 4,
     overflow: 'hidden',
   },
   progressFill: {
@@ -431,6 +506,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 24,
+    marginBottom: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  legendText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
   creditCardItem: {
     padding: 16,
     borderRadius: 12,
@@ -458,6 +553,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 2,
   },
+  creditCardBank: {
+    fontSize: 12,
+    marginTop: 2,
+  },
   creditCardCycle: {
     fontSize: 12,
   },
@@ -471,6 +570,17 @@ const styles = StyleSheet.create({
   creditCardLimit: {
     fontSize: 12,
     marginTop: 2,
+  },
+  creditCardProgress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  progressText: {
+    fontSize: 14,
+    fontWeight: '600',
+    minWidth: 45,
+    textAlign: 'right',
   },
   utilizationText: {
     fontSize: 12,

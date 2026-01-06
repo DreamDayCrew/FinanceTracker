@@ -34,6 +34,7 @@ export const accounts = pgTable("accounts", {
   accountNumber: varchar("account_number", { length: 50 }),
   balance: decimal("balance", { precision: 12, scale: 2 }).default("0"),
   creditLimit: decimal("credit_limit", { precision: 12, scale: 2 }), // only for credit cards
+  monthlySpendingLimit: decimal("monthly_spending_limit", { precision: 12, scale: 2 }), // monthly spending limit for credit cards
   billingDate: integer("billing_date"), // day of month (1-31) for credit card billing cycle
   linkedAccountId: integer("linked_account_id"), // for debit cards - links to bank account
   icon: varchar("icon", { length: 50 }),
@@ -58,6 +59,7 @@ export const insertAccountSchema = createInsertSchema(accounts).omit({
   type: z.enum(["bank", "credit_card", "debit_card"]),
   balance: z.string().optional(),
   creditLimit: z.string().optional(),
+  monthlySpendingLimit: z.string().optional(),
   billingDate: z.number().min(1).max(31).optional(),
   linkedAccountId: z.number().optional(),
   userId: z.number().optional(),
@@ -670,6 +672,7 @@ export type DashboardStats = {
   totalSpentMonth: number;
   monthlyExpensesByCategory: { categoryId: number; categoryName: string; total: number; color: string }[];
   budgetUsage: { categoryId: number; categoryName: string; spent: number; budget: number; percentage: number }[];
+  creditCardSpending: { accountId: number; accountName: string; bankName: string; spent: number; limit: number | null; percentage: number; color: string }[];
   nextScheduledPayment: ScheduledPayment | null;
   lastTransactions: TransactionWithRelations[];
   upcomingBills: ScheduledPayment[];

@@ -1039,7 +1039,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get credit card billing cycle spending
   app.get("/api/credit-card-spending", async (_req, res) => {
     try {
-      const accounts = await storage.getAccounts();
+      const accounts = await storage.getAllAccounts();
       const creditCards = accounts.filter(acc => acc.type === 'credit_card' && acc.isActive && acc.billingDate);
       
       const cardSpending = [];
@@ -1089,7 +1089,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           creditLimit,
           availableCredit,
           usedCredit,
-          utilizationPercent: creditLimit > 0 ? (usedCredit / creditLimit) * 100 : 0,
+          utilizationPercent: creditLimit > 0 ? (totalSpent / creditLimit) * 100 : 0,
         });
       }
       
@@ -1139,6 +1139,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching monthly expenses:", error);
       res.status(500).json({ error: "Failed to fetch monthly expenses" });
+    }
+  });
+
+  // Get credit card spending trend
+  app.get("/api/credit-card-spending/monthly", async (_req, res) => {
+    try {
+      const accounts = await storage.getAllAccounts();
+      const creditCards = accounts.filter(acc => acc.type === 'credit_card' && acc.isActive);
+      
+      if (creditCards.length === 0) {
+        return res.json([]);
+      }
+      
+      const now = new Date();
+      const monthlyData = [];
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      
+      // Get last 6 months of credit card spending data
+      for (let i = 5; i >= 0; i--) {
+        const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const year = targetDate.getFullYear();
+        const month = targetDate.getMonth();
+        
+        const startOfMonth = new Date(year, month, 1);
+        const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59);
+        
+        let totalSpending = 0;
+        
+        // Sum spending across all credit cards
+        for (const card of creditCards) {
+          const transactions = await storage.getAllTransactions({
+            accountId: card.id,
+            startDate: startOfMonth,
+            endDate: endOfMonth,
+          });
+          
+          const cardSpending = transactions
+            .filter(t => t.type === 'debit')
+            .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+          
+          totalSpending += cardSpending;
+        }
+        
+        monthlyData.push({
+          month: monthNames[month],
+          year,
+          fullMonth: `${monthNames[month]} ${year}`,
+          spending: totalSpending,
+          monthIndex: month,
+        });
+      }
+      
+      res.json(monthlyData);
+    } catch (error) {
+      console.error("Error fetching monthly credit card spending:", error);
+      res.status(500).json({ error: "Failed to fetch monthly credit card spending" });
     }
   });
 

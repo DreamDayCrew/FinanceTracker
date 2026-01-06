@@ -44,6 +44,11 @@ export default function AccountsScreen() {
     queryFn: api.getAccounts,
   });
 
+  const { data: dashboardData } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: api.getDashboard,
+  });
+
   const deleteMutation = useMutation({
     mutationFn: api.deleteAccount,
     onSuccess: () => {
@@ -208,10 +213,30 @@ export default function AccountsScreen() {
   };
 
   const renderCreditCard = (account: Account) => {
-    const used = parseFloat(account.creditLimit || '0') - parseFloat(account.balance);
-    const usedPercent = account.creditLimit 
-      ? (used / parseFloat(account.creditLimit)) * 100 
-      : 0;
+    const available = parseFloat(account.balance || '0');
+    const limit = parseFloat(account.creditLimit || '0');
+    const used = limit - available;
+    const usedPercent = limit > 0 ? (used / limit) * 100 : 0;
+
+    // Get spending data from dashboard for this card
+    const cardSpending = dashboardData?.creditCardSpending?.find(
+      (c: any) => c.accountId === account.id
+    );
+    
+    const monthlyLimit = account.monthlySpendingLimit ? parseFloat(account.monthlySpendingLimit) : null;
+    const spent = cardSpending?.spent || 0;
+    const spentPercent = monthlyLimit && monthlyLimit > 0 ? (spent / monthlyLimit) * 100 : 0;
+    const hasMonthlyLimit = monthlyLimit !== null && monthlyLimit > 0;
+
+    // Color based on monthly spending limit
+    let barColor = '#22c55e'; // green default
+    if (hasMonthlyLimit) {
+      if (spentPercent > 100) {
+        barColor = '#ef4444'; // red - over limit
+      } else if (spentPercent >= 70) {
+        barColor = '#f59e0b'; // orange/yellow - approaching limit
+      }
+    }
 
     const content = (
       <TouchableOpacity 
@@ -230,7 +255,7 @@ export default function AccountsScreen() {
           )}
           <View style={styles.creditInfo}>
             <Text style={[styles.creditText, { color: colors.textMuted }]}>
-              {formatCurrency(account.balance)} available of {formatCurrency(account.creditLimit || 0)}
+              {formatCurrency(available)} available of {formatCurrency(limit)}
             </Text>
             <View style={[styles.creditBar, { backgroundColor: colors.border }]}>
               <View 
@@ -238,12 +263,52 @@ export default function AccountsScreen() {
                   styles.creditFill, 
                   { 
                     width: `${Math.min(usedPercent, 100)}%`,
-                    backgroundColor: usedPercent > 80 ? colors.danger : colors.warning
+                    backgroundColor: usedPercent >= 90 ? colors.danger : usedPercent >= 70 ? colors.warning : '#22c55e'
                   }
                 ]} 
               />
             </View>
           </View>
+          {hasMonthlyLimit && (
+            <View style={styles.monthlyLimitInfo}>
+              <View style={styles.limitHeader}>
+                <Text style={[styles.limitLabel, { color: colors.textMuted }]}>
+                  Monthly Spending: <Text style={{ fontWeight: '600', color: spentPercent > 100 ? '#ef4444' : spentPercent >= 70 ? '#f59e0b' : colors.text }}>{formatCurrency(spent)}</Text>
+                </Text>
+                <Text style={[styles.limitLabel, { color: colors.textMuted }]}>
+                  of {formatCurrency(monthlyLimit)}
+                </Text>
+              </View>
+              <View style={styles.spendingBar}>
+                <View style={[styles.spendingBarBg, { backgroundColor: colors.border }]}>
+                  <View 
+                    style={[
+                      styles.spendingBarFill, 
+                      { 
+                        width: `${Math.min(spentPercent, 100)}%`,
+                        backgroundColor: barColor
+                      }
+                    ]} 
+                  />
+                </View>
+                <Text style={[styles.limitPercentage, { color: barColor }]}>
+                  {spentPercent.toFixed(0)}%
+                </Text>
+              </View>
+            </View>
+          )}
+          {!hasMonthlyLimit && (
+            <View style={styles.limitInfo}>
+              <Text style={[styles.limitLabel, { color: colors.textMuted, fontStyle: 'italic' }]}>
+                No monthly limit set
+              </Text>
+            </View>
+          )}
+          {account.billingDate && (
+            <Text style={[styles.billingDateText, { color: colors.textMuted }]}>
+              Billing: {account.billingDate}th of every month
+            </Text>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -452,6 +517,49 @@ const styles = StyleSheet.create({
   creditFill: {
     height: '100%',
     borderRadius: 2,
+  },
+  limitInfo: {
+    marginTop: 6,
+  },
+  limitLabel: {
+    fontSize: 12,
+  },
+  monthlyLimitInfo: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+  },
+  limitHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  spendingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  spendingBarBg: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  spendingBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  limitPercentage: {
+    fontSize: 14,
+    fontWeight: '600',
+    minWidth: 45,
+    textAlign: 'right',
+  },
+  billingDateText: {
+    fontSize: 11,
+    marginTop: 4,
   },
   emptyCard: {
     padding: 24,

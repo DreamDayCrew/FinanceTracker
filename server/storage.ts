@@ -602,11 +602,78 @@ export class DatabaseStorage implements IStorage {
       return dueDay >= today && dueDay <= today + 7;
     });
 
+    // Get credit card spending for this month (based on billing cycle)
+    const creditCardAccounts = await this.getAllAccounts(userId);
+    const creditCards = creditCardAccounts.filter(a => a.type === 'credit_card' && a.isActive);
+    
+    const creditCardSpending = [];
+    for (const card of creditCards) {
+      // Calculate billing cycle dates
+      let cycleStartDate: Date;
+      let cycleEndDate: Date;
+      
+      if (card.billingDate) {
+        // If billing date is set, calculate cycle from billingDate to billingDate-1 of next month
+        const billingDay = card.billingDate;
+        const currentDay = now.getDate();
+        
+        if (currentDay >= billingDay) {
+          // Current cycle: billingDate of this month to billingDate-1 of next month
+          cycleStartDate = new Date(now.getFullYear(), now.getMonth(), billingDay);
+          cycleEndDate = new Date(now.getFullYear(), now.getMonth() + 1, billingDay - 1, 23, 59, 59);
+        } else {
+          // Previous cycle: billingDate of last month to billingDate-1 of this month
+          cycleStartDate = new Date(now.getFullYear(), now.getMonth() - 1, billingDay);
+          cycleEndDate = new Date(now.getFullYear(), now.getMonth(), billingDay - 1, 23, 59, 59);
+        }
+      } else {
+        // No billing date set, use calendar month
+        cycleStartDate = startOfMonth;
+        cycleEndDate = endOfMonth;
+      }
+      
+      // Get spending for this billing cycle
+      const cycleTransactions = await this.getAllTransactions({
+        userId,
+        accountId: card.id,
+        startDate: cycleStartDate,
+        endDate: cycleEndDate,
+      });
+      
+      const spent = cycleTransactions
+        .filter(t => t.type === 'debit')
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+      
+      const limit = card.monthlySpendingLimit ? parseFloat(card.monthlySpendingLimit) : null;
+      const percentage = limit && limit > 0 ? Math.round((spent / limit) * 100) : 0;
+      
+      // Determine color based on percentage
+      let color = '#22c55e'; // green - default
+      if (limit) {
+        if (percentage >= 100) {
+          color = '#ef4444'; // red - over limit
+        } else if (percentage >= 80) {
+          color = '#eab308'; // yellow - near limit
+        }
+      }
+      
+      creditCardSpending.push({
+        accountId: card.id,
+        accountName: card.name,
+        bankName: card.bankName || '',
+        spent,
+        limit,
+        percentage,
+        color,
+      });
+    }
+
     return {
       totalSpentToday,
       totalSpentMonth,
       monthlyExpensesByCategory,
       budgetUsage,
+      creditCardSpending,
       nextScheduledPayment,
       lastTransactions,
       upcomingBills,
