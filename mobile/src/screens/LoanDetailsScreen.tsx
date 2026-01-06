@@ -1,5 +1,6 @@
-import { useState, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Animated, PanResponder, Alert } from 'react-native';
+import { useState, useMemo, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, Animated } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -594,21 +595,28 @@ export default function LoanDetailsScreen() {
                 <>
                   <Text style={[styles.sectionHeader, { color: colors.textMuted }]}>Manual Payments</Text>
                   {payments.map((payment) => (
-                    <View key={payment.id} style={styles.swipeContainer}>
-                      <View style={styles.swipeActions}>
-                        <TouchableOpacity
-                          style={[styles.swipeAction, { backgroundColor: colors.primary }]}
-                          onPress={() => handleEditPayment(payment)}
-                        >
-                          <Ionicons name="pencil" size={18} color="#fff" />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.swipeAction, { backgroundColor: colors.danger }]}
-                          onPress={() => handleDeletePayment(payment.id)}
-                        >
-                          <Ionicons name="trash" size={18} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
+                    <Swipeable
+                      key={payment.id}
+                      renderRightActions={() => (
+                        <View style={styles.swipeActionsContainer}>
+                          <TouchableOpacity
+                            style={[styles.swipeActionButton, { backgroundColor: colors.primary }]}
+                            onPress={() => handleEditPayment(payment)}
+                          >
+                            <Ionicons name="pencil" size={20} color="#fff" />
+                            <Text style={styles.swipeActionText}>Edit</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.swipeActionButton, { backgroundColor: colors.danger }]}
+                            onPress={() => handleDeletePayment(payment.id)}
+                          >
+                            <Ionicons name="trash" size={20} color="#fff" />
+                            <Text style={styles.swipeActionText}>Delete</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                      overshootRight={false}
+                    >
                       <View style={[styles.paymentCard, { backgroundColor: colors.card }]}>
                         <View style={styles.paymentHeader}>
                           <View style={[styles.paymentIcon, { backgroundColor: payment.paymentType === 'prepayment' ? colors.warning : payment.paymentType === 'partial' ? colors.warning : colors.primary }]}>
@@ -641,7 +649,7 @@ export default function LoanDetailsScreen() {
                           </Text>
                         )}
                       </View>
-                    </View>
+                    </Swipeable>
                   ))}
                 </>
               )}
@@ -1280,21 +1288,24 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
-  swipeContainer: {
+  swipeActionsContainer: {
     flexDirection: 'row',
-    marginBottom: 8,
+    alignItems: 'center',
+    marginLeft: 8,
   },
-  swipeActions: {
-    flexDirection: 'row',
-    marginRight: 8,
-  },
-  swipeAction: {
-    width: 40,
+  swipeActionButton: {
+    width: 70,
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 8,
-    marginRight: 4,
+    marginLeft: 4,
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
   },
   addRowButtonText: {
     color: '#fff',

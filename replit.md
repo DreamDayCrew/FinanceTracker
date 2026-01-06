@@ -248,6 +248,15 @@ Required secrets:
 
 ## Recent Changes
 
+- **2026-01**: Loan Payments UI Enhancement
+  - Consolidated "Paid" and "Payments" tabs into single "Payments" tab in LoanDetailsScreen
+  - Payments tab now shows: Paid EMIs section + Manual Payments section with section headers
+  - Implemented swipe-to-edit/delete functionality for manual payments using react-native-gesture-handler Swipeable
+  - Added Edit Payment Modal with payment type selector and principal/interest breakdown
+  - Delete payment confirmation dialog with outstanding balance restoration
+  - Backend: Added PATCH /api/loan-payments/:id and DELETE /api/loan-payments/:id endpoints
+  - Outstanding balance automatically restored when payments are deleted (reverses principal reduction)
+
 - **2026-01**: Loan Terms and Payments Enhancement
   - Added loan_terms table for tracking interest rate and tenure changes over time
   - Added loan_payments table for tracking EMI payments, prepayments, and partial payments
