@@ -578,6 +578,77 @@ export const insertSmsLogSchema = createInsertSchema(smsLogs).omit({
 export type InsertSmsLog = z.infer<typeof insertSmsLogSchema>;
 export type SmsLog = typeof smsLogs.$inferSelect;
 
+// Loan Terms (track interest rate and tenure changes over time)
+export const loanTerms = pgTable("loan_terms", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
+  effectiveFrom: timestamp("effective_from").notNull(),
+  effectiveTo: timestamp("effective_to"), // null means current term
+  interestRate: decimal("interest_rate", { precision: 5, scale: 2 }).notNull(),
+  tenureMonths: integer("tenure_months").notNull(),
+  emiAmount: decimal("emi_amount", { precision: 12, scale: 2 }).notNull(),
+  outstandingAtChange: decimal("outstanding_at_change", { precision: 14, scale: 2 }), // outstanding when this term started
+  reason: varchar("reason", { length: 200 }), // e.g., "Rate revision", "Tenure extension"
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const loanTermsRelations = relations(loanTerms, ({ one }) => ({
+  loan: one(loans, { fields: [loanTerms.loanId], references: [loans.id] }),
+}));
+
+export const insertLoanTermSchema = createInsertSchema(loanTerms).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  interestRate: z.string().min(1, "Interest rate is required"),
+  tenureMonths: z.number().min(1, "Tenure is required"),
+  emiAmount: z.string().min(1, "EMI amount is required"),
+  outstandingAtChange: z.string().optional(),
+  effectiveFrom: z.union([z.string(), z.date()]).transform((val) => new Date(val)),
+  effectiveTo: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional().nullable(),
+});
+
+export type InsertLoanTerm = z.infer<typeof insertLoanTermSchema>;
+export type LoanTerm = typeof loanTerms.$inferSelect;
+
+// Loan Payments (track actual EMI payments with extra/partial support)
+export const loanPayments = pgTable("loan_payments", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
+  installmentId: integer("installment_id").references(() => loanInstallments.id),
+  paymentDate: timestamp("payment_date").notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  principalPaid: decimal("principal_paid", { precision: 12, scale: 2 }),
+  interestPaid: decimal("interest_paid", { precision: 12, scale: 2 }),
+  paymentType: varchar("payment_type", { length: 20 }).default("emi"), // 'emi', 'prepayment', 'partial'
+  accountId: integer("account_id").references(() => accounts.id),
+  transactionId: integer("transaction_id").references(() => transactions.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const loanPaymentsRelations = relations(loanPayments, ({ one }) => ({
+  loan: one(loans, { fields: [loanPayments.loanId], references: [loans.id] }),
+  installment: one(loanInstallments, { fields: [loanPayments.installmentId], references: [loanInstallments.id] }),
+  account: one(accounts, { fields: [loanPayments.accountId], references: [accounts.id] }),
+  transaction: one(transactions, { fields: [loanPayments.transactionId], references: [transactions.id] }),
+}));
+
+export const insertLoanPaymentSchema = createInsertSchema(loanPayments).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  amount: z.string().min(1, "Payment amount is required"),
+  principalPaid: z.string().optional(),
+  interestPaid: z.string().optional(),
+  paymentType: z.enum(["emi", "prepayment", "partial"]).optional(),
+  paymentDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)),
+});
+
+export type InsertLoanPayment = z.infer<typeof insertLoanPaymentSchema>;
+export type LoanPayment = typeof loanPayments.$inferSelect;
+
 // Extended transaction type with relations
 export type TransactionWithRelations = Transaction & {
   account?: Account | null;
@@ -589,6 +660,8 @@ export type LoanWithRelations = Loan & {
   account?: Account | null;
   installments?: LoanInstallment[];
   components?: LoanComponent[];
+  terms?: LoanTerm[];
+  payments?: LoanPayment[];
 };
 
 // Dashboard analytics types

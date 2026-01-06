@@ -1,7 +1,7 @@
 import { 
   users, accounts, categories, transactions, budgets, scheduledPayments, smsLogs,
   paymentOccurrences, savingsGoals, savingsContributions, salaryProfiles, salaryCycles,
-  loans, loanComponents, loanInstallments, cardDetails,
+  loans, loanComponents, loanInstallments, loanTerms, loanPayments, cardDetails,
   type User, type InsertUser,
   type Account, type InsertAccount,
   type Category, type InsertCategory,
@@ -16,6 +16,8 @@ import {
   type Loan, type InsertLoan, type LoanWithRelations,
   type LoanComponent, type InsertLoanComponent,
   type LoanInstallment, type InsertLoanInstallment,
+  type LoanTerm, type InsertLoanTerm,
+  type LoanPayment, type InsertLoanPayment,
   type CardDetails, type InsertCardDetails,
   type SmsLog, type InsertSmsLog,
   type DashboardStats,
@@ -139,6 +141,17 @@ export interface IStorage {
   createCardDetails(card: InsertCardDetails): Promise<CardDetails>;
   updateCardDetails(id: number, card: Partial<InsertCardDetails>): Promise<CardDetails | undefined>;
   deleteCardDetails(id: number): Promise<boolean>;
+
+  // Loan Terms
+  getLoanTerms(loanId: number): Promise<LoanTerm[]>;
+  getLoanTerm(id: number): Promise<LoanTerm | undefined>;
+  createLoanTerm(term: InsertLoanTerm): Promise<LoanTerm>;
+  updateLoanTerm(id: number, term: Partial<InsertLoanTerm>): Promise<LoanTerm | undefined>;
+
+  // Loan Payments
+  getLoanPayments(loanId: number): Promise<LoanPayment[]>;
+  getLoanPayment(id: number): Promise<LoanPayment | undefined>;
+  createLoanPayment(payment: InsertLoanPayment): Promise<LoanPayment>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1228,6 +1241,104 @@ export class DatabaseStorage implements IStorage {
   async deleteCardDetails(id: number): Promise<boolean> {
     const result = await db.delete(cardDetails).where(eq(cardDetails.id, id)).returning();
     return result.length > 0;
+  }
+
+  // Loan Terms
+  async getLoanTerms(loanId: number): Promise<LoanTerm[]> {
+    return db.select().from(loanTerms)
+      .where(eq(loanTerms.loanId, loanId))
+      .orderBy(desc(loanTerms.effectiveFrom));
+  }
+
+  async getLoanTerm(id: number): Promise<LoanTerm | undefined> {
+    const [term] = await db.select().from(loanTerms).where(eq(loanTerms.id, id));
+    return term || undefined;
+  }
+
+  async createLoanTerm(term: InsertLoanTerm): Promise<LoanTerm> {
+    // Close any existing open term (set effectiveTo)
+    const openTerms = await db.select().from(loanTerms)
+      .where(and(eq(loanTerms.loanId, term.loanId), sql`${loanTerms.effectiveTo} IS NULL`));
+    
+    for (const openTerm of openTerms) {
+      await db.update(loanTerms)
+        .set({ effectiveTo: term.effectiveFrom })
+        .where(eq(loanTerms.id, openTerm.id));
+    }
+
+    const [newTerm] = await db.insert(loanTerms).values(term).returning();
+    
+    // Update the loan with new interest rate, tenure, and EMI
+    await db.update(loans).set({
+      interestRate: term.interestRate,
+      tenure: term.tenureMonths,
+      emiAmount: term.emiAmount,
+      updatedAt: new Date()
+    }).where(eq(loans.id, term.loanId));
+
+    return newTerm;
+  }
+
+  async updateLoanTerm(id: number, term: Partial<InsertLoanTerm>): Promise<LoanTerm | undefined> {
+    const [updated] = await db.update(loanTerms).set(term).where(eq(loanTerms.id, id)).returning();
+    return updated || undefined;
+  }
+
+  // Loan Payments
+  async getLoanPayments(loanId: number): Promise<LoanPayment[]> {
+    return db.select().from(loanPayments)
+      .where(eq(loanPayments.loanId, loanId))
+      .orderBy(desc(loanPayments.paymentDate));
+  }
+
+  async getLoanPayment(id: number): Promise<LoanPayment | undefined> {
+    const [payment] = await db.select().from(loanPayments).where(eq(loanPayments.id, id));
+    return payment || undefined;
+  }
+
+  async createLoanPayment(payment: InsertLoanPayment): Promise<LoanPayment> {
+    let principalPaid = payment.principalPaid ? parseFloat(payment.principalPaid) : 0;
+    
+    // If payment is linked to an installment and principalPaid not specified, get from installment
+    if (payment.installmentId && !payment.principalPaid) {
+      const installment = await this.getLoanInstallment(payment.installmentId);
+      if (installment) {
+        principalPaid = parseFloat(installment.principalComponent || '0');
+      }
+    }
+    
+    // For prepayments, assume full amount reduces principal
+    if (payment.paymentType === 'prepayment' && !payment.principalPaid) {
+      principalPaid = parseFloat(payment.amount);
+    }
+
+    const [newPayment] = await db.insert(loanPayments).values({
+      ...payment,
+      principalPaid: principalPaid.toFixed(2)
+    }).returning();
+
+    // Update outstanding amount - only subtract principal component
+    const loan = await this.getLoan(payment.loanId);
+    if (loan && principalPaid > 0) {
+      const currentOutstanding = parseFloat(loan.outstandingAmount) || 0;
+      const newOutstanding = Math.max(0, currentOutstanding - principalPaid);
+      
+      await db.update(loans).set({
+        outstandingAmount: newOutstanding.toFixed(2),
+        updatedAt: new Date()
+      }).where(eq(loans.id, payment.loanId));
+    }
+
+    // If linked to an installment, mark it as paid
+    if (payment.installmentId) {
+      await this.updateLoanInstallment(payment.installmentId, {
+        status: 'paid',
+        paidAmount: payment.amount,
+        paidDate: typeof payment.paymentDate === 'string' ? new Date(payment.paymentDate) : payment.paymentDate
+      });
+    }
+
+    return newPayment;
   }
 }
 

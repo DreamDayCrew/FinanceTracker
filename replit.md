@@ -157,6 +157,27 @@ Personal Finance Tracker is a comprehensive expense tracking application designe
 - `PATCH /api/scheduled-payments/:id` - Update payment status
 - `DELETE /api/scheduled-payments/:id` - Delete payment
 
+### Loans
+- `GET /api/loans` - Get all loans
+- `GET /api/loans/:id` - Get single loan
+- `GET /api/loans/:id/details` - Get loan with terms, installments, and payments
+- `POST /api/loans` - Create loan (auto-generates installments)
+- `PATCH /api/loans/:id` - Update loan
+- `DELETE /api/loans/:id` - Delete loan
+
+### Loan Installments
+- `GET /api/loans/:loanId/installments` - Get all installments for a loan
+- `PATCH /api/loans/:loanId/installments/:id` - Update installment
+- `POST /api/loans/:loanId/installments/:id/pay` - Mark installment as paid
+
+### Loan Terms (track rate/tenure changes)
+- `GET /api/loans/:loanId/terms` - Get loan term history
+- `POST /api/loans/:loanId/terms` - Create new term (closes previous)
+
+### Loan Payments
+- `GET /api/loans/:loanId/payments` - Get payment history
+- `POST /api/loans/:loanId/payments` - Record payment (emi/prepayment/partial)
+
 ### User Settings
 - `GET /api/user` - Get current user
 - `PATCH /api/user` - Update user settings
@@ -193,6 +214,18 @@ Personal Finance Tracker is a comprehensive expense tracking application designe
 ### sms_logs
 - id, userId, rawMessage, parsedData, transactionId, processedAt
 
+### loans
+- id, userId, name, type (home_loan/personal_loan/credit_card_loan/item_emi), principalAmount, outstandingAmount, interestRate, tenure, emiAmount, emiDay, startDate, endDate, accountId, lenderName, loanAccountNumber, status (active/closed/defaulted), notes, createdAt
+
+### loan_terms
+- id, loanId, effectiveFrom, effectiveTo, interestRate, tenureMonths, emiAmount, outstandingAtChange, reason, notes, createdAt
+
+### loan_payments
+- id, loanId, installmentId, paymentDate, amount, principalPaid, interestPaid, paymentType (emi/prepayment/partial), accountId, transactionId, notes, createdAt
+
+### loan_installments
+- id, loanId, installmentNumber, dueDate, emiAmount, principalComponent, interestComponent, status (pending/paid/overdue/partially_paid), paidDate, paidAmount, transactionId, notes, createdAt
+
 ## Default Categories
 
 Expense categories: Food & Dining, Groceries, Transport, Shopping, Entertainment, Bills & Utilities, Health, Education, Travel, Personal Care, Other
@@ -214,6 +247,14 @@ Required secrets:
 - AI Features: Category suggestions and SMS parsing with fallback logic
 
 ## Recent Changes
+
+- **2026-01**: Loan Terms and Payments Enhancement
+  - Added loan_terms table for tracking interest rate and tenure changes over time
+  - Added loan_payments table for tracking EMI payments, prepayments, and partial payments
+  - Implemented automatic outstanding balance updates when payments are recorded
+  - Only principal component reduces outstanding (not interest)
+  - New terms automatically close previous open term
+  - API validation using Zod schemas for loan terms and payments
 
 - **2024-12**: Complete rebuild with PostgreSQL
   - Migrated from in-memory to PostgreSQL database

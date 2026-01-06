@@ -313,3 +313,63 @@ export interface InsertCardDetails {
   expiryYear: number;
   cardType?: 'visa' | 'mastercard' | 'rupay' | 'amex' | 'other';
 }
+
+export interface LoanTerm {
+  id: number;
+  loanId: number;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  interestRate: string;
+  tenureMonths: number;
+  emiAmount: string;
+  outstandingAtChange: string | null;
+  reason: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface LoanPayment {
+  id: number;
+  loanId: number;
+  installmentId: number | null;
+  paymentDate: string;
+  amount: string;
+  principalPaid: string | null;
+  interestPaid: string | null;
+  paymentType: 'emi' | 'prepayment' | 'partial';
+  accountId: number | null;
+  transactionId: number | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface InsertLoanTerm {
+  loanId: number;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  interestRate: string;
+  tenureMonths: number;
+  emiAmount: string;
+  outstandingAtChange?: string;
+  reason?: string;
+  notes?: string;
+}
+
+export interface InsertLoanPayment {
+  loanId: number;
+  installmentId?: number;
+  paymentDate: string;
+  amount: string;
+  principalPaid?: string;
+  interestPaid?: string;
+  paymentType?: 'emi' | 'prepayment' | 'partial';
+  accountId?: number;
+  notes?: string;
+}
+
+export interface LoanWithDetails extends Loan {
+  terms?: LoanTerm[];
+  installments?: LoanInstallment[];
+  payments?: LoanPayment[];
+  account?: Account | null;
+}

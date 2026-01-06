@@ -6,7 +6,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import { formatCurrency, getThemedColors } from '../lib/utils';
-import { api, API_BASE_URL } from '../lib/api';
+import { api } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
 import type { Loan, LoanInstallment } from '../lib/types';
 
@@ -65,13 +65,10 @@ export default function LoanDetailsScreen() {
 
   const markPaidMutation = useMutation({
     mutationFn: async ({ installmentId, amount }: { installmentId: number; amount: string }) => {
-      const res = await fetch(`${API_BASE_URL}/api/loan-installments/${installmentId}/mark-paid`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paidAmount: amount }),
+      return api.markInstallmentPaid(loanId, installmentId, {
+        paidDate: new Date().toISOString().split('T')[0],
+        paidAmount: amount,
       });
-      if (!res.ok) throw new Error('Failed to mark as paid');
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['loan', loanId] });

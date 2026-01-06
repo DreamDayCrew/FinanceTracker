@@ -17,6 +17,8 @@ import {
   insertLoanSchema,
   insertLoanComponentSchema,
   insertLoanInstallmentSchema,
+  insertLoanTermSchema,
+  insertLoanPaymentSchema,
   insertCardDetailsSchema
 } from "@shared/schema";
 import { suggestCategory, parseSmsMessage } from "./openai";
@@ -1454,6 +1456,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(installments);
     } catch (error) {
       res.status(500).json({ error: "Failed to generate installments" });
+    }
+  });
+
+  app.post("/api/loans/:id/generate-installments", async (req, res) => {
+    try {
+      const installments = await storage.generateLoanInstallments(parseInt(req.params.id));
+      res.json(installments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate installments" });
+    }
+  });
+
+  app.get("/api/loans/:id/details", async (req, res) => {
+    try {
+      const loan = await storage.getLoan(parseInt(req.params.id));
+      if (!loan) {
+        return res.status(404).json({ error: "Loan not found" });
+      }
+      const [terms, installments, payments] = await Promise.all([
+        storage.getLoanTerms(loan.id),
+        storage.getLoanInstallments(loan.id),
+        storage.getLoanPayments(loan.id)
+      ]);
+      res.json({ ...loan, terms, installments, payments });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch loan details" });
+    }
+  });
+
+  app.get("/api/loans/:loanId/installments", async (req, res) => {
+    try {
+      const installments = await storage.getLoanInstallments(parseInt(req.params.loanId));
+      res.json(installments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch installments" });
+    }
+  });
+
+  app.patch("/api/loans/:loanId/installments/:id", async (req, res) => {
+    try {
+      const installment = await storage.updateLoanInstallment(parseInt(req.params.id), req.body);
+      if (installment) {
+        res.json(installment);
+      } else {
+        res.status(404).json({ error: "Installment not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid installment data" });
+    }
+  });
+
+  app.post("/api/loans/:loanId/installments/:id/pay", async (req, res) => {
+    try {
+      const { paidDate, paidAmount, accountId, notes } = req.body;
+      const loanId = parseInt(req.params.loanId);
+      const installmentId = parseInt(req.params.id);
+      
+      const payment = await storage.createLoanPayment({
+        loanId,
+        installmentId,
+        paymentDate: paidDate,
+        amount: paidAmount,
+        paymentType: 'emi',
+        accountId: accountId || null,
+        notes: notes || null
+      });
+      
+      const installment = await storage.getLoanInstallment(installmentId);
+      res.json(installment);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Failed to mark installment paid" });
+    }
+  });
+
+  app.get("/api/loans/:loanId/terms", async (req, res) => {
+    try {
+      const terms = await storage.getLoanTerms(parseInt(req.params.loanId));
+      res.json(terms);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch loan terms" });
+    }
+  });
+
+  app.post("/api/loans/:loanId/terms", async (req, res) => {
+    try {
+      const validatedData = insertLoanTermSchema.parse({
+        ...req.body,
+        loanId: parseInt(req.params.loanId),
+        effectiveFrom: req.body.effectiveFrom ? new Date(req.body.effectiveFrom) : new Date(),
+        effectiveTo: req.body.effectiveTo ? new Date(req.body.effectiveTo) : null
+      });
+      const term = await storage.createLoanTerm(validatedData);
+      res.status(201).json(term);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid term data" });
+    }
+  });
+
+  app.get("/api/loans/:loanId/payments", async (req, res) => {
+    try {
+      const payments = await storage.getLoanPayments(parseInt(req.params.loanId));
+      res.json(payments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch loan payments" });
+    }
+  });
+
+  app.post("/api/loans/:loanId/payments", async (req, res) => {
+    try {
+      const validatedData = insertLoanPaymentSchema.parse({
+        ...req.body,
+        loanId: parseInt(req.params.loanId),
+        paymentDate: req.body.paymentDate ? new Date(req.body.paymentDate) : new Date()
+      });
+      const payment = await storage.createLoanPayment(validatedData);
+      res.status(201).json(payment);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid payment data" });
     }
   });
 

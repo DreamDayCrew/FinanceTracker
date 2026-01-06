@@ -5,7 +5,8 @@ import type {
   SavingsGoal, SavingsContribution, InsertSavingsGoal, InsertSavingsContribution,
   SalaryProfile, SalaryCycle, InsertSalaryProfile,
   Loan, LoanInstallment, InsertLoan,
-  CardDetails, InsertCardDetails
+  CardDetails, InsertCardDetails,
+  LoanTerm, LoanPayment, InsertLoanTerm, InsertLoanPayment, LoanWithDetails
 } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
@@ -197,6 +198,23 @@ export const api = {
     }),
   deleteCardDetails: (accountId: number) => 
     apiRequest<void>(`/api/accounts/${accountId}/card-details`, { method: 'DELETE' }),
+
+  getLoanWithDetails: (id: number) => apiRequest<LoanWithDetails>(`/api/loans/${id}/details`),
+  getLoanTerms: (loanId: number) => apiRequest<LoanTerm[]>(`/api/loans/${loanId}/terms`),
+  createLoanTerm: (loanId: number, data: Omit<InsertLoanTerm, 'loanId'>) => 
+    apiRequest<LoanTerm>(`/api/loans/${loanId}/terms`, { method: 'POST', body: JSON.stringify(data) }),
+  getLoanPayments: (loanId: number) => apiRequest<LoanPayment[]>(`/api/loans/${loanId}/payments`),
+  createLoanPayment: (loanId: number, data: Omit<InsertLoanPayment, 'loanId'>) => 
+    apiRequest<LoanPayment>(`/api/loans/${loanId}/payments`, { method: 'POST', body: JSON.stringify(data) }),
+  markInstallmentPaid: (loanId: number, installmentId: number, data: { 
+    paidDate: string; 
+    paidAmount: string; 
+    accountId?: number;
+    notes?: string;
+  }) => 
+    apiRequest<LoanInstallment>(`/api/loans/${loanId}/installments/${installmentId}/pay`, { 
+      method: 'POST', body: JSON.stringify(data) 
+    }),
 
   verifyPin: (pin: string) => 
     apiRequest<{ valid: boolean; message?: string }>('/api/user/verify-pin', { 
