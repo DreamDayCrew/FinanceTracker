@@ -36,6 +36,7 @@ export default function LoansScreen() {
 
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [loanToDelete, setLoanToDelete] = useState<Loan | null>(null);
+  const [hideBalances, setHideBalances] = useState(false);
 
   const { data: loans, isLoading } = useQuery<Loan[]>({
     queryKey: ['loans'],
@@ -196,7 +197,7 @@ export default function LoansScreen() {
               <View style={styles.loanRight}>
                 <View style={styles.loanAmounts}>
                   <Text style={[styles.outstandingAmount, { color: colors.text }]}>
-                    {formatCurrency(parseFloat(item.outstandingAmount))}
+                    {hideBalances ? '****' : formatCurrency(parseFloat(item.outstandingAmount))}
                   </Text>
                   <Text style={[styles.remainingLabel, { color: colors.textMuted }]}>remaining</Text>
                 </View>
@@ -211,7 +212,7 @@ export default function LoansScreen() {
             <View style={styles.progressLabels}>
               <Text style={[styles.progressText, { color: colors.textMuted }]}>{progress}% paid</Text>
               <Text style={[styles.progressText, { color: colors.textMuted }]}>
-                EMI: {formatCurrency(parseFloat(item.emiAmount || '0'))}
+                EMI: {hideBalances ? '****' : formatCurrency(parseFloat(item.emiAmount || '0'))}
               </Text>
             </View>
           </TouchableOpacity>
@@ -231,9 +232,15 @@ export default function LoansScreen() {
             <View style={styles.summaryTextContainer}>
               <Text style={styles.summaryLabel}>Total Outstanding</Text>
               <Text style={styles.summaryAmount}>
-                {formatCurrency(loanSummary.totalOutstanding)}
+                {hideBalances ? '****' : formatCurrency(loanSummary.totalOutstanding)}
               </Text>
             </View>
+            <TouchableOpacity
+              style={styles.hideToggle}
+              onPress={() => setHideBalances(!hideBalances)}
+            >
+              <Ionicons name={hideBalances ? 'eye-off' : 'eye'} size={20} color="#fff" />
+            </TouchableOpacity>
           </View>
           <View style={styles.summaryStats}>
             <View style={styles.summaryStat}>
@@ -242,7 +249,9 @@ export default function LoansScreen() {
             </View>
             <View style={styles.summaryStat}>
               <Text style={styles.summaryStatLabel}>EMI This Month</Text>
-              <Text style={styles.summaryStatValue}>{formatCurrency(loanSummary.totalEmiThisMonth)}</Text>
+              <Text style={styles.summaryStatValue}>
+                {hideBalances ? '****' : formatCurrency(loanSummary.totalEmiThisMonth)}
+              </Text>
             </View>
           </View>
           {loanSummary.nextEmiDue && (
@@ -364,6 +373,14 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hideToggle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },

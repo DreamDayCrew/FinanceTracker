@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -8,7 +8,7 @@ import Toast from 'react-native-toast-message';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { api } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
-import type { Loan, LoanInstallment } from '../lib/types';
+import type { Loan, LoanInstallment, LoanTerm, LoanPayment } from '../lib/types';
 
 type RouteParams = {
   LoanDetails: {
@@ -26,8 +26,12 @@ export default function LoanDetailsScreen() {
   const queryClient = useQueryClient();
   const { loanId } = route.params;
 
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'paid'>('upcoming');
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'paid' | 'terms' | 'payments'>('upcoming');
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [addTermModalVisible, setAddTermModalVisible] = useState(false);
+  const [addPaymentModalVisible, setAddPaymentModalVisible] = useState(false);
+  const [newTerm, setNewTerm] = useState({ interestRate: '', tenureMonths: '', emiAmount: '', reason: '' });
+  const [newPayment, setNewPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
 
   const { data: loan, isLoading } = useQuery<Loan>({
     queryKey: ['loan', loanId],
@@ -37,6 +41,18 @@ export default function LoanDetailsScreen() {
   const { data: installments = [] } = useQuery<LoanInstallment[]>({
     queryKey: ['loan-installments', loanId],
     queryFn: () => api.getLoanInstallments(loanId),
+    enabled: !!loan,
+  });
+
+  const { data: terms = [] } = useQuery<LoanTerm[]>({
+    queryKey: ['loan-terms', loanId],
+    queryFn: () => api.getLoanTerms(loanId),
+    enabled: !!loan,
+  });
+
+  const { data: payments = [] } = useQuery<LoanPayment[]>({
+    queryKey: ['loan-payments', loanId],
+    queryFn: () => api.getLoanPayments(loanId),
     enabled: !!loan,
   });
 
@@ -87,6 +103,80 @@ export default function LoanDetailsScreen() {
         type: 'error',
         text1: 'Payment Failed',
         text2: error.message || 'Could not mark as paid',
+        position: 'bottom',
+      });
+    },
+  });
+
+  const addTermMutation = useMutation({
+    mutationFn: async (data: { interestRate: string; tenureMonths: string; emiAmount: string; reason: string }) => {
+      return api.createLoanTerm(loanId, {
+        loanId,
+        effectiveFrom: new Date().toISOString().split('T')[0],
+        interestRate: data.interestRate,
+        tenureMonths: parseInt(data.tenureMonths),
+        emiAmount: data.emiAmount,
+        outstandingAtChange: loan?.outstandingAmount || '0',
+        reason: data.reason || undefined,
+        notes: undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loan-terms', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      setAddTermModalVisible(false);
+      setNewTerm({ interestRate: '', tenureMonths: '', emiAmount: '', reason: '' });
+      Toast.show({
+        type: 'success',
+        text1: 'Term Added',
+        text2: 'New loan term has been recorded',
+        position: 'bottom',
+      });
+    },
+    onError: (error: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Failed',
+        text2: error.message || 'Could not add term',
+        position: 'bottom',
+      });
+    },
+  });
+
+  const addPaymentMutation = useMutation({
+    mutationFn: async (data: { amount: string; principalPaid: string; interestPaid: string; paymentType: string; notes: string }) => {
+      return api.createLoanPayment(loanId, {
+        loanId,
+        paymentDate: new Date().toISOString().split('T')[0],
+        amount: data.amount,
+        principalPaid: data.principalPaid || '0',
+        interestPaid: data.interestPaid || '0',
+        paymentType: data.paymentType as 'emi' | 'prepayment' | 'partial',
+        notes: data.notes || undefined,
+        installmentId: undefined,
+        accountId: undefined,
+        transactionId: undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loans'] });
+      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      setAddPaymentModalVisible(false);
+      setNewPayment({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi', notes: '' });
+      Toast.show({
+        type: 'success',
+        text1: 'Payment Recorded',
+        text2: 'Payment has been added to history',
+        position: 'bottom',
+      });
+    },
+    onError: (error: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Failed',
+        text2: error.message || 'Could not record payment',
         position: 'bottom',
       });
     },
@@ -207,7 +297,12 @@ export default function LoanDetailsScreen() {
         )}
 
         {/* Tabs */}
-        <View style={styles.tabsContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          style={styles.tabsScrollView}
+          contentContainerStyle={styles.tabsContainer}
+        >
           <TouchableOpacity
             style={[
               styles.tab,
@@ -230,91 +325,232 @@ export default function LoanDetailsScreen() {
               Paid
             </Text>
           </TouchableOpacity>
-        </View>
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              activeTab === 'terms' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
+            ]}
+            onPress={() => setActiveTab('terms')}
+          >
+            <Text style={[styles.tabText, { color: activeTab === 'terms' ? colors.primary : colors.textMuted }]}>
+              Terms
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              activeTab === 'payments' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
+            ]}
+            onPress={() => setActiveTab('payments')}
+          >
+            <Text style={[styles.tabText, { color: activeTab === 'payments' ? colors.primary : colors.textMuted }]}>
+              Payments
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
 
         {/* Tab Content */}
         <View style={styles.tabContent}>
-          {activeTab === 'upcoming' ? (
-            upcomingInstallments.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
-                <Text style={[styles.emptyText, { color: colors.textMuted }]}>No upcoming installments</Text>
-              </View>
-            ) : (
-              upcomingInstallments.map((installment) => {
-                const isPending = new Date(installment.dueDate) < new Date();
-                return (
+          {activeTab === 'upcoming' && (
+            <>
+              {upcomingInstallments.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>No upcoming installments</Text>
+                </View>
+              ) : (
+                upcomingInstallments.map((installment) => {
+                  const isPending = new Date(installment.dueDate) < new Date();
+                  return (
+                    <View
+                      key={installment.id}
+                      style={[
+                        styles.installmentCard,
+                        { backgroundColor: isPending ? colors.danger + '20' : colors.card }
+                      ]}
+                    >
+                      <View style={styles.installmentLeft}>
+                        <Ionicons
+                          name={isPending ? 'alert-circle' : 'time'}
+                          size={20}
+                          color={isPending ? colors.danger : colors.primary}
+                        />
+                        <View style={styles.installmentInfo}>
+                          <Text style={[styles.installmentNumber, { color: colors.text }]}>
+                            EMI #{installment.installmentNumber}
+                          </Text>
+                          <Text style={[styles.installmentDate, { color: colors.textMuted }]}>
+                            {formatDate(installment.dueDate)}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.installmentRight}>
+                        <View style={styles.installmentAmounts}>
+                          <Text style={[styles.installmentAmount, { color: colors.text }]}>
+                            {formatCurrency(parseFloat(installment.emiAmount))}
+                          </Text>
+                          <Text style={[styles.installmentBreakdown, { color: colors.textMuted }]}>
+                            P: {formatCurrency(parseFloat(installment.principalComponent || '0'))} | 
+                            I: {formatCurrency(parseFloat(installment.interestComponent || '0'))}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.payButton, { backgroundColor: colors.primary }]}
+                          onPress={() => markPaidMutation.mutate({ installmentId: installment.id, amount: installment.emiAmount })}
+                          disabled={markPaidMutation.isPending}
+                        >
+                          <Text style={styles.payButtonText}>Pay</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </>
+          )}
+
+          {activeTab === 'paid' && (
+            <>
+              {paidInstallments.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>No paid installments yet</Text>
+                </View>
+              ) : (
+                paidInstallments.map((installment) => (
                   <View
                     key={installment.id}
-                    style={[
-                      styles.installmentCard,
-                      { backgroundColor: isPending ? colors.danger + '20' : colors.card }
-                    ]}
+                    style={[styles.installmentCard, { backgroundColor: colors.primary + '20' }]}
                   >
                     <View style={styles.installmentLeft}>
-                      <Ionicons
-                        name={isPending ? 'alert-circle' : 'time'}
-                        size={20}
-                        color={isPending ? colors.danger : colors.primary}
-                      />
+                      <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
                       <View style={styles.installmentInfo}>
                         <Text style={[styles.installmentNumber, { color: colors.text }]}>
                           EMI #{installment.installmentNumber}
                         </Text>
                         <Text style={[styles.installmentDate, { color: colors.textMuted }]}>
-                          {formatDate(installment.dueDate)}
+                          Paid on {formatDate(installment.paidDate || installment.dueDate)}
                         </Text>
                       </View>
                     </View>
-                    <View style={styles.installmentRight}>
-                      <View style={styles.installmentAmounts}>
-                        <Text style={[styles.installmentAmount, { color: colors.text }]}>
-                          {formatCurrency(parseFloat(installment.emiAmount))}
-                        </Text>
-                        <Text style={[styles.installmentBreakdown, { color: colors.textMuted }]}>
-                          P: {formatCurrency(parseFloat(installment.principalComponent || '0'))} | 
-                          I: {formatCurrency(parseFloat(installment.interestComponent || '0'))}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        style={[styles.payButton, { backgroundColor: colors.primary }]}
-                        onPress={() => markPaidMutation.mutate({ installmentId: installment.id, amount: installment.emiAmount })}
-                        disabled={markPaidMutation.isPending}
-                      >
-                        <Text style={styles.payButtonText}>Pay</Text>
-                      </TouchableOpacity>
-                    </View>
+                    <Text style={[styles.installmentAmount, { color: colors.text }]}>
+                      {formatCurrency(parseFloat(installment.paidAmount || installment.emiAmount))}
+                    </Text>
                   </View>
-                );
-              })
-            )
-          ) : (
-            paidInstallments.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
-                <Text style={[styles.emptyText, { color: colors.textMuted }]}>No paid installments yet</Text>
-              </View>
-            ) : (
-              paidInstallments.map((installment) => (
-                <View
-                  key={installment.id}
-                  style={[styles.installmentCard, { backgroundColor: colors.primary + '20' }]}
-                >
-                  <View style={styles.installmentLeft}>
-                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-                    <View style={styles.installmentInfo}>
-                      <Text style={[styles.installmentNumber, { color: colors.text }]}>
-                        EMI #{installment.installmentNumber}
-                      </Text>
-                      <Text style={[styles.installmentDate, { color: colors.textMuted }]}>
-                        Paid on {formatDate(installment.paidDate || installment.dueDate)}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.installmentAmount, { color: colors.text }]}>
-                    {formatCurrency(parseFloat(installment.paidAmount || installment.emiAmount))}
-                  </Text>
+                ))
+              )}
+            </>
+          )}
+
+          {activeTab === 'terms' && (
+            <>
+              <TouchableOpacity
+                style={[styles.addRowButton, { backgroundColor: colors.primary }]}
+                onPress={() => setAddTermModalVisible(true)}
+              >
+                <Ionicons name="add" size={18} color="#fff" />
+                <Text style={styles.addRowButtonText}>Record Term Change</Text>
+              </TouchableOpacity>
+              {terms.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>No term changes recorded</Text>
                 </View>
-              ))
-            )
+              ) : (
+                terms.slice().reverse().map((term, index) => (
+                  <View
+                    key={term.id}
+                    style={[styles.termCard, { backgroundColor: index === 0 ? colors.primary + '20' : colors.card }]}
+                  >
+                    <View style={styles.termHeader}>
+                      <View style={[styles.termIcon, { backgroundColor: index === 0 ? colors.primary : colors.textMuted }]}>
+                        <Ionicons name="document-text" size={16} color="#fff" />
+                      </View>
+                      <View style={styles.termInfo}>
+                        <Text style={[styles.termLabel, { color: colors.text }]}>
+                          {index === 0 ? 'Current Term' : `Term ${terms.length - index}`}
+                        </Text>
+                        <Text style={[styles.termDate, { color: colors.textMuted }]}>
+                          From {formatDate(term.effectiveFrom)}
+                          {term.effectiveTo && ` to ${formatDate(term.effectiveTo)}`}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.termDetails}>
+                      <View style={styles.termStat}>
+                        <Text style={[styles.termStatLabel, { color: colors.textMuted }]}>Rate</Text>
+                        <Text style={[styles.termStatValue, { color: colors.text }]}>{term.interestRate}%</Text>
+                      </View>
+                      <View style={styles.termStat}>
+                        <Text style={[styles.termStatLabel, { color: colors.textMuted }]}>Tenure</Text>
+                        <Text style={[styles.termStatValue, { color: colors.text }]}>{term.tenureMonths} mo</Text>
+                      </View>
+                      <View style={styles.termStat}>
+                        <Text style={[styles.termStatLabel, { color: colors.textMuted }]}>EMI</Text>
+                        <Text style={[styles.termStatValue, { color: colors.text }]}>{formatCurrency(parseFloat(term.emiAmount))}</Text>
+                      </View>
+                    </View>
+                    {term.reason && (
+                      <Text style={[styles.termReason, { color: colors.textMuted }]}>
+                        Reason: {term.reason}
+                      </Text>
+                    )}
+                  </View>
+                ))
+              )}
+            </>
+          )}
+
+          {activeTab === 'payments' && (
+            <>
+              <TouchableOpacity
+                style={[styles.addRowButton, { backgroundColor: colors.primary }]}
+                onPress={() => setAddPaymentModalVisible(true)}
+              >
+                <Ionicons name="add" size={18} color="#fff" />
+                <Text style={styles.addRowButtonText}>Record Payment</Text>
+              </TouchableOpacity>
+              {payments.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>No payments recorded</Text>
+                </View>
+              ) : (
+                payments.slice().reverse().map((payment) => (
+                  <View
+                    key={payment.id}
+                    style={[styles.paymentCard, { backgroundColor: colors.card }]}
+                  >
+                    <View style={styles.paymentHeader}>
+                      <View style={[styles.paymentIcon, { backgroundColor: payment.paymentType === 'prepayment' ? colors.warning : colors.primary }]}>
+                        <Ionicons 
+                          name={payment.paymentType === 'prepayment' ? 'flash' : payment.paymentType === 'partial' ? 'pie-chart' : 'wallet'} 
+                          size={16} 
+                          color="#fff" 
+                        />
+                      </View>
+                      <View style={styles.paymentInfo}>
+                        <Text style={[styles.paymentType, { color: colors.text }]}>
+                          {payment.paymentType === 'emi' ? 'EMI Payment' : payment.paymentType === 'prepayment' ? 'Prepayment' : 'Partial Payment'}
+                        </Text>
+                        <Text style={[styles.paymentDate, { color: colors.textMuted }]}>
+                          {formatDate(payment.paymentDate)}
+                        </Text>
+                      </View>
+                      <Text style={[styles.paymentAmount, { color: colors.text }]}>
+                        {formatCurrency(parseFloat(payment.amount))}
+                      </Text>
+                    </View>
+                    <View style={styles.paymentBreakdown}>
+                      <Text style={[styles.paymentBreakdownText, { color: colors.textMuted }]}>
+                        Principal: {formatCurrency(parseFloat(payment.principalPaid || '0'))} | Interest: {formatCurrency(parseFloat(payment.interestPaid || '0'))}
+                      </Text>
+                    </View>
+                    {payment.notes && (
+                      <Text style={[styles.paymentNotes, { color: colors.textMuted }]}>
+                        {payment.notes}
+                      </Text>
+                    )}
+                  </View>
+                ))
+              )}
+            </>
           )}
         </View>
 
@@ -363,6 +599,195 @@ export default function LoanDetailsScreen() {
                 onPress={confirmDelete}
               >
                 <Text style={styles.confirmButtonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Term Modal */}
+      <Modal
+        visible={addTermModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAddTermModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
+            <Text style={[styles.formModalTitle, { color: colors.text }]}>Record Term Change</Text>
+            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
+              Record a change in interest rate, tenure, or EMI
+            </Text>
+            
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Interest Rate (%)</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., 8.5"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                value={newTerm.interestRate}
+                onChangeText={(text) => setNewTerm({ ...newTerm, interestRate: text })}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Tenure (months)</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., 240"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="number-pad"
+                value={newTerm.tenureMonths}
+                onChangeText={(text) => setNewTerm({ ...newTerm, tenureMonths: text })}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>New EMI Amount</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., 25000"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                value={newTerm.emiAmount}
+                onChangeText={(text) => setNewTerm({ ...newTerm, emiAmount: text })}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Reason (optional)</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., Rate revision by bank"
+                placeholderTextColor={colors.textMuted}
+                value={newTerm.reason}
+                onChangeText={(text) => setNewTerm({ ...newTerm, reason: text })}
+              />
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
+                onPress={() => setAddTermModalVisible(false)}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.primary }]}
+                onPress={() => addTermMutation.mutate(newTerm)}
+                disabled={addTermMutation.isPending || !newTerm.interestRate || !newTerm.tenureMonths || !newTerm.emiAmount}
+              >
+                {addTermMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Payment Modal */}
+      <Modal
+        visible={addPaymentModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAddPaymentModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
+            <Text style={[styles.formModalTitle, { color: colors.text }]}>Record Payment</Text>
+            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
+              Record a payment outside of the regular EMI schedule
+            </Text>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Payment Type</Text>
+              <View style={styles.paymentTypeRow}>
+                {(['emi', 'prepayment', 'partial'] as const).map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.paymentTypeButton,
+                      { backgroundColor: newPayment.paymentType === type ? colors.primary : colors.background, borderColor: colors.border }
+                    ]}
+                    onPress={() => setNewPayment({ ...newPayment, paymentType: type })}
+                  >
+                    <Text style={{ color: newPayment.paymentType === type ? '#fff' : colors.text, fontSize: 12 }}>
+                      {type === 'emi' ? 'EMI' : type === 'prepayment' ? 'Prepayment' : 'Partial'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Total Amount</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., 25000"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                value={newPayment.amount}
+                onChangeText={(text) => setNewPayment({ ...newPayment, amount: text })}
+              />
+            </View>
+
+            <View style={styles.formRow}>
+              <View style={[styles.formGroup, { flex: 1 }]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Principal</Text>
+                <TextInput
+                  style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={newPayment.principalPaid}
+                  onChangeText={(text) => setNewPayment({ ...newPayment, principalPaid: text })}
+                />
+              </View>
+              <View style={[styles.formGroup, { flex: 1 }]}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Interest</Text>
+                <TextInput
+                  style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={newPayment.interestPaid}
+                  onChangeText={(text) => setNewPayment({ ...newPayment, interestPaid: text })}
+                />
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Notes (optional)</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., Extra payment to reduce tenure"
+                placeholderTextColor={colors.textMuted}
+                value={newPayment.notes}
+                onChangeText={(text) => setNewPayment({ ...newPayment, notes: text })}
+              />
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
+                onPress={() => setAddPaymentModalVisible(false)}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.primary }]}
+                onPress={() => addPaymentMutation.mutate(newPayment)}
+                disabled={addPaymentMutation.isPending || !newPayment.amount}
+              >
+                {addPaymentMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Save</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -489,14 +914,11 @@ const styles = StyleSheet.create({
   },
   tabsContainer: {
     flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    paddingHorizontal: 0,
   },
   tab: {
-    flex: 1,
     paddingVertical: 12,
+    paddingHorizontal: 16,
     alignItems: 'center',
   },
   tabText: {
@@ -638,5 +1060,165 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  tabsScrollView: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  addRowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    gap: 6,
+  },
+  addRowButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  termCard: {
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  termHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  termIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  termInfo: {
+    flex: 1,
+  },
+  termLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  termDate: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  termDetails: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  termStat: {
+    flex: 1,
+  },
+  termStatLabel: {
+    fontSize: 10,
+  },
+  termStatValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  termReason: {
+    fontSize: 11,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  paymentCard: {
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  paymentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  paymentIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  paymentInfo: {
+    flex: 1,
+  },
+  paymentType: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  paymentDate: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  paymentAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  paymentBreakdown: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+  },
+  paymentBreakdownText: {
+    fontSize: 11,
+  },
+  paymentNotes: {
+    fontSize: 11,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
+  formModalContent: {
+    width: '90%',
+    padding: 20,
+    borderRadius: 16,
+    maxHeight: '80%',
+  },
+  formModalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  formModalSubtitle: {
+    fontSize: 13,
+    marginBottom: 16,
+  },
+  formGroup: {
+    marginBottom: 12,
+  },
+  formLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 6,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  paymentTypeRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  paymentTypeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
   },
 });
