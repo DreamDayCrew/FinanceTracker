@@ -190,6 +190,17 @@ export const api = {
     apiRequest<void>(`/api/loans/${id}`, { method: 'DELETE' }),
   precloseLoan: (id: number, data: { closureAmount: string; closureDate: string; accountId?: number; createTransaction?: boolean }) =>
     apiRequest<Loan>(`/api/loans/${id}/preclose`, { method: 'POST', body: JSON.stringify(data) }),
+  topupLoan: (id: number, data: { 
+    topupAmount: string; 
+    disbursementDate?: string; 
+    newEmiAmount?: string; 
+    additionalTenure?: number;
+    interestRate?: string;
+    accountId?: number; 
+    createTransaction?: boolean;
+    notes?: string;
+  }) =>
+    apiRequest<Loan>(`/api/loans/${id}/topup`, { method: 'POST', body: JSON.stringify(data) }),
   getLoanInstallments: (loanId: number) => 
     apiRequest<LoanInstallment[]>(`/api/loans/${loanId}/installments`),
   updateInstallment: (loanId: number, installmentId: number, data: Partial<LoanInstallment>) => 

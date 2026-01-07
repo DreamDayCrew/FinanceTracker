@@ -1692,6 +1692,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Top-up a loan (add additional principal)
+  app.post("/api/loans/:id/topup", async (req, res) => {
+    try {
+      const loanId = parseInt(req.params.id);
+      const { 
+        topupAmount, 
+        disbursementDate, 
+        newEmiAmount, 
+        additionalTenure,
+        interestRate,
+        accountId, 
+        createTransaction,
+        notes 
+      } = req.body;
+
+      if (!topupAmount || parseFloat(topupAmount) <= 0) {
+        return res.status(400).json({ error: "Valid top-up amount is required" });
+      }
+
+      // Get the loan
+      const loan = await storage.getLoan(loanId);
+      if (!loan) {
+        return res.status(404).json({ error: "Loan not found" });
+      }
+
+      if (loan.status !== 'active') {
+        return res.status(400).json({ error: "Only active loans can be topped up" });
+      }
+
+      const topupAmountNum = parseFloat(topupAmount);
+      const currentOutstanding = parseFloat(loan.outstandingAmount);
+      const currentPrincipal = parseFloat(loan.principalAmount);
+      const newOutstanding = currentOutstanding + topupAmountNum;
+      const newPrincipal = currentPrincipal + topupAmountNum;
+      
+      // Calculate new tenure if additional tenure is provided
+      const currentTenure = loan.tenure || loan.tenureMonths || 0;
+      const newTenure = additionalTenure ? currentTenure + parseInt(additionalTenure) : currentTenure;
+      
+      // Use new EMI if provided, otherwise keep existing
+      const effectiveEmi = newEmiAmount || loan.emiAmount;
+      const effectiveRate = interestRate || loan.interestRate;
+
+      // Create a loan term record to track the top-up
+      await storage.createLoanTerm({
+        loanId,
+        effectiveFrom: disbursementDate || new Date().toISOString().split('T')[0],
+        interestRate: effectiveRate,
+        tenureMonths: newTenure,
+        emiAmount: effectiveEmi,
+        outstandingAtChange: String(newOutstanding),
+        reason: `Top-up of ${topupAmount}`,
+        notes: notes || `Loan top-up: Added principal ${topupAmount}`,
+      });
+
+      // Update the loan with new amounts
+      const updatedLoan = await storage.updateLoan(loanId, {
+        principalAmount: String(newPrincipal),
+        outstandingAmount: String(newOutstanding),
+        tenure: newTenure,
+        emiAmount: effectiveEmi,
+        interestRate: effectiveRate,
+      });
+
+      // Optionally credit the top-up amount to account
+      if (createTransaction && accountId) {
+        // Get or create "Loan" category
+        const allCategories = await storage.getAllCategories();
+        let loanCategory = allCategories.find((c: { name: string }) => c.name === 'Loan' || c.name === 'Loan Disbursement');
+        if (!loanCategory) {
+          loanCategory = await storage.createCategory({
+            name: 'Loan Disbursement',
+            type: 'income',
+            icon: 'cash',
+            color: '#10b981',
+          });
+        }
+
+        await storage.createTransaction({
+          userId: 1,
+          accountId,
+          categoryId: loanCategory.id,
+          type: 'credit',
+          amount: topupAmount,
+          merchant: `${loan.name} - Top-Up`,
+          description: `Loan top-up disbursement`,
+          transactionDate: disbursementDate || new Date().toISOString().split('T')[0],
+        });
+
+        // Update account balance (credit = add money)
+        const account = await storage.getAccount(accountId);
+        if (account && account.balance) {
+          const newBalance = parseFloat(account.balance) + topupAmountNum;
+          await storage.updateAccount(accountId, { balance: String(newBalance) });
+        }
+      }
+
+      // Regenerate future installments
+      await storage.generateLoanInstallments(loanId);
+
+      res.json(updatedLoan);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to top-up loan" });
+    }
+  });
+
   app.post("/api/loans/:id/generate-schedule", async (req, res) => {
     try {
       const installments = await storage.generateLoanInstallments(parseInt(req.params.id));

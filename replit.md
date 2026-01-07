@@ -1,253 +1,8 @@
 # Personal Finance Tracker - AI-Powered PWA
 
-A mobile-first Progressive Web App for personal finance management built with React, Express, and PostgreSQL. Features AI-powered SMS parsing for automatic transaction detection, multiple account management, budget tracking, and scheduled payment reminders.
+## Overview
 
-## Project Overview
-
-Personal Finance Tracker is a comprehensive expense tracking application designed specifically for Android devices with a modern, intuitive interface. It helps users track transactions, manage multiple bank accounts and credit cards, set budgets per category, schedule payment reminders, and gain insights into their spending patterns using AI-powered categorization.
-
-## Key Features
-
-### 1. Multi-Account Management
-- Track multiple bank accounts and credit cards
-- Display current balance for bank accounts
-- Display credit limit and available credit for credit cards
-- Account-specific transaction filtering
-
-### 2. Transaction Management
-- Add income and expense transactions
-- AI-powered automatic category suggestions using OpenAI
-- SMS parsing for automatic transaction detection
-- View all transactions with search, category filter, and date range
-- Account-linked transactions for accurate balance tracking
-
-### 3. Budget Tracking
-- Set monthly budgets per category
-- Visual progress indicators showing spending vs budget
-- Color-coded alerts (green < 80%, yellow 80-100%, red > 100%)
-- Track budget usage across all expense categories
-- Month-specific budget management
-
-### 4. Scheduled Payments
-- Create recurring payment reminders (rent, maid salary, subscriptions)
-- Set due dates (day of month)
-- Active/inactive status toggle
-- Visual alerts for upcoming and past-due payments
-- Total monthly recurring costs summary
-
-### 5. Dashboard & Insights
-- Total spent today and this month
-- Monthly spending graph with category breakdown
-- Budget usage progress for top categories
-- Next upcoming scheduled payment
-- Recent transactions preview (last 5)
-
-### 6. Security Features
-- 4-digit PIN lock with setup and remove
-- Biometric authentication toggle (fingerprint)
-- Settings persistence per user
-
-### 7. Data Export
-- Export transactions to CSV format
-- Export transactions to JSON format
-- Downloadable reports for backup and analysis
-
-### 8. Insurance Tracking
-- Track multiple insurance policies (health, life, vehicle, home, term, travel)
-- Support for 4 payment frequencies (annual, semi-annual, quarterly, monthly)
-- Configurable payment terms per period (e.g., pay annual premium in 2 installments)
-- Auto-generates premium installments based on policy period
-- Mark premiums as paid with optional transaction creation
-- Track premium payment history and upcoming dues
-- Provider and policy number tracking
-- Coverage amount (sum insured) tracking
-
-## Technical Stack
-
-### Web Frontend (React PWA)
-- **React 18** with TypeScript
-- **Wouter** for lightweight routing
-- **TanStack Query (React Query v5)** for data fetching and caching
-- **Tailwind CSS** with custom design system
-- **Shadcn UI** components library
-- **Lucide React** icons
-- **React Hook Form** with Zod validation
-- **Mobile-first responsive design**
-- **Dark/Light theme support**
-
-### Mobile App (React Native)
-- **React Native** with Expo SDK 50
-- **React Navigation** (bottom tabs + stack)
-- **TanStack Query** for data fetching
-- **TypeScript** for type safety
-- Located in `mobile/` folder
-- See `mobile/README.md` for setup instructions
-
-### Backend
-- **Express.js** server
-- **PostgreSQL** database with Drizzle ORM
-- **OpenAI API** integration for category suggestions and SMS parsing
-- **Zod** for request validation
-- **TypeScript** for type safety
-
-### Database
-- **PostgreSQL** with Neon-compatible driver
-- **Drizzle ORM** for type-safe queries
-- Automatic default categories seeding
-
-### Design System
-- Green primary color (#16a34a)
-- Mobile-first approach with safe-area support
-- Bottom navigation with 4 main sections
-- Floating Action Button for quick transaction entry
-- Indian Rupee (₹) currency formatting
-
-## Project Structure
-
-```
-├── client/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── ui/              # Shadcn UI components
-│   │   │   ├── bottom-nav.tsx   # Bottom navigation bar
-│   │   │   └── fab-button.tsx   # Floating action button
-│   │   ├── pages/
-│   │   │   ├── dashboard.tsx    # Main dashboard with analytics
-│   │   │   ├── accounts.tsx     # Bank accounts & credit cards
-│   │   │   ├── transactions.tsx # Transaction list with filters
-│   │   │   ├── add-transaction.tsx # Add transaction form
-│   │   │   ├── budgets.tsx      # Budget management
-│   │   │   ├── scheduled-payments.tsx # Scheduled payments
-│   │   │   ├── settings.tsx     # Settings (theme, PIN, export)
-│   │   │   └── more.tsx         # More options menu
-│   │   ├── lib/
-│   │   │   └── queryClient.ts   # TanStack Query setup
-│   │   ├── App.tsx              # Main app with routing
-│   │   └── index.css            # Global styles with theme
-│   └── index.html
-├── server/
-│   ├── db.ts                    # Database connection
-│   ├── routes.ts                # API endpoints
-│   ├── storage.ts               # DatabaseStorage with all CRUD
-│   ├── openai.ts                # AI categorization & SMS parsing
-│   └── index.ts                 # Express server
-├── shared/
-│   └── schema.ts                # Drizzle schema & Zod types
-└── design_guidelines.md         # Design system documentation
-```
-
-## API Endpoints
-
-### Dashboard
-- `GET /api/dashboard` - Get analytics (spending today, month, categories, budgets, upcoming payments)
-
-### Accounts
-- `GET /api/accounts` - Get all accounts
-- `POST /api/accounts` - Create account
-- `PATCH /api/accounts/:id` - Update account
-- `DELETE /api/accounts/:id` - Delete account
-
-### Transactions
-- `GET /api/transactions` - Get all transactions with relations
-- `POST /api/transactions` - Create transaction
-- `DELETE /api/transactions/:id` - Delete transaction
-
-### Categories
-- `GET /api/categories` - Get all categories
-- `POST /api/categories` - Create category
-
-### Budgets
-- `GET /api/budgets?month=X&year=Y` - Get budgets for month/year
-- `POST /api/budgets` - Create budget
-- `DELETE /api/budgets/:id` - Delete budget
-
-### Scheduled Payments
-- `GET /api/scheduled-payments` - Get all scheduled payments
-- `POST /api/scheduled-payments` - Create scheduled payment
-- `PATCH /api/scheduled-payments/:id` - Update payment status
-- `DELETE /api/scheduled-payments/:id` - Delete payment
-
-### Loans
-- `GET /api/loans` - Get all loans
-- `GET /api/loans/:id` - Get single loan
-- `GET /api/loans/:id/details` - Get loan with terms, installments, and payments
-- `POST /api/loans` - Create loan (auto-generates installments)
-- `PATCH /api/loans/:id` - Update loan
-- `DELETE /api/loans/:id` - Delete loan
-
-### Loan Installments
-- `GET /api/loans/:loanId/installments` - Get all installments for a loan
-- `PATCH /api/loans/:loanId/installments/:id` - Update installment
-- `POST /api/loans/:loanId/installments/:id/pay` - Mark installment as paid
-
-### Loan Terms (track rate/tenure changes)
-- `GET /api/loans/:loanId/terms` - Get loan term history
-- `POST /api/loans/:loanId/terms` - Create new term (closes previous)
-
-### Loan Payments
-- `GET /api/loans/:loanId/payments` - Get payment history
-- `POST /api/loans/:loanId/payments` - Record payment (emi/prepayment/partial)
-
-### User Settings
-- `GET /api/user` - Get current user
-- `PATCH /api/user` - Update user settings
-- `POST /api/user/set-pin` - Set 4-digit PIN
-- `POST /api/user/reset-pin` - Remove PIN
-
-### SMS & AI
-- `POST /api/sms/parse` - Parse SMS for transaction data
-- `POST /api/transactions/suggest-category` - Get AI category suggestion
-
-### Export
-- `POST /api/export` - Export data (format: csv or json)
-
-## Database Schema
-
-### users
-- id, email (optional), pinHash (optional), biometricEnabled, theme, createdAt
-
-### accounts
-- id, userId, name, type (bank_account/credit_card), balance, creditLimit, accountNumber (last 4), createdAt
-
-### categories
-- id, userId, name, type (income/expense), icon, color, createdAt
-
-### transactions
-- id, userId, accountId, categoryId, type (credit/debit), amount, merchant, description, transactionDate, smsHash, createdAt
-
-### budgets
-- id, userId, categoryId, amount, month, year, createdAt
-
-### scheduled_payments
-- id, userId, categoryId, name, amount, dueDate (1-31), notes, status (active/inactive), createdAt
-
-### sms_logs
-- id, userId, rawMessage, parsedData, transactionId, processedAt
-
-### loans
-- id, userId, name, type (home_loan/personal_loan/credit_card_loan/item_emi), principalAmount, outstandingAmount, interestRate, tenure, emiAmount, emiDay, startDate, endDate, accountId, lenderName, loanAccountNumber, status (active/closed/defaulted), notes, createdAt
-
-### loan_terms
-- id, loanId, effectiveFrom, effectiveTo, interestRate, tenureMonths, emiAmount, outstandingAtChange, reason, notes, createdAt
-
-### loan_payments
-- id, loanId, installmentId, paymentDate, amount, principalPaid, interestPaid, paymentType (emi/prepayment/partial), accountId, transactionId, notes, createdAt
-
-### loan_installments
-- id, loanId, installmentNumber, dueDate, emiAmount, principalComponent, interestComponent, status (pending/paid/overdue/partially_paid), paidDate, paidAmount, transactionId, notes, createdAt
-
-## Default Categories
-
-Expense categories: Food & Dining, Groceries, Transport, Shopping, Entertainment, Bills & Utilities, Health, Education, Travel, Personal Care, Other
-
-Income categories: Salary, Investment Returns, Freelance, Gift, Other Income
-
-## Environment Variables
-
-Required secrets:
-- `DATABASE_URL` - PostgreSQL connection string (auto-configured)
-- `OPENAI_API_KEY` - OpenAI API key for AI features
-- `SESSION_SECRET` - Session secret for Express
+The Personal Finance Tracker is an AI-powered Progressive Web App (PWA) designed for Android devices to provide comprehensive personal finance management. Its core purpose is to help users track transactions, manage multiple accounts, set budgets, schedule payments, and gain insights into spending patterns. The application leverages AI for features like SMS parsing for automatic transaction detection and categorization, aiming to simplify financial tracking for the user.
 
 ## User Preferences
 
@@ -256,65 +11,38 @@ Required secrets:
 - Design: Mobile-first with green theme
 - AI Features: Category suggestions and SMS parsing with fallback logic
 
-## Recent Changes
+## System Architecture
 
-- **2026-01**: Loan Pre-Closure Feature
-  - Added POST /api/loans/:id/preclose endpoint for early loan closure
-  - Pre-closure records settlement payment, sets status to 'preclosed', zeros outstanding amount
-  - Cancels all pending installments when loan is pre-closed
-  - Optionally creates transaction and updates account balance
-  - Mobile: Added pre-closure button (visible for active loans) in LoanDetailsScreen
-  - Mobile: Pre-closure modal with settlement amount input and validation
-  - Mobile: Pre-closed banner showing closure date and amount for pre-closed loans
-  - Replaced full-width "Add Loan" button with floating action button (FAB) for UI consistency
+The application is built as a PWA and a React Native mobile app, supported by an Express.js backend and a PostgreSQL database.
 
-- **2026-01**: Insurance Tracking Module
-  - Added complete insurance tracking with support for 6 insurance types
-  - Database: insurances table (policy details) + insurance_premiums table (payment terms)
-  - API endpoints: Full CRUD for insurances and premiums, mark-as-paid functionality
-  - Mobile screens: InsuranceScreen (list), AddInsuranceScreen (add/edit), InsuranceDetailsScreen (view/pay)
-  - Features: configurable payment terms per period, auto-generated installments, premium payment tracking
-  - Integration with accounts for balance updates and optional transaction creation
+**UI/UX Decisions:**
+- **Frontend:** React 18 with TypeScript, Wouter for routing, TanStack Query for data fetching, Tailwind CSS with Shadcn UI components for a custom design system, and Lucide React for icons.
+- **Mobile:** React Native with Expo SDK 50, React Navigation for navigation, and TypeScript.
+- **Design System:** Mobile-first responsive design, green primary color (#16a34a), bottom navigation, Floating Action Button (FAB) for quick actions, and dark/light theme support.
+- **Core Features:**
+    - **Multi-Account Management:** Track bank accounts and credit cards with balance and limit displays.
+    - **Transaction Management:** Add income/expense, AI-powered category suggestions, SMS parsing, search, filter, and account linking.
+    - **Budget Tracking:** Monthly category budgets with visual progress indicators and color-coded alerts.
+    - **Scheduled Payments:** Recurring payment reminders with due dates and status toggles.
+    - **Dashboard & Insights:** Daily/monthly spending summaries, category breakdowns, and upcoming payments.
+    - **Security Features:** 4-digit PIN lock and biometric authentication.
+    - **Data Export:** Transactions exportable to CSV and JSON.
+    - **Insurance Tracking:** Manage multiple insurance policies, track premium payments, and auto-generate installments.
+    - **Loan Management:** Track various loan types, including principal, interest, EMI, and payment history. Supports pre-closure and top-up functionalities.
 
-- **2026-01**: Loan Payments UI Enhancement
-  - Consolidated "Paid" and "Payments" tabs into single "Payments" tab in LoanDetailsScreen
-  - Payments tab now shows: Paid EMIs section + Manual Payments section with section headers
-  - Implemented swipe-to-edit/delete functionality for manual payments using react-native-gesture-handler Swipeable
-  - Added Edit Payment Modal with payment type selector and principal/interest breakdown
-  - Delete payment confirmation dialog with outstanding balance restoration
-  - Backend: Added PATCH /api/loan-payments/:id and DELETE /api/loan-payments/:id endpoints
-  - Outstanding balance automatically restored when payments are deleted (reverses principal reduction)
+**Technical Implementations:**
+- **Frontend:** React Hook Form with Zod validation.
+- **Backend:** Express.js, TypeScript, and Zod for request validation.
+- **Database:** PostgreSQL with Drizzle ORM for type-safe queries, including automatic default category seeding.
 
-- **2026-01**: Loan Terms and Payments Enhancement
-  - Added loan_terms table for tracking interest rate and tenure changes over time
-  - Added loan_payments table for tracking EMI payments, prepayments, and partial payments
-  - Implemented automatic outstanding balance updates when payments are recorded
-  - Only principal component reduces outstanding (not interest)
-  - New terms automatically close previous open term
-  - API validation using Zod schemas for loan terms and payments
+## External Dependencies
 
-- **2024-12**: Complete rebuild with PostgreSQL
-  - Migrated from in-memory to PostgreSQL database
-  - Added multi-account support (bank + credit cards)
-  - Implemented SMS parsing for auto-detection
-  - Added scheduled payments with reminders
-  - Added PIN and biometric security options
-  - Redesigned all pages for mobile-first UX
-  - Added dark/light theme support
-  - Improved dashboard with spending analytics
-
-## Navigation Structure
-
-1. **Dashboard** (/) - Home with spending overview
-2. **Accounts** (/accounts) - Bank accounts & credit cards
-3. **Transactions** (/transactions) - Full transaction list
-4. **FAB** - Quick add transaction
-5. **More** (/more) - Menu with:
-   - Plan Budget (/budgets)
-   - Scheduled Payments (/scheduled-payments)
-   - Savings Goals (/savings-goals)
-   - Salary & Income (/salary)
-   - Loans & EMI (/loans)
-   - Insurance (/insurance)
-   - Settings (/settings)
-   - Export Data
+- **OpenAI API:** Integrated for AI-powered category suggestions and SMS parsing.
+- **PostgreSQL:** Primary database for persistent storage, compatible with Neon.
+- **TanStack Query (React Query v5):** Used for data fetching and caching in both frontend applications.
+- **Shadcn UI:** Component library providing pre-built, accessible UI components.
+- **Lucide React:** Icon library for visual elements.
+- **Wouter:** Lightweight routing library for the React PWA.
+- **React Navigation:** Routing solution for the React Native mobile app.
+- **Expo SDK:** Framework for building universal React Native apps.
+- **react-native-gesture-handler:** Used for swipeable functionality in the mobile app.

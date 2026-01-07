@@ -30,6 +30,7 @@ export default function LoanDetailsScreen() {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'payments' | 'terms'>('upcoming');
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [preclosureModalVisible, setPreclosureModalVisible] = useState(false);
+  const [topupModalVisible, setTopupModalVisible] = useState(false);
   const [addTermModalVisible, setAddTermModalVisible] = useState(false);
   const [addPaymentModalVisible, setAddPaymentModalVisible] = useState(false);
   const [editPaymentModalVisible, setEditPaymentModalVisible] = useState(false);
@@ -39,6 +40,12 @@ export default function LoanDetailsScreen() {
   const [newPayment, setNewPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
   const [editPayment, setEditPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
   const [preclosureAmount, setPreclosureAmount] = useState('');
+  const [topupData, setTopupData] = useState({ 
+    topupAmount: '', 
+    newEmiAmount: '', 
+    additionalTenure: '',
+    notes: '' 
+  });
 
   const { data: loan, isLoading } = useQuery<Loan>({
     queryKey: ['loan', loanId],
@@ -111,6 +118,37 @@ export default function LoanDetailsScreen() {
         type: 'error',
         text1: 'Pre-Closure Failed',
         text2: error.message || 'Could not pre-close loan',
+        position: 'bottom',
+      });
+    },
+  });
+
+  const topupMutation = useMutation({
+    mutationFn: (data: { topupAmount: string; newEmiAmount?: string; additionalTenure?: number; accountId?: number; createTransaction?: boolean; notes?: string }) => 
+      api.topupLoan(loanId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan-installments', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan-terms', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loans'] });
+      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      setTopupModalVisible(false);
+      setTopupData({ topupAmount: '', newEmiAmount: '', additionalTenure: '', notes: '' });
+      Toast.show({
+        type: 'success',
+        text1: 'Loan Topped Up',
+        text2: 'Additional principal has been added to your loan',
+        position: 'bottom',
+      });
+    },
+    onError: (error: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Top-Up Failed',
+        text2: error.message || 'Could not top-up loan',
         position: 'bottom',
       });
     },
@@ -417,24 +455,42 @@ export default function LoanDetailsScreen() {
           </View>
         )}
 
-        {/* Pre-Closure Action */}
+        {/* Loan Actions */}
         {loan.status === 'active' && (
-          <TouchableOpacity
-            style={[styles.preclosureButton, { backgroundColor: colors.card, borderColor: colors.primary }]}
-            onPress={() => {
-              setPreclosureAmount(loan.outstandingAmount);
-              setPreclosureModalVisible(true);
-            }}
-          >
-            <Ionicons name="checkmark-done-circle" size={20} color={colors.primary} />
-            <View style={styles.preclosureButtonContent}>
-              <Text style={[styles.preclosureButtonTitle, { color: colors.text }]}>Pre-Close Loan</Text>
-              <Text style={[styles.preclosureButtonSubtitle, { color: colors.textMuted }]}>
-                Close loan early with settlement amount
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
+          <View style={styles.loanActionsContainer}>
+            {/* Top-Up Action */}
+            <TouchableOpacity
+              style={[styles.loanActionButton, { backgroundColor: colors.card, borderColor: colors.success }]}
+              onPress={() => setTopupModalVisible(true)}
+            >
+              <Ionicons name="add-circle" size={20} color={colors.success} />
+              <View style={styles.preclosureButtonContent}>
+                <Text style={[styles.preclosureButtonTitle, { color: colors.text }]}>Top-Up Loan</Text>
+                <Text style={[styles.preclosureButtonSubtitle, { color: colors.textMuted }]}>
+                  Add more principal to this loan
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {/* Pre-Closure Action */}
+            <TouchableOpacity
+              style={[styles.loanActionButton, { backgroundColor: colors.card, borderColor: colors.primary }]}
+              onPress={() => {
+                setPreclosureAmount(loan.outstandingAmount);
+                setPreclosureModalVisible(true);
+              }}
+            >
+              <Ionicons name="checkmark-done-circle" size={20} color={colors.primary} />
+              <View style={styles.preclosureButtonContent}>
+                <Text style={[styles.preclosureButtonTitle, { color: colors.text }]}>Pre-Close Loan</Text>
+                <Text style={[styles.preclosureButtonSubtitle, { color: colors.textMuted }]}>
+                  Close loan early with settlement amount
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Pre-Closed Badge */}
@@ -861,6 +917,118 @@ export default function LoanDetailsScreen() {
         </View>
       </Modal>
 
+      {/* Top-Up Modal */}
+      <Modal
+        visible={topupModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTopupModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
+            <Ionicons name="add-circle" size={48} color={colors.success} />
+            <Text style={[styles.formModalTitle, { color: colors.text }]}>Top-Up Loan</Text>
+            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
+              Add additional principal to your loan
+            </Text>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Top-Up Amount</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="Enter top-up amount"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                value={topupData.topupAmount}
+                onChangeText={(text) => setTopupData({ ...topupData, topupAmount: text })}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>New EMI Amount (optional)</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="Leave blank to keep current EMI"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                value={topupData.newEmiAmount}
+                onChangeText={(text) => setTopupData({ ...topupData, newEmiAmount: text })}
+              />
+              <Text style={[styles.formHint, { color: colors.textMuted }]}>
+                Current EMI: {formatCurrency(parseFloat(loan?.emiAmount || '0'))}
+              </Text>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Additional Tenure (months, optional)</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="Leave blank to keep current tenure"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="number-pad"
+                value={topupData.additionalTenure}
+                onChangeText={(text) => setTopupData({ ...topupData, additionalTenure: text })}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Notes (optional)</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="Reason for top-up"
+                placeholderTextColor={colors.textMuted}
+                value={topupData.notes}
+                onChangeText={(text) => setTopupData({ ...topupData, notes: text })}
+              />
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
+                onPress={() => {
+                  setTopupModalVisible(false);
+                  setTopupData({ topupAmount: '', newEmiAmount: '', additionalTenure: '', notes: '' });
+                }}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.success }]}
+                onPress={() => {
+                  const amount = parseFloat(topupData.topupAmount);
+                  if (!topupData.topupAmount || isNaN(amount) || amount <= 0) {
+                    Toast.show({
+                      type: 'error',
+                      text1: 'Invalid Amount',
+                      text2: 'Please enter a valid top-up amount',
+                      position: 'bottom',
+                    });
+                    return;
+                  }
+                  topupMutation.mutate({
+                    topupAmount: topupData.topupAmount,
+                    newEmiAmount: topupData.newEmiAmount || undefined,
+                    additionalTenure: topupData.additionalTenure ? parseInt(topupData.additionalTenure) : undefined,
+                    accountId: loan?.accountId || undefined,
+                    createTransaction: !!loan?.accountId,
+                    notes: topupData.notes || undefined,
+                  });
+                }}
+                disabled={topupMutation.isPending || !topupData.topupAmount || parseFloat(topupData.topupAmount) <= 0}
+                accessibilityLabel="Confirm loan top-up"
+                accessibilityRole="button"
+              >
+                {topupMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Confirm Top-Up</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Add Term Modal */}
       <Modal
         visible={addTermModalVisible}
@@ -1278,6 +1446,19 @@ const styles = StyleSheet.create({
   accountNumber: {
     fontSize: 14,
     marginTop: 2,
+  },
+  loanActionsContainer: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    gap: 8,
+  },
+  loanActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
   },
   preclosureButton: {
     flexDirection: 'row',
