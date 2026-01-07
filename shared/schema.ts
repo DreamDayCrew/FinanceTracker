@@ -405,12 +405,16 @@ export const loans = pgTable("loans", {
   principalAmount: decimal("principal_amount", { precision: 14, scale: 2 }).notNull(),
   outstandingAmount: decimal("outstanding_amount", { precision: 14, scale: 2 }).notNull(),
   interestRate: decimal("interest_rate", { precision: 5, scale: 2 }).notNull(), // ROI in percentage
-  tenure: integer("tenure").notNull(), // in months
+  tenure: integer("tenure").notNull(), // in months (original for new loans, remaining for existing)
   emiAmount: decimal("emi_amount", { precision: 12, scale: 2 }),
   emiDay: integer("emi_day"), // day of month when EMI is due (1-31)
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date"),
-  status: varchar("status", { length: 20 }).default("active"), // 'active', 'closed', 'defaulted'
+  status: varchar("status", { length: 20 }).default("active"), // 'active', 'closed', 'defaulted', 'preclosed'
+  isExistingLoan: boolean("is_existing_loan").default(false), // true if tracking an existing loan
+  nextEmiDate: timestamp("next_emi_date"), // for existing loans: when next EMI is due
+  closureDate: timestamp("closure_date"), // pre-closure or completion date
+  closureAmount: decimal("closure_amount", { precision: 14, scale: 2 }), // settlement amount for pre-closure
   createTransaction: boolean("create_transaction").default(false), // create transaction on payment
   affectBalance: boolean("affect_balance").default(false), // affect account balance on payment
   notes: text("notes"),
@@ -440,7 +444,11 @@ export const insertLoanSchema = createInsertSchema(loans).omit({
   emiDay: z.number().min(1).max(31).optional(),
   startDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)),
   endDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
-  status: z.enum(["active", "closed", "defaulted"]).optional(),
+  status: z.enum(["active", "closed", "defaulted", "preclosed"]).optional(),
+  isExistingLoan: z.boolean().optional(),
+  nextEmiDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
+  closureDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
+  closureAmount: z.string().optional(),
   createTransaction: z.boolean().optional(),
   affectBalance: z.boolean().optional(),
 });

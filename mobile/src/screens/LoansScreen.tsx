@@ -355,14 +355,15 @@ export default function LoansScreen() {
         />
       )}
 
-      {/* Add Button */}
+      {/* Floating Add Button */}
       <TouchableOpacity
-        style={[styles.addButton, { backgroundColor: colors.primary }]}
+        style={[styles.fab, { backgroundColor: colors.primary }]}
         onPress={() => navigation.navigate('AddLoan', {})}
         activeOpacity={0.8}
+        accessibilityLabel="Add new loan"
+        accessibilityRole="button"
       >
-        <Ionicons name="add" size={24} color="#fff" />
-        <Text style={styles.addButtonText}>Add Loan</Text>
+        <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
 
       {isLoading && (
@@ -664,27 +665,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
   },
-  addButton: {
+  fab: {
     position: 'absolute',
     bottom: 80,
-    right: 16,
-    left: 16,
-    flexDirection: 'row',
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 14,
-    borderRadius: 12,
-    elevation: 4,
+    elevation: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    gap: 8,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
   },
   impactContainer: {
     flexDirection: 'row',

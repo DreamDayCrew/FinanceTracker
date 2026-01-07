@@ -188,6 +188,8 @@ export const api = {
     apiRequest<Loan>(`/api/loans/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteLoan: (id: number) => 
     apiRequest<void>(`/api/loans/${id}`, { method: 'DELETE' }),
+  precloseLoan: (id: number, data: { closureAmount: string; closureDate: string; accountId?: number; createTransaction?: boolean }) =>
+    apiRequest<Loan>(`/api/loans/${id}/preclose`, { method: 'POST', body: JSON.stringify(data) }),
   getLoanInstallments: (loanId: number) => 
     apiRequest<LoanInstallment[]>(`/api/loans/${loanId}/installments`),
   updateInstallment: (loanId: number, installmentId: number, data: Partial<LoanInstallment>) => 

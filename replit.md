@@ -258,6 +258,16 @@ Required secrets:
 
 ## Recent Changes
 
+- **2026-01**: Loan Pre-Closure Feature
+  - Added POST /api/loans/:id/preclose endpoint for early loan closure
+  - Pre-closure records settlement payment, sets status to 'preclosed', zeros outstanding amount
+  - Cancels all pending installments when loan is pre-closed
+  - Optionally creates transaction and updates account balance
+  - Mobile: Added pre-closure button (visible for active loans) in LoanDetailsScreen
+  - Mobile: Pre-closure modal with settlement amount input and validation
+  - Mobile: Pre-closed banner showing closure date and amount for pre-closed loans
+  - Replaced full-width "Add Loan" button with floating action button (FAB) for UI consistency
+
 - **2026-01**: Insurance Tracking Module
   - Added complete insurance tracking with support for 6 insurance types
   - Database: insurances table (policy details) + insurance_premiums table (payment terms)

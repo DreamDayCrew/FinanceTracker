@@ -29,6 +29,7 @@ export default function LoanDetailsScreen() {
 
   const [activeTab, setActiveTab] = useState<'upcoming' | 'payments' | 'terms'>('upcoming');
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [preclosureModalVisible, setPreclosureModalVisible] = useState(false);
   const [addTermModalVisible, setAddTermModalVisible] = useState(false);
   const [addPaymentModalVisible, setAddPaymentModalVisible] = useState(false);
   const [editPaymentModalVisible, setEditPaymentModalVisible] = useState(false);
@@ -37,6 +38,7 @@ export default function LoanDetailsScreen() {
   const [newTerm, setNewTerm] = useState({ interestRate: '', tenureMonths: '', emiAmount: '', reason: '' });
   const [newPayment, setNewPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
   const [editPayment, setEditPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
+  const [preclosureAmount, setPreclosureAmount] = useState('');
 
   const { data: loan, isLoading } = useQuery<Loan>({
     queryKey: ['loan', loanId],
@@ -79,6 +81,36 @@ export default function LoanDetailsScreen() {
         type: 'error',
         text1: 'Delete Failed',
         text2: error.message || 'Could not delete loan',
+        position: 'bottom',
+      });
+    },
+  });
+
+  const precloseMutation = useMutation({
+    mutationFn: (data: { closureAmount: string; closureDate: string; accountId?: number; createTransaction?: boolean }) => 
+      api.precloseLoan(loanId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan-installments', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loans'] });
+      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      setPreclosureModalVisible(false);
+      setPreclosureAmount('');
+      Toast.show({
+        type: 'success',
+        text1: 'Loan Pre-Closed',
+        text2: 'The loan has been successfully pre-closed',
+        position: 'bottom',
+      });
+    },
+    onError: (error: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Pre-Closure Failed',
+        text2: error.message || 'Could not pre-close loan',
         position: 'bottom',
       });
     },
@@ -385,6 +417,41 @@ export default function LoanDetailsScreen() {
           </View>
         )}
 
+        {/* Pre-Closure Action */}
+        {loan.status === 'active' && (
+          <TouchableOpacity
+            style={[styles.preclosureButton, { backgroundColor: colors.card, borderColor: colors.primary }]}
+            onPress={() => {
+              setPreclosureAmount(loan.outstandingAmount);
+              setPreclosureModalVisible(true);
+            }}
+          >
+            <Ionicons name="checkmark-done-circle" size={20} color={colors.primary} />
+            <View style={styles.preclosureButtonContent}>
+              <Text style={[styles.preclosureButtonTitle, { color: colors.text }]}>Pre-Close Loan</Text>
+              <Text style={[styles.preclosureButtonSubtitle, { color: colors.textMuted }]}>
+                Close loan early with settlement amount
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
+        {/* Pre-Closed Badge */}
+        {loan.status === 'preclosed' && (
+          <View style={[styles.preclosedBanner, { backgroundColor: colors.success + '20', borderColor: colors.success }]}>
+            <Ionicons name="checkmark-circle" size={24} color={colors.success} />
+            <View style={styles.preclosedBannerContent}>
+              <Text style={[styles.preclosedBannerTitle, { color: colors.success }]}>Loan Pre-Closed</Text>
+              {loan.closureDate && (
+                <Text style={[styles.preclosedBannerSubtitle, { color: colors.textMuted }]}>
+                  Closed on {formatDate(loan.closureDate)} with {formatCurrency(parseFloat(loan.closureAmount || '0'))}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Tabs */}
         <ScrollView 
           horizontal 
@@ -414,17 +481,20 @@ export default function LoanDetailsScreen() {
               Payments
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === 'terms' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
-            ]}
-            onPress={() => setActiveTab('terms')}
-          >
-            <Text style={[styles.tabText, { color: activeTab === 'terms' ? colors.primary : colors.textMuted }]}>
-              Terms
-            </Text>
-          </TouchableOpacity>
+          {/* Only show Terms tab for non-existing loans */}
+          {!loan.isExistingLoan && (
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                activeTab === 'terms' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
+              ]}
+              onPress={() => setActiveTab('terms')}
+            >
+              <Text style={[styles.tabText, { color: activeTab === 'terms' ? colors.primary : colors.textMuted }]}>
+                Terms
+              </Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
 
         {/* Tab Content */}
@@ -436,21 +506,31 @@ export default function LoanDetailsScreen() {
                   <Text style={[styles.emptyText, { color: colors.textMuted }]}>No upcoming installments</Text>
                 </View>
               ) : (
-                upcomingInstallments.map((installment) => {
-                  const isPending = new Date(installment.dueDate) < new Date();
+                upcomingInstallments.map((installment, index) => {
+                  const dueDate = new Date(installment.dueDate);
+                  const now = new Date();
+                  const isPastDue = dueDate < now;
+                  // Check if this is the current month's EMI (due in current or past month)
+                  const isCurrentOrPastMonth = dueDate.getFullYear() < now.getFullYear() ||
+                    (dueDate.getFullYear() === now.getFullYear() && dueDate.getMonth() <= now.getMonth());
+                  // For existing loans: only allow paying the first upcoming EMI or past-due EMIs
+                  // For new loans: allow paying any EMI
+                  const canPay = loan.isExistingLoan 
+                    ? (isCurrentOrPastMonth || index === 0) // First upcoming or past due
+                    : true;
                   return (
                     <View
                       key={installment.id}
                       style={[
                         styles.installmentCard,
-                        { backgroundColor: isPending ? colors.danger + '20' : colors.card }
+                        { backgroundColor: isPastDue ? colors.danger + '20' : colors.card }
                       ]}
                     >
                       <View style={styles.installmentLeft}>
                         <Ionicons
-                          name={isPending ? 'alert-circle' : 'time'}
+                          name={isPastDue ? 'alert-circle' : 'time'}
                           size={20}
-                          color={isPending ? colors.danger : colors.primary}
+                          color={isPastDue ? colors.danger : colors.primary}
                         />
                         <View style={styles.installmentInfo}>
                           <Text style={[styles.installmentNumber, { color: colors.text }]}>
@@ -471,21 +551,27 @@ export default function LoanDetailsScreen() {
                             I: {formatCurrency(parseFloat((installment as any).interestAmount || '0'))}
                           </Text>
                         </View>
-                        <TouchableOpacity
-                          style={[
-                            styles.payButton, 
-                            { backgroundColor: colors.primary },
-                            processingInstallmentId !== null && { opacity: 0.5 }
-                          ]}
-                          onPress={() => markPaidMutation.mutate({ installmentId: installment.id, amount: installment.emiAmount })}
-                          disabled={processingInstallmentId !== null}
-                        >
-                          {processingInstallmentId === installment.id ? (
-                            <ActivityIndicator color="#fff" size="small" />
-                          ) : (
-                            <Text style={styles.payButtonText}>Pay</Text>
-                          )}
-                        </TouchableOpacity>
+                        {canPay ? (
+                          <TouchableOpacity
+                            style={[
+                              styles.payButton, 
+                              { backgroundColor: colors.primary },
+                              processingInstallmentId !== null && { opacity: 0.5 }
+                            ]}
+                            onPress={() => markPaidMutation.mutate({ installmentId: installment.id, amount: installment.emiAmount })}
+                            disabled={processingInstallmentId !== null}
+                          >
+                            {processingInstallmentId === installment.id ? (
+                              <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                              <Text style={styles.payButtonText}>Pay</Text>
+                            )}
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={[styles.payButton, { backgroundColor: colors.border, opacity: 0.5 }]}>
+                            <Text style={[styles.payButtonText, { color: colors.textMuted }]}>Future</Text>
+                          </View>
+                        )}
                       </View>
                     </View>
                   );
@@ -494,7 +580,7 @@ export default function LoanDetailsScreen() {
             </>
           )}
 
-          {activeTab === 'terms' && (
+          {activeTab === 'terms' && !loan.isExistingLoan && (
             <>
               <TouchableOpacity
                 style={[styles.addRowButton, { backgroundColor: colors.primary }]}
@@ -696,6 +782,79 @@ export default function LoanDetailsScreen() {
                 onPress={confirmDelete}
               >
                 <Text style={styles.confirmButtonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Pre-Closure Modal */}
+      <Modal
+        visible={preclosureModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPreclosureModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
+            <Ionicons name="checkmark-done-circle" size={48} color={colors.primary} />
+            <Text style={[styles.formModalTitle, { color: colors.text }]}>Pre-Close Loan</Text>
+            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
+              Enter the settlement amount to close this loan early
+            </Text>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Settlement Amount</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="Enter settlement amount"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                value={preclosureAmount}
+                onChangeText={setPreclosureAmount}
+              />
+              <Text style={[styles.formHint, { color: colors.textMuted }]}>
+                Outstanding: {formatCurrency(parseFloat(loan?.outstandingAmount || '0'))}
+              </Text>
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
+                onPress={() => {
+                  setPreclosureModalVisible(false);
+                  setPreclosureAmount('');
+                }}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  const amount = parseFloat(preclosureAmount);
+                  if (!preclosureAmount || isNaN(amount) || amount <= 0) {
+                    Toast.show({
+                      type: 'error',
+                      text1: 'Invalid Amount',
+                      text2: 'Please enter a valid settlement amount',
+                      position: 'bottom',
+                    });
+                    return;
+                  }
+                  precloseMutation.mutate({
+                    closureAmount: preclosureAmount,
+                    closureDate: new Date().toISOString().split('T')[0],
+                    accountId: loan?.accountId || undefined,
+                    createTransaction: !!loan?.accountId,
+                  });
+                }}
+                disabled={precloseMutation.isPending || !preclosureAmount || parseFloat(preclosureAmount) <= 0}
+              >
+                {precloseMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Confirm Pre-Closure</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1119,6 +1278,52 @@ const styles = StyleSheet.create({
   accountNumber: {
     fontSize: 14,
     marginTop: 2,
+  },
+  preclosureButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  preclosureButtonContent: {
+    flex: 1,
+  },
+  preclosureButtonTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  preclosureButtonSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  preclosedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  preclosedBannerContent: {
+    flex: 1,
+  },
+  preclosedBannerTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  preclosedBannerSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  formHint: {
+    fontSize: 12,
+    marginTop: 4,
   },
   tabsContainer: {
     flexDirection: 'row',

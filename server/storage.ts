@@ -1135,6 +1135,10 @@ export class DatabaseStorage implements IStorage {
       startDate: loans.startDate,
       endDate: loans.endDate,
       status: loans.status,
+      isExistingLoan: loans.isExistingLoan,
+      nextEmiDate: loans.nextEmiDate,
+      closureDate: loans.closureDate,
+      closureAmount: loans.closureAmount,
       createTransaction: loans.createTransaction,
       affectBalance: loans.affectBalance,
       notes: loans.notes,
@@ -1168,6 +1172,10 @@ export class DatabaseStorage implements IStorage {
       startDate: loans.startDate,
       endDate: loans.endDate,
       status: loans.status,
+      isExistingLoan: loans.isExistingLoan,
+      nextEmiDate: loans.nextEmiDate,
+      closureDate: loans.closureDate,
+      closureAmount: loans.closureAmount,
       createTransaction: loans.createTransaction,
       affectBalance: loans.affectBalance,
       notes: loans.notes,
@@ -1192,6 +1200,8 @@ export class DatabaseStorage implements IStorage {
       ...loan,
       startDate: loan.startDate ? new Date(loan.startDate) : new Date(),
       endDate: loan.endDate ? new Date(loan.endDate) : undefined,
+      nextEmiDate: loan.nextEmiDate ? new Date(loan.nextEmiDate) : undefined,
+      closureDate: loan.closureDate ? new Date(loan.closureDate) : undefined,
     }).returning();
     return newLoan;
   }
@@ -1203,6 +1213,12 @@ export class DatabaseStorage implements IStorage {
     }
     if (loan.endDate) {
       updateData.endDate = new Date(loan.endDate);
+    }
+    if (loan.nextEmiDate) {
+      updateData.nextEmiDate = new Date(loan.nextEmiDate);
+    }
+    if (loan.closureDate) {
+      updateData.closureDate = new Date(loan.closureDate);
     }
     const [updated] = await db.update(loans)
       .set(updateData)
@@ -1300,12 +1316,22 @@ export class DatabaseStorage implements IStorage {
     await db.delete(loanInstallments).where(eq(loanInstallments.loanId, loanId));
 
     const generatedInstallments: LoanInstallment[] = [];
-    const startDate = new Date(loan.startDate);
     const emiAmount = parseFloat(loan.emiAmount);
-    const principal = parseFloat(loan.principalAmount);
     const interestRate = parseFloat(loan.interestRate) / 100 / 12; // Monthly rate
-    const emiDay = loan.emiDay || startDate.getDate();
-
+    
+    // For existing loans: use nextEmiDate and outstanding amount
+    // For new loans: use startDate and principal amount
+    const isExistingLoan = loan.isExistingLoan ?? false;
+    const baseDate = isExistingLoan && loan.nextEmiDate 
+      ? new Date(loan.nextEmiDate) 
+      : new Date(loan.startDate);
+    const emiDay = loan.emiDay || baseDate.getDate();
+    
+    // For existing loans, use outstanding amount as the starting principal
+    const principal = isExistingLoan 
+      ? parseFloat(loan.outstandingAmount) 
+      : parseFloat(loan.principalAmount);
+    
     let remainingPrincipal = principal;
 
     for (let i = 1; i <= loan.tenure; i++) {
@@ -1317,8 +1343,16 @@ export class DatabaseStorage implements IStorage {
       remainingPrincipal = Math.max(0, remainingPrincipal - principalAmount);
 
       // Calculate due date
-      const dueDate = new Date(startDate);
-      dueDate.setMonth(dueDate.getMonth() + i);
+      let dueDate: Date;
+      if (isExistingLoan && loan.nextEmiDate) {
+        // For existing loans, start from nextEmiDate
+        dueDate = new Date(loan.nextEmiDate);
+        dueDate.setMonth(dueDate.getMonth() + (i - 1)); // i-1 because first installment is the next EMI date
+      } else {
+        // For new loans, start from startDate + 1 month
+        dueDate = new Date(loan.startDate);
+        dueDate.setMonth(dueDate.getMonth() + i);
+      }
       dueDate.setDate(Math.min(emiDay, new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0).getDate()));
 
       const [newInstallment] = await db.insert(loanInstallments).values({

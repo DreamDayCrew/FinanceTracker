@@ -230,7 +230,7 @@ export interface Loan {
   principalAmount: string;
   outstandingAmount: string;
   interestRate: string;
-  tenure?: number; // backend field name
+  tenure?: number; // backend field name (remaining tenure for existing loans)
   tenureMonths?: number; // frontend alias
   emiAmount: string;
   emiDay: number | null;
@@ -239,7 +239,11 @@ export interface Loan {
   accountId: number | null;
   lenderName: string | null;
   loanAccountNumber: string | null;
-  status: 'active' | 'closed' | 'defaulted';
+  status: 'active' | 'closed' | 'defaulted' | 'preclosed';
+  isExistingLoan: boolean;
+  nextEmiDate: string | null;
+  closureDate: string | null;
+  closureAmount: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;

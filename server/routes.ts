@@ -1604,6 +1604,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Pre-close a loan
+  app.post("/api/loans/:id/preclose", async (req, res) => {
+    try {
+      const loanId = parseInt(req.params.id);
+      const { closureAmount, closureDate, accountId, createTransaction } = req.body;
+
+      if (!closureAmount || !closureDate) {
+        return res.status(400).json({ error: "Closure amount and date are required" });
+      }
+
+      // Get the loan
+      const loan = await storage.getLoan(loanId);
+      if (!loan) {
+        return res.status(404).json({ error: "Loan not found" });
+      }
+
+      if (loan.status !== 'active') {
+        return res.status(400).json({ error: "Only active loans can be pre-closed" });
+      }
+
+      // Record the preclosure payment
+      const closureAmountNum = parseFloat(closureAmount);
+      await storage.createLoanPayment({
+        loanId,
+        paymentDate: closureDate,
+        amount: closureAmount,
+        principalPaid: loan.outstandingAmount, // Principal equals outstanding
+        interestPaid: String(Math.max(0, closureAmountNum - parseFloat(loan.outstandingAmount))),
+        paymentType: 'prepayment',
+        notes: 'Loan Pre-Closure',
+        accountId: accountId || null,
+      });
+
+      // Update the loan status
+      const updatedLoan = await storage.updateLoan(loanId, {
+        status: 'preclosed',
+        outstandingAmount: '0',
+        closureDate,
+        closureAmount,
+      });
+
+      // Cancel pending installments
+      const installments = await storage.getLoanInstallments(loanId);
+      for (const inst of installments) {
+        if (inst.status === 'pending') {
+          await storage.updateLoanInstallment(inst.id, { status: 'cancelled' as any });
+        }
+      }
+
+      // Optionally create a transaction
+      if (createTransaction && accountId) {
+        // Get or create "Loan" category
+        const allCategories = await storage.getAllCategories();
+        let loanCategory = allCategories.find((c: { name: string }) => c.name === 'Loan' || c.name === 'EMI');
+        if (!loanCategory) {
+          loanCategory = await storage.createCategory({
+            name: 'Loan',
+            type: 'expense',
+            icon: 'cash',
+            color: '#10b981',
+          });
+        }
+
+        await storage.createTransaction({
+          userId: 1,
+          accountId,
+          categoryId: loanCategory.id,
+          type: 'debit',
+          amount: closureAmount,
+          merchant: `${loan.name} - Pre-Closure`,
+          description: `Loan pre-closure payment`,
+          transactionDate: closureDate,
+        });
+
+        // Update account balance
+        const account = await storage.getAccount(accountId);
+        if (account && account.balance) {
+          const newBalance = parseFloat(account.balance) - closureAmountNum;
+          await storage.updateAccount(accountId, { balance: String(newBalance) });
+        }
+      }
+
+      res.json(updatedLoan);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to pre-close loan" });
+    }
+  });
+
   app.post("/api/loans/:id/generate-schedule", async (req, res) => {
     try {
       const installments = await storage.generateLoanInstallments(parseInt(req.params.id));

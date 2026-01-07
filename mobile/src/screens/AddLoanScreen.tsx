@@ -39,6 +39,7 @@ export default function AddLoanScreen() {
     lenderName: '',
     loanAccountNumber: '',
     principalAmount: '',
+    outstandingAmount: '',
     interestRate: '',
     tenure: '',
     emiAmount: '',
@@ -46,7 +47,10 @@ export default function AddLoanScreen() {
     accountId: '',
   });
   const [startDate, setStartDate] = useState(new Date());
+  const [nextEmiDate, setNextEmiDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showNextEmiDatePicker, setShowNextEmiDatePicker] = useState(false);
+  const [isExistingLoan, setIsExistingLoan] = useState(false);
   const [createTransaction, setCreateTransaction] = useState(false);
   const [affectBalance, setAffectBalance] = useState(false);
 
@@ -65,16 +69,13 @@ export default function AddLoanScreen() {
   // Populate form with existing loan data
   useEffect(() => {
     if (existingLoan && isEditMode) {
-      console.log('Existing Loan Data:', existingLoan);
-      console.log('createTransaction value:', (existingLoan as any).createTransaction);
-      console.log('affectBalance value:', (existingLoan as any).affectBalance);
-      
       setFormData({
         name: existingLoan.name,
-        type: existingLoan.loanType || 'personal_loan',
+        type: existingLoan.loanType || existingLoan.type || 'personal_loan',
         lenderName: existingLoan.lenderName || '',
         loanAccountNumber: existingLoan.loanAccountNumber || '',
         principalAmount: existingLoan.principalAmount,
+        outstandingAmount: existingLoan.outstandingAmount || existingLoan.principalAmount,
         interestRate: existingLoan.interestRate,
         tenure: existingLoan.tenure?.toString() || '',
         emiAmount: existingLoan.emiAmount || '',
@@ -86,12 +87,15 @@ export default function AddLoanScreen() {
         setStartDate(new Date(existingLoan.startDate));
       }
       
+      if (existingLoan.nextEmiDate) {
+        setNextEmiDate(new Date(existingLoan.nextEmiDate));
+      }
+      
+      setIsExistingLoan(existingLoan.isExistingLoan ?? false);
+      
       // Set toggle values - check both snake_case and camelCase
       const createTxn = (existingLoan as any).createTransaction ?? (existingLoan as any).create_transaction ?? false;
       const affectBal = (existingLoan as any).affectBalance ?? (existingLoan as any).affect_balance ?? false;
-      
-      console.log('Setting createTransaction to:', createTxn);
-      console.log('Setting affectBalance to:', affectBal);
       
       setCreateTransaction(createTxn);
       setAffectBalance(affectBal);
@@ -115,8 +119,8 @@ export default function AddLoanScreen() {
         type: data.type,
         lenderName: data.lenderName || undefined,
         loanAccountNumber: data.loanAccountNumber || undefined,
-        principalAmount: data.principalAmount,
-        outstandingAmount: data.principalAmount,
+        principalAmount: isExistingLoan ? data.outstandingAmount : data.principalAmount,
+        outstandingAmount: isExistingLoan ? data.outstandingAmount : data.principalAmount,
         interestRate: data.interestRate,
         tenure: parseInt(data.tenure),
         emiAmount: data.emiAmount || undefined,
@@ -125,6 +129,8 @@ export default function AddLoanScreen() {
         accountId: data.accountId ? parseInt(data.accountId) : undefined,
         status: 'active' as const,
         userId: null,
+        isExistingLoan,
+        nextEmiDate: isExistingLoan ? nextEmiDate.toISOString() : undefined,
         createTransaction,
         affectBalance,
       };
@@ -193,7 +199,10 @@ export default function AddLoanScreen() {
   });
 
   const handleSubmit = () => {
-    if (!formData.name || !formData.principalAmount || !formData.interestRate || 
+    // For existing loans, we need outstanding amount instead of principal
+    const amountField = isExistingLoan ? formData.outstandingAmount : formData.principalAmount;
+    
+    if (!formData.name || !amountField || !formData.interestRate || 
         !formData.tenure || !formData.emiAmount) {
       Toast.show({
         type: 'error',
@@ -269,6 +278,29 @@ export default function AddLoanScreen() {
           </View>
         </View>
 
+        {/* New vs Existing Loan Toggle - only show when adding new loan */}
+        {!isEditMode && (
+          <View style={[styles.field, styles.toggleField, { marginBottom: 20 }]}>
+            <View style={styles.toggleLeft}>
+              <Ionicons name="time-outline" size={20} color={colors.text} />
+              <View style={styles.toggleTextContainer}>
+                <Text style={[styles.label, { color: colors.text, marginBottom: 2 }]}>Existing Loan</Text>
+                <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                  {isExistingLoan 
+                    ? 'Track a loan you already have (simplified tracking)'
+                    : 'Start tracking a new loan from the beginning'}
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={isExistingLoan}
+              onValueChange={setIsExistingLoan}
+              trackColor={{ false: colors.border, true: colors.primary + '80' }}
+              thumbColor={isExistingLoan ? colors.primary : '#f4f3f4'}
+            />
+          </View>
+        )}
+
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textMuted }]}>Lender/Bank Name</Text>
           <TextInput
@@ -293,18 +325,36 @@ export default function AddLoanScreen() {
           />
         </View>
 
-        <View style={styles.field}>
-          <Text style={[styles.label, { color: colors.textMuted }]}>Principal Amount (₹) *</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }, isEditMode && { opacity: 0.5 }]}
-            placeholder="e.g., 1000000"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="numeric"
-            value={formData.principalAmount}
-            onChangeText={(text) => setFormData({ ...formData, principalAmount: text })}
-            editable={!isEditMode}
-          />
-        </View>
+        {/* For new loans: show Principal Amount */}
+        {!isExistingLoan && (
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.textMuted }]}>Principal Amount (₹) *</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }, isEditMode && { opacity: 0.5 }]}
+              placeholder="e.g., 1000000"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              value={formData.principalAmount}
+              onChangeText={(text) => setFormData({ ...formData, principalAmount: text })}
+              editable={!isEditMode}
+            />
+          </View>
+        )}
+
+        {/* For existing loans: show Outstanding Amount */}
+        {isExistingLoan && (
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.textMuted }]}>Current Outstanding (₹) *</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              placeholder="e.g., 750000"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              value={formData.outstandingAmount}
+              onChangeText={(text) => setFormData({ ...formData, outstandingAmount: text })}
+            />
+          </View>
+        )}
 
         <View style={styles.row}>
           <View style={[styles.field, styles.halfField]}>
@@ -319,10 +369,12 @@ export default function AddLoanScreen() {
             />
           </View>
           <View style={[styles.field, styles.halfField]}>
-            <Text style={[styles.label, { color: colors.textMuted }]}>Tenure (months) *</Text>
+            <Text style={[styles.label, { color: colors.textMuted }]}>
+              {isExistingLoan ? 'Remaining Tenure *' : 'Tenure (months) *'}
+            </Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              placeholder="e.g., 60"
+              placeholder={isExistingLoan ? 'e.g., 36' : 'e.g., 60'}
               placeholderTextColor={colors.textMuted}
               keyboardType="numeric"
               value={formData.tenure}
@@ -383,6 +435,41 @@ export default function AddLoanScreen() {
               setShowDatePicker(Platform.OS === 'ios');
               if (selectedDate) {
                 setStartDate(selectedDate);
+              }
+            }}
+          />
+        )}
+
+        {/* Next EMI Date - only for existing loans */}
+        {isExistingLoan && (
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.textMuted }]}>Next EMI Due Date *</Text>
+            <TouchableOpacity
+              style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => setShowNextEmiDatePicker(true)}
+            >
+              <Ionicons name="calendar-outline" size={20} color={colors.text} />
+              <Text style={[styles.datePickerText, { color: colors.text }]}>
+                {nextEmiDate.toLocaleDateString('en-US', { 
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric'
+                })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {showNextEmiDatePicker && (
+          <DateTimePicker
+            value={nextEmiDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            minimumDate={new Date()}
+            onChange={(event, selectedDate) => {
+              setShowNextEmiDatePicker(Platform.OS === 'ios');
+              if (selectedDate) {
+                setNextEmiDate(selectedDate);
               }
             }}
           />
