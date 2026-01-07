@@ -150,6 +150,8 @@ export default function SavingsGoalsScreen() {
       setContributionAmount('');
       setSelectedGoal(null);
       setContributionDate(new Date());
+      setContributeCreateTransaction(true);
+      setContributeAffectBalance(true);
       Toast.show({
         type: 'success',
         text1: 'Contribution Added',
@@ -1045,7 +1047,11 @@ export default function SavingsGoalsScreen() {
         visible={isContributeModalOpen}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setIsContributeModalOpen(false)}
+        onRequestClose={() => {
+          setIsContributeModalOpen(false);
+          setContributeCreateTransaction(true);
+          setContributeAffectBalance(true);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
@@ -1053,7 +1059,11 @@ export default function SavingsGoalsScreen() {
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 Add to {selectedGoal?.name}
               </Text>
-              <TouchableOpacity onPress={() => setIsContributeModalOpen(false)}>
+              <TouchableOpacity onPress={() => {
+                setIsContributeModalOpen(false);
+                setContributeCreateTransaction(true);
+                setContributeAffectBalance(true);
+              }}>
                 <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>

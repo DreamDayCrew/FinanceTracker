@@ -230,6 +230,8 @@ export default function ScheduledPaymentsScreen() {
       refetchOccurrences();
       setShowPaymentModal(false);
       setSelectedOccurrence(null);
+      setPaymentCreateTransaction(true);
+      setPaymentAffectBalance(true);
       Toast.show({
         type: 'success',
         text1: 'Payment Recorded',
@@ -715,13 +717,21 @@ export default function ScheduledPaymentsScreen() {
         visible={showPaymentModal}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setShowPaymentModal(false)}
+        onRequestClose={() => {
+          setShowPaymentModal(false);
+          setPaymentCreateTransaction(true);
+          setPaymentAffectBalance(true);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Record Payment</Text>
-              <TouchableOpacity onPress={() => setShowPaymentModal(false)}>
+              <TouchableOpacity onPress={() => {
+                setShowPaymentModal(false);
+                setPaymentCreateTransaction(true);
+                setPaymentAffectBalance(true);
+              }}>
                 <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
