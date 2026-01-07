@@ -155,7 +155,7 @@ export const api = {
     apiRequest<void>(`/api/savings-goals/${id}`, { method: 'DELETE' }),
   getContributions: (goalId: number) => 
     apiRequest<SavingsContribution[]>(`/api/savings-goals/${goalId}/contributions`),
-  addContribution: (goalId: number, data: Omit<InsertSavingsContribution, 'savingsGoalId'>) => 
+  addContribution: (goalId: number, data: Omit<InsertSavingsContribution, 'savingsGoalId'> & { createTransaction?: boolean; affectBalance?: boolean }) => 
     apiRequest<SavingsContribution>(`/api/savings-goals/${goalId}/contributions`, { 
       method: 'POST', body: JSON.stringify(data) 
     }),
@@ -235,6 +235,8 @@ export const api = {
     paidAmount: string; 
     accountId?: number;
     notes?: string;
+    createTransaction?: boolean;
+    affectBalance?: boolean;
   }) => 
     apiRequest<LoanInstallment>(`/api/loans/${loanId}/installments/${installmentId}/pay`, { 
       method: 'POST', body: JSON.stringify(data) 

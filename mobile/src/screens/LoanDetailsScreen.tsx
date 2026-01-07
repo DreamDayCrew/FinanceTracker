@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, Animated, Switch } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +40,10 @@ export default function LoanDetailsScreen() {
   const [newPayment, setNewPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
   const [editPayment, setEditPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
   const [preclosureAmount, setPreclosureAmount] = useState('');
+  const [payEmiModalVisible, setPayEmiModalVisible] = useState(false);
+  const [selectedInstallment, setSelectedInstallment] = useState<LoanInstallment | null>(null);
+  const [payEmiCreateTransaction, setPayEmiCreateTransaction] = useState(false);
+  const [payEmiAffectBalance, setPayEmiAffectBalance] = useState(false);
   const [topupData, setTopupData] = useState({ 
     topupAmount: '', 
     newEmiAmount: '', 
@@ -155,12 +159,14 @@ export default function LoanDetailsScreen() {
   });
 
   const markPaidMutation = useMutation({
-    mutationFn: async ({ installmentId, amount }: { installmentId: number; amount: string }) => {
+    mutationFn: async ({ installmentId, amount, createTransaction, affectBalance }: { installmentId: number; amount: string; createTransaction: boolean; affectBalance: boolean }) => {
       setProcessingInstallmentId(installmentId);      
       return api.markInstallmentPaid(loanId, installmentId, {
         paidDate: new Date().toISOString().split('T')[0],
         paidAmount: amount,
         accountId: loan?.accountId || undefined,
+        createTransaction,
+        affectBalance,
       });
     },
     onSuccess: () => {
@@ -171,6 +177,8 @@ export default function LoanDetailsScreen() {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       setProcessingInstallmentId(null);
+      setPayEmiModalVisible(false);
+      setSelectedInstallment(null);
       Toast.show({
         type: 'success',
         text1: 'EMI Marked as Paid',
@@ -614,7 +622,12 @@ export default function LoanDetailsScreen() {
                               { backgroundColor: colors.primary },
                               processingInstallmentId !== null && { opacity: 0.5 }
                             ]}
-                            onPress={() => markPaidMutation.mutate({ installmentId: installment.id, amount: installment.emiAmount })}
+                            onPress={() => {
+                              setSelectedInstallment(installment);
+                              setPayEmiCreateTransaction(loan?.createTransaction || false);
+                              setPayEmiAffectBalance(loan?.affectBalance || false);
+                              setPayEmiModalVisible(true);
+                            }}
                             disabled={processingInstallmentId !== null}
                           >
                             {processingInstallmentId === installment.id ? (
@@ -838,6 +851,98 @@ export default function LoanDetailsScreen() {
                 onPress={confirmDelete}
               >
                 <Text style={styles.confirmButtonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Pay EMI Modal */}
+      <Modal
+        visible={payEmiModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPayEmiModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
+            <Ionicons name="cash" size={48} color={colors.primary} />
+            <Text style={[styles.formModalTitle, { color: colors.text }]}>Pay EMI</Text>
+            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
+              Confirm payment for {selectedInstallment?.dueDate ? new Date(selectedInstallment.dueDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'this installment'}
+            </Text>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Amount</Text>
+              <View style={[styles.formInput, { backgroundColor: colors.background, borderColor: colors.border, justifyContent: 'center' }]}>
+                <Text style={{ color: colors.text, fontSize: 16 }}>
+                  {formatCurrency(parseFloat(selectedInstallment?.emiAmount || '0'))}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleInfo}>
+                <Text style={[styles.toggleLabel, { color: colors.text }]}>Create Transaction</Text>
+                <Text style={[styles.toggleHint, { color: colors.textMuted }]}>
+                  Record this payment as a transaction
+                </Text>
+              </View>
+              <Switch
+                value={payEmiCreateTransaction}
+                onValueChange={setPayEmiCreateTransaction}
+                trackColor={{ false: colors.border, true: colors.primary }}
+              />
+            </View>
+
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleInfo}>
+                <Text style={[styles.toggleLabel, { color: colors.text }]}>Affect Account Balance</Text>
+                <Text style={[styles.toggleHint, { color: colors.textMuted }]}>
+                  Deduct from linked account balance
+                </Text>
+              </View>
+              <Switch
+                value={payEmiAffectBalance}
+                onValueChange={setPayEmiAffectBalance}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                disabled={!loan?.accountId}
+              />
+            </View>
+
+            <Text style={[styles.toggleNote, { color: colors.textMuted }]}>
+              These settings apply to this payment only
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
+                onPress={() => {
+                  setPayEmiModalVisible(false);
+                  setSelectedInstallment(null);
+                }}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  if (selectedInstallment) {
+                    markPaidMutation.mutate({
+                      installmentId: selectedInstallment.id,
+                      amount: selectedInstallment.emiAmount,
+                      createTransaction: payEmiCreateTransaction,
+                      affectBalance: payEmiAffectBalance,
+                    });
+                  }
+                }}
+                disabled={markPaidMutation.isPending}
+              >
+                {markPaidMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Confirm Payment</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1505,6 +1610,33 @@ const styles = StyleSheet.create({
   formHint: {
     fontSize: 12,
     marginTop: 4,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  toggleInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  toggleHint: {
+    fontSize: 12,
+  },
+  toggleNote: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 4,
   },
   tabsContainer: {
     flexDirection: 'row',

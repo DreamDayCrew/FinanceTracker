@@ -592,9 +592,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create the contribution
       const contribution = await storage.createSavingsContribution(validatedData);
       
-      // Get toggle settings from goal (default to true if not set)
-      const affectTransaction = goal.affectTransaction ?? true;
-      const affectAccountBalance = goal.affectAccountBalance ?? true;
+      // Get toggle settings from request body (override goal settings for this contribution only)
+      // Default to goal settings if not provided in request
+      const affectTransaction = req.body.createTransaction !== undefined 
+        ? req.body.createTransaction 
+        : (goal.affectTransaction ?? true);
+      const affectAccountBalance = req.body.affectBalance !== undefined 
+        ? req.body.affectBalance 
+        : (goal.affectAccountBalance ?? true);
       
       // Handle transaction and balance updates based on toggle settings
       if (affectTransaction && goal.accountId && goal.toAccountId) {
@@ -1857,7 +1862,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/loans/:loanId/installments/:id/pay", async (req, res) => {
     try {
-      const { paidDate, paidAmount, accountId, notes } = req.body;
+      const { paidDate, paidAmount, accountId, notes, createTransaction, affectBalance } = req.body;
       const loanId = parseInt(req.params.loanId);
       const installmentId = parseInt(req.params.id);
       
@@ -1870,6 +1875,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accountId: accountId || null,
         notes: notes || null
       });
+      
+      // Create transaction if requested
+      if (createTransaction && accountId) {
+        const loan = await storage.getLoan(loanId);
+        const allCategories = await storage.getAllCategories();
+        let loanCategory = allCategories.find((c: { name: string }) => c.name === 'Loan' || c.name === 'EMI');
+        if (!loanCategory) {
+          loanCategory = await storage.createCategory({
+            name: 'EMI',
+            type: 'expense',
+            icon: 'cash',
+            color: '#ef4444',
+          });
+        }
+
+        await storage.createTransaction({
+          userId: 1,
+          accountId,
+          categoryId: loanCategory.id,
+          type: 'debit',
+          amount: paidAmount,
+          merchant: loan?.name || 'Loan EMI',
+          description: `EMI payment for ${loan?.name || 'Loan'}`,
+          transactionDate: paidDate,
+        });
+      }
+
+      // Update account balance if requested
+      if (affectBalance && accountId) {
+        const account = await storage.getAccount(accountId);
+        if (account && account.balance) {
+          const newBalance = parseFloat(account.balance) - parseFloat(paidAmount);
+          await storage.updateAccount(accountId, { balance: String(newBalance) });
+        }
+      }
       
       const installment = await storage.getLoanInstallment(installmentId);
       res.json(installment);

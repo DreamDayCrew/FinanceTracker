@@ -56,6 +56,8 @@ export default function ScheduledPaymentsScreen() {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [paymentToDelete, setPaymentToDelete] = useState<ScheduledPayment | null>(null);
+  const [paymentCreateTransaction, setPaymentCreateTransaction] = useState(true);
+  const [paymentAffectBalance, setPaymentAffectBalance] = useState(true);
 
   const { data: payments, isLoading, refetch: refetchPayments } = useQuery({
     queryKey: ['scheduled-payments'],
@@ -166,10 +168,12 @@ export default function ScheduledPaymentsScreen() {
   });
 
   const markAsPaidMutation = useMutation({
-    mutationFn: async ({ occurrenceId, accountId, date }: { 
+    mutationFn: async ({ occurrenceId, accountId, date, createTransaction, affectBalance }: { 
       occurrenceId: number; 
       accountId: number; 
       date: string;
+      createTransaction: boolean;
+      affectBalance: boolean;
     }) => {
       const occurrence = occurrences.find(o => o.id === occurrenceId);
       if (!occurrence || !occurrence.scheduledPayment) {
@@ -177,8 +181,8 @@ export default function ScheduledPaymentsScreen() {
       }
 
       const payment = occurrence.scheduledPayment;
-      const affectTransaction = payment.affectTransaction ?? true;
-      const affectAccountBalance = payment.affectAccountBalance ?? true;
+      const affectTransaction = createTransaction;
+      const affectAccountBalance = affectBalance;
 
       // Create transaction if affectTransaction is enabled
       if (affectTransaction) {
@@ -456,6 +460,10 @@ export default function ScheduledPaymentsScreen() {
       setSelectedAccountId(defaultAccount?.id || (accounts.length > 0 ? accounts[0].id : null));
     }
     
+    // Initialize toggle states from the scheduled payment settings
+    setPaymentCreateTransaction(occurrence.scheduledPayment?.affectTransaction ?? true);
+    setPaymentAffectBalance(occurrence.scheduledPayment?.affectAccountBalance ?? true);
+    
     setShowPaymentModal(true);
   };
 
@@ -474,6 +482,8 @@ export default function ScheduledPaymentsScreen() {
       occurrenceId: selectedOccurrence.id,
       accountId: selectedAccountId,
       date: paymentDate.toISOString(),
+      createTransaction: paymentCreateTransaction,
+      affectBalance: paymentAffectBalance,
     });
   };
 
@@ -806,6 +816,39 @@ export default function ScheduledPaymentsScreen() {
                   </View>
                 </ScrollView>
               </View>
+
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleInfo}>
+                  <Text style={[styles.toggleLabel, { color: colors.text }]}>Create Transaction</Text>
+                  <Text style={[styles.toggleHint, { color: colors.textMuted }]}>
+                    Record this payment as a transaction
+                  </Text>
+                </View>
+                <Switch
+                  value={paymentCreateTransaction}
+                  onValueChange={setPaymentCreateTransaction}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                />
+              </View>
+
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleInfo}>
+                  <Text style={[styles.toggleLabel, { color: colors.text }]}>Affect Account Balance</Text>
+                  <Text style={[styles.toggleHint, { color: colors.textMuted }]}>
+                    Deduct from selected account balance
+                  </Text>
+                </View>
+                <Switch
+                  value={paymentAffectBalance}
+                  onValueChange={setPaymentAffectBalance}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  disabled={!selectedAccountId}
+                />
+              </View>
+
+              <Text style={[styles.toggleNote, { color: colors.textMuted }]}>
+                These settings apply to this payment only
+              </Text>
 
               <TouchableOpacity 
                 style={[styles.confirmButton, { backgroundColor: colors.primary }, markAsPaidMutation.isPending && styles.confirmButtonDisabled]} 
@@ -1227,6 +1270,33 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  toggleInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  toggleHint: {
+    fontSize: 12,
+  },
+  toggleNote: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 12,
   },
   deleteModalOverlay: {
     flex: 1,

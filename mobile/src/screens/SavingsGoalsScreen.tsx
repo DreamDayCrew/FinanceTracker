@@ -50,6 +50,8 @@ export default function SavingsGoalsScreen() {
   const [showContributionDatePicker, setShowContributionDatePicker] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [goalToDelete, setGoalToDelete] = useState<SavingsGoal | null>(null);
+  const [contributeCreateTransaction, setContributeCreateTransaction] = useState(true);
+  const [contributeAffectBalance, setContributeAffectBalance] = useState(true);
 
   const { data: goals, isLoading, refetch: refetchGoals } = useQuery<SavingsGoal[]>({
     queryKey: ['savings-goals'],
@@ -135,8 +137,8 @@ export default function SavingsGoalsScreen() {
   });
 
   const addContributionMutation = useMutation({
-    mutationFn: ({ goalId, amount, contributedAt }: { goalId: number; amount: string; contributedAt?: string }) =>
-      api.addContribution(goalId, { amount, contributedAt }),
+    mutationFn: ({ goalId, amount, contributedAt, createTransaction, affectBalance }: { goalId: number; amount: string; contributedAt?: string; createTransaction: boolean; affectBalance: boolean }) =>
+      api.addContribution(goalId, { amount, contributedAt, createTransaction, affectBalance }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -467,6 +469,8 @@ export default function SavingsGoalsScreen() {
                         style={[styles.contributeButton, { backgroundColor: `${colors.primary}20` }]}
                         onPress={() => {
                           setSelectedGoal(goal);
+                          setContributeCreateTransaction(goal.affectTransaction ?? true);
+                          setContributeAffectBalance(goal.affectAccountBalance ?? true);
                           setIsContributeModalOpen(true);
                         }}
                       >
@@ -1091,6 +1095,39 @@ export default function SavingsGoalsScreen() {
                 />
               )}
 
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleInfo}>
+                  <Text style={[styles.toggleLabel, { color: colors.text }]}>Create Transaction</Text>
+                  <Text style={[styles.toggleHint, { color: colors.textMuted }]}>
+                    Record this contribution as a transaction
+                  </Text>
+                </View>
+                <Switch
+                  value={contributeCreateTransaction}
+                  onValueChange={setContributeCreateTransaction}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                />
+              </View>
+
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleInfo}>
+                  <Text style={[styles.toggleLabel, { color: colors.text }]}>Affect Account Balance</Text>
+                  <Text style={[styles.toggleHint, { color: colors.textMuted }]}>
+                    Deduct from source account balance
+                  </Text>
+                </View>
+                <Switch
+                  value={contributeAffectBalance}
+                  onValueChange={setContributeAffectBalance}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  disabled={!selectedGoal?.accountId}
+                />
+              </View>
+
+              <Text style={[styles.toggleNote, { color: colors.textMuted }]}>
+                These settings apply to this contribution only
+              </Text>
+
               <TouchableOpacity
                 style={[
                   styles.submitButton, 
@@ -1102,7 +1139,9 @@ export default function SavingsGoalsScreen() {
                     addContributionMutation.mutate({ 
                       goalId: selectedGoal.id, 
                       amount: contributionAmount,
-                      contributedAt: contributionDate.toISOString()
+                      contributedAt: contributionDate.toISOString(),
+                      createTransaction: contributeCreateTransaction,
+                      affectBalance: contributeAffectBalance,
                     });
                   }
                 }}
@@ -1646,6 +1685,34 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+    marginBottom: 4,
+  },
+  toggleInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  toggleHint: {
+    fontSize: 12,
+  },
+  toggleNote: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 12,
   },
   accountScroll: {
     marginBottom: 16,
