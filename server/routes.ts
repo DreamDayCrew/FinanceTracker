@@ -2113,11 +2113,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/insurances/:insuranceId/premiums/:id/pay", async (req, res) => {
     try {
-      const { amount, accountId, createTransaction: shouldCreateTransaction } = req.body;
+      const { amount, accountId, createTransaction: shouldCreateTransaction, affectAccountBalance } = req.body;
       const premiumId = parseInt(req.params.id);
       const insuranceId = parseInt(req.params.insuranceId);
       
       let transactionId: number | undefined;
+      const targetAccountId = accountId;
       
       // Create transaction if requested
       if (shouldCreateTransaction) {
@@ -2135,7 +2136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           const transaction = await storage.createTransaction({
-            accountId: accountId || insurance.accountId,
+            accountId: targetAccountId || insurance.accountId,
             categoryId: category.id,
             amount,
             type: "debit",
@@ -2147,7 +2148,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      const premium = await storage.markPremiumPaid(premiumId, amount, accountId, transactionId);
+      // Deduct from account balance if requested
+      if (affectAccountBalance && targetAccountId) {
+        const account = await storage.getAccount(targetAccountId);
+        if (account) {
+          const currentBalance = parseFloat(account.balance) || 0;
+          const paymentAmount = parseFloat(amount) || 0;
+          const newBalance = (currentBalance - paymentAmount).toFixed(2);
+          await storage.updateAccount(targetAccountId, { balance: newBalance });
+        }
+      }
+      
+      const premium = await storage.markPremiumPaid(premiumId, amount, targetAccountId, transactionId);
       if (premium) {
         res.json(premium);
       } else {

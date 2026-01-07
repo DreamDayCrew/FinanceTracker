@@ -25,6 +25,7 @@ export default function InsuranceDetailsScreen() {
   const [payAmount, setPayAmount] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState<number | undefined>();
   const [createTransaction, setCreateTransaction] = useState(false);
+  const [affectAccountBalance, setAffectAccountBalance] = useState(true);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   const { data: insurance, isLoading } = useQuery<Insurance>({
@@ -45,7 +46,7 @@ export default function InsuranceDetailsScreen() {
   );
 
   const payMutation = useMutation({
-    mutationFn: ({ premiumId, data }: { premiumId: number; data: { amount: string; accountId?: number; createTransaction?: boolean } }) => 
+    mutationFn: ({ premiumId, data }: { premiumId: number; data: { amount: string; accountId?: number; createTransaction?: boolean; affectAccountBalance?: boolean } }) => 
       api.markPremiumPaid(insuranceId, premiumId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['insurances'] });
@@ -111,6 +112,7 @@ export default function InsuranceDetailsScreen() {
     setPayAmount(premium.amount);
     setSelectedAccountId(insurance?.accountId || undefined);
     setCreateTransaction(insurance?.createTransaction || false);
+    setAffectAccountBalance(true);
     setPayModalVisible(true);
   };
 
@@ -123,6 +125,7 @@ export default function InsuranceDetailsScreen() {
         amount: payAmount,
         accountId: selectedAccountId,
         createTransaction,
+        affectAccountBalance,
       },
     });
   };
@@ -436,6 +439,21 @@ export default function InsuranceDetailsScreen() {
                 value={createTransaction}
                 onValueChange={setCreateTransaction}
                 trackColor={{ false: colors.border, true: colors.primary }}
+              />
+            </View>
+
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleInfo}>
+                <Text style={[styles.toggleLabel, { color: colors.text }]}>Affect Account Balance</Text>
+                <Text style={[styles.toggleHint, { color: colors.textMuted }]}>
+                  Deduct payment from account balance
+                </Text>
+              </View>
+              <Switch
+                value={affectAccountBalance}
+                onValueChange={setAffectAccountBalance}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                disabled={!selectedAccountId}
               />
             </View>
 
