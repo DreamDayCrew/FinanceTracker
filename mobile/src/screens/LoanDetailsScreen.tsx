@@ -450,6 +450,19 @@ export default function LoanDetailsScreen() {
           </View>
         </View>
 
+        {/* Existing Loan Banner */}
+        {loan.isExistingLoan && (
+          <View style={[styles.existingLoanBanner, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
+            <Ionicons name="information-circle" size={20} color={colors.primary} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={[styles.existingLoanBannerTitle, { color: colors.text }]}>Existing Loan Tracking</Text>
+              <Text style={[styles.existingLoanBannerText, { color: colors.textMuted }]}>
+                This is a simplified view for loans started before tracking. Only future EMIs are shown.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Lender Info */}
         {loan.lenderName && (
           <View style={[styles.lenderCard, { backgroundColor: colors.card }]}>
@@ -534,17 +547,20 @@ export default function LoanDetailsScreen() {
               Upcoming
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === 'payments' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
-            ]}
-            onPress={() => setActiveTab('payments')}
-          >
-            <Text style={[styles.tabText, { color: activeTab === 'payments' ? colors.primary : colors.textMuted }]}>
-              Payments
-            </Text>
-          </TouchableOpacity>
+          {/* Only show Payments tab for non-existing loans */}
+          {!loan.isExistingLoan && (
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                activeTab === 'payments' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
+              ]}
+              onPress={() => setActiveTab('payments')}
+            >
+              <Text style={[styles.tabText, { color: activeTab === 'payments' ? colors.primary : colors.textMuted }]}>
+                Payments
+              </Text>
+            </TouchableOpacity>
+          )}
           {/* Only show Terms tab for non-existing loans */}
           {!loan.isExistingLoan && (
             <TouchableOpacity
@@ -1528,6 +1544,24 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  existingLoanBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+  },
+  existingLoanBannerTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  existingLoanBannerText: {
+    fontSize: 12,
+    lineHeight: 16,
   },
   lenderCard: {
     marginHorizontal: 16,
