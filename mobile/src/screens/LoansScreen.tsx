@@ -38,6 +38,7 @@ interface LoanCardProps {
 
 function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextInstallment }: LoanCardProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'outstanding'>('overview');
+  const [showAccountNumber, setShowAccountNumber] = useState(false);
 
   const getLoanIcon = (type: string): keyof typeof Ionicons.glyphMap => {
     switch (type) {
@@ -77,15 +78,78 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
     return `****${last4}`;
   };
 
-  const calculateProgress = (): number => {
-    const principal = parseFloat(loan.principalAmount) || 0;
-    const outstanding = parseFloat(loan.outstandingAmount) || 0;
-    if (principal <= 0) return 0;
-    return Math.min(100, Math.max(0, ((principal - outstanding) / principal) * 100));
+  const getDisplayAccountNumber = () => {
+    if (!loan.loanAccountNumber) return 'N/A';
+    if (showAccountNumber) return loan.loanAccountNumber;
+    return maskAccountNumber(loan.loanAccountNumber);
   };
 
-  const principalPaid = parseFloat(loan.principalAmount) - parseFloat(loan.outstandingAmount);
+  const calculateEndDate = (): string | null => {
+    if (loan.endDate) return loan.endDate;
+    
+    const tenure = loan.tenure || loan.tenureMonths;
+    if (!tenure || !loan.startDate) return null;
+    
+    const startDate = new Date(loan.startDate);
+    startDate.setMonth(startDate.getMonth() + tenure);
+    return startDate.toISOString();
+  };
+
+  const getDisplayPrincipal = (): number => {
+    const principal = parseFloat(loan.principalAmount) || 0;
+    const outstanding = parseFloat(loan.outstandingAmount) || 0;
+    
+    if (loan.isExistingLoan && principal === 0) {
+      return outstanding;
+    }
+    if (loan.isExistingLoan && principal === outstanding) {
+      return principal;
+    }
+    return principal > 0 ? principal : outstanding;
+  };
+
+  const calculateProgress = (): number => {
+    const displayPrincipal = getDisplayPrincipal();
+    const outstanding = parseFloat(loan.outstandingAmount) || 0;
+    
+    if (loan.isExistingLoan) {
+      return 0;
+    }
+    
+    if (displayPrincipal <= 0) return 0;
+    return Math.min(100, Math.max(0, ((displayPrincipal - outstanding) / displayPrincipal) * 100));
+  };
+
+  const getPrincipalPaid = (): number => {
+    const displayPrincipal = getDisplayPrincipal();
+    const outstanding = parseFloat(loan.outstandingAmount) || 0;
+    
+    if (loan.isExistingLoan) {
+      return 0;
+    }
+    
+    return Math.max(0, displayPrincipal - outstanding);
+  };
+
+  const getNextDueDate = (): string | null => {
+    if (nextInstallment?.dueDate) {
+      return nextInstallment.dueDate;
+    }
+    if (loan.nextEmiDate) {
+      return loan.nextEmiDate;
+    }
+    return null;
+  };
+
+  const getTodayFormatted = (): string => {
+    const today = new Date();
+    return `${String(today.getDate()).padStart(2, '0')} ${MONTH_NAMES[today.getMonth()]} ${today.getFullYear()}`;
+  };
+
+  const displayPrincipal = getDisplayPrincipal();
+  const principalPaid = getPrincipalPaid();
   const progress = calculateProgress();
+  const endDate = calculateEndDate();
 
   return (
     <TouchableOpacity 
@@ -101,10 +165,10 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
           <View style={styles.loanTitleContainer}>
             <Text style={styles.loanTypeLabel}>{getLoanTypeLabel(loan.loanType || '')}</Text>
             <Text style={styles.loanPrincipal}>
-              {hideBalances ? '****' : formatCurrency(parseFloat(loan.principalAmount))}
+              {hideBalances ? '****' : formatCurrency(displayPrincipal)}
             </Text>
             <Text style={styles.maturityDate}>
-              Matures on {formatShortDate(loan.endDate)}
+              Matures on {endDate ? formatShortDate(endDate) : 'N/A'}
             </Text>
           </View>
         </View>
@@ -142,9 +206,18 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
               <View style={styles.overviewItem}>
                 <Text style={styles.overviewLabel}>Loan A/c Number</Text>
                 <View style={styles.overviewValueRow}>
-                  <Text style={styles.overviewValue}>{maskAccountNumber(loan.loanAccountNumber)}</Text>
+                  <Text style={styles.overviewValue}>{getDisplayAccountNumber()}</Text>
                   {loan.loanAccountNumber && (
-                    <Ionicons name="copy-outline" size={14} color="#60a5fa" style={{ marginLeft: 6 }} />
+                    <TouchableOpacity 
+                      onPress={() => setShowAccountNumber(!showAccountNumber)}
+                      style={styles.eyeButton}
+                    >
+                      <Ionicons 
+                        name={showAccountNumber ? 'eye' : 'eye-off'} 
+                        size={14} 
+                        color="#60a5fa" 
+                      />
+                    </TouchableOpacity>
                   )}
                 </View>
               </View>
@@ -163,7 +236,7 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
               <View style={styles.overviewItemRight}>
                 <Text style={styles.overviewLabel}>Due On</Text>
                 <Text style={[styles.overviewValue, { color: '#60a5fa' }]}>
-                  {nextInstallment ? formatDate(nextInstallment.dueDate) : formatDate(loan.nextEmiDate)}
+                  {formatDate(getNextDueDate())}
                 </Text>
               </View>
             </View>
@@ -179,7 +252,7 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
             <View style={styles.outstandingRow}>
               <Text style={styles.overviewLabel}>Principal Paid</Text>
               <Text style={styles.paidAmount}>
-                {hideBalances ? '****' : `${formatCurrency(Math.max(0, principalPaid))}/${formatCurrency(parseFloat(loan.principalAmount))}`}
+                {hideBalances ? '****' : `${formatCurrency(principalPaid)}/${formatCurrency(displayPrincipal)}`}
               </Text>
             </View>
             <View style={styles.progressContainer}>
@@ -192,7 +265,7 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
       </View>
 
       <Text style={styles.noteText}>
-        Note: Outstanding Principal & Principal Paid is shown as on {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+        Note: Outstanding Principal & Principal Paid is shown as on {getTodayFormatted()}
       </Text>
     </TouchableOpacity>
   );
@@ -683,6 +756,10 @@ const styles = StyleSheet.create({
   overviewValueRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  eyeButton: {
+    marginLeft: 8,
+    padding: 4,
   },
   outstandingContent: {
     gap: 8,
