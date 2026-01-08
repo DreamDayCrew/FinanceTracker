@@ -119,7 +119,7 @@ export default function AddLoanScreen() {
         type: data.type,
         lenderName: data.lenderName || undefined,
         loanAccountNumber: data.loanAccountNumber || undefined,
-        principalAmount: isExistingLoan ? data.outstandingAmount : data.principalAmount,
+        principalAmount: data.principalAmount,
         outstandingAmount: isExistingLoan ? data.outstandingAmount : data.principalAmount,
         interestRate: data.interestRate,
         tenure: parseInt(data.tenure),
@@ -159,12 +159,19 @@ export default function AddLoanScreen() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
+      // For non-existing loans, keep the current outstanding amount from DB
+      // For existing loans, use the form's outstanding amount
+      const outstandingToSend = isExistingLoan 
+        ? data.outstandingAmount 
+        : (existingLoan?.outstandingAmount || data.principalAmount);
+      
       const payload: any = {
         name: data.name,
         type: data.type,
         lenderName: data.lenderName || undefined,
         loanAccountNumber: data.loanAccountNumber || undefined,
         principalAmount: data.principalAmount,
+        outstandingAmount: outstandingToSend,
         interestRate: data.interestRate,
         tenure: parseInt(data.tenure),
         emiAmount: data.emiAmount || undefined,
@@ -173,6 +180,7 @@ export default function AddLoanScreen() {
         accountId: data.accountId ? parseInt(data.accountId) : undefined,
         createTransaction,
         affectBalance,
+        nextEmiDate: isExistingLoan ? nextEmiDate.toISOString() : undefined,
       };
       return api.updateLoan(loanId!, payload);
     },
@@ -199,18 +207,39 @@ export default function AddLoanScreen() {
   });
 
   const handleSubmit = () => {
-    // For existing loans, we need outstanding amount instead of principal
-    const amountField = isExistingLoan ? formData.outstandingAmount : formData.principalAmount;
+    // Validate required fields
+    const missingFields: string[] = [];
     
-    if (!formData.name || !amountField || !formData.interestRate || 
-        !formData.tenure || !formData.emiAmount) {
+    if (!formData.name) missingFields.push('Loan Name');
+    if (!formData.principalAmount) missingFields.push(isExistingLoan ? 'Original Loan Amount' : 'Principal Amount');
+    if (isExistingLoan && !formData.outstandingAmount) missingFields.push('Current Outstanding');
+    if (!formData.interestRate) missingFields.push('Interest Rate');
+    if (!formData.tenure) missingFields.push('Tenure');
+    if (!formData.emiAmount) missingFields.push('EMI Amount');
+    
+    if (missingFields.length > 0) {
       Toast.show({
         type: 'error',
         text1: 'Missing Fields',
-        text2: 'Please fill all required fields',
+        text2: missingFields.join(', '),
         position: 'bottom',
       });
       return;
+    }
+    
+    // Validate that outstanding is not greater than principal for existing loans
+    if (isExistingLoan) {
+      const principal = parseFloat(formData.principalAmount);
+      const outstanding = parseFloat(formData.outstandingAmount);
+      if (outstanding > principal) {
+        Toast.show({
+          type: 'error',
+          text1: 'Invalid Amount',
+          text2: 'Outstanding amount cannot be greater than original loan amount',
+          position: 'bottom',
+        });
+        return;
+      }
     }
     
     if (isEditMode) {
@@ -341,19 +370,38 @@ export default function AddLoanScreen() {
           </View>
         )}
 
-        {/* For existing loans: show Outstanding Amount */}
+        {/* For existing loans: show Original Loan Amount and Current Outstanding */}
         {isExistingLoan && (
-          <View style={styles.field}>
-            <Text style={[styles.label, { color: colors.textMuted }]}>Current Outstanding (₹) *</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              placeholder="e.g., 750000"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="numeric"
-              value={formData.outstandingAmount}
-              onChangeText={(text) => setFormData({ ...formData, outstandingAmount: text })}
-            />
-          </View>
+          <>
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: colors.textMuted }]}>Original Loan Amount (₹) *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., 1000000"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                value={formData.principalAmount}
+                onChangeText={(text) => setFormData({ ...formData, principalAmount: text })}
+              />
+              <Text style={[styles.helperText, { color: colors.textMuted, marginTop: 4 }]}>
+                Total loan amount when you took the loan
+              </Text>
+            </View>
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: colors.textMuted }]}>Current Outstanding (₹) *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., 750000"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                value={formData.outstandingAmount}
+                onChangeText={(text) => setFormData({ ...formData, outstandingAmount: text })}
+              />
+              <Text style={[styles.helperText, { color: colors.textMuted, marginTop: 4 }]}>
+                Remaining amount to be paid as of today
+              </Text>
+            </View>
+          </>
         )}
 
         <View style={styles.row}>

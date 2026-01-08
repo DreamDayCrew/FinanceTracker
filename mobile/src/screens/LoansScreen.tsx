@@ -99,36 +99,36 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
     const principal = parseFloat(loan.principalAmount) || 0;
     const outstanding = parseFloat(loan.outstandingAmount) || 0;
     
-    if (loan.isExistingLoan && principal === 0) {
+    // For backward compatibility: if principal is 0 or equals outstanding (old data),
+    // use outstanding as the display value (no progress tracking possible)
+    if (principal === 0) {
       return outstanding;
     }
-    if (loan.isExistingLoan && principal === outstanding) {
-      return principal;
-    }
-    return principal > 0 ? principal : outstanding;
+    return principal;
   };
 
   const calculateProgress = (): number => {
-    const displayPrincipal = getDisplayPrincipal();
+    const principal = parseFloat(loan.principalAmount) || 0;
     const outstanding = parseFloat(loan.outstandingAmount) || 0;
     
-    if (loan.isExistingLoan) {
+    // If no principal recorded (old existing loans), show 0% progress
+    if (principal <= 0 || principal === outstanding) {
       return 0;
     }
     
-    if (displayPrincipal <= 0) return 0;
-    return Math.min(100, Math.max(0, ((displayPrincipal - outstanding) / displayPrincipal) * 100));
+    return Math.min(100, Math.max(0, ((principal - outstanding) / principal) * 100));
   };
 
   const getPrincipalPaid = (): number => {
-    const displayPrincipal = getDisplayPrincipal();
+    const principal = parseFloat(loan.principalAmount) || 0;
     const outstanding = parseFloat(loan.outstandingAmount) || 0;
     
-    if (loan.isExistingLoan) {
+    // If no principal recorded (old existing loans), show 0 paid
+    if (principal <= 0 || principal === outstanding) {
       return 0;
     }
     
-    return Math.max(0, displayPrincipal - outstanding);
+    return Math.max(0, principal - outstanding);
   };
 
   const getNextDueDate = (): string | null => {
