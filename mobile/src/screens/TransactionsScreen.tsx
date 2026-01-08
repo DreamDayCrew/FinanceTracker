@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Modal, Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -206,7 +206,10 @@ export default function TransactionsScreen() {
       </TouchableOpacity>
     );
 
-    if (swipeSettings.enabled) {
+    // Disable swipe on web as react-native-gesture-handler doesn't support it
+    const isSwipeEnabled = swipeSettings.enabled && Platform.OS !== 'web';
+    
+    if (isSwipeEnabled) {
       return (
         <Swipeable
           key={transaction.id}

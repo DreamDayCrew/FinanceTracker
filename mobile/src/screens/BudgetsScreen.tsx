@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -187,6 +187,23 @@ export default function BudgetsScreen() {
               <Text style={[styles.categoryName, { color: colors.primary }]}>{budget.category?.name || 'Unknown Category'}</Text>
             </View>
             <View style={styles.budgetHeaderRight}>
+              {/* Show action buttons on web when swipe is not available */}
+              {Platform.OS === 'web' && (
+                <View style={styles.webActionButtons}>
+                  <TouchableOpacity
+                    onPress={() => handleEdit(budget)}
+                    style={[styles.webActionButton, { backgroundColor: colors.primary + '15' }]}
+                  >
+                    <Ionicons name="pencil" size={16} color={colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDelete(budget)}
+                    style={[styles.webActionButton, { backgroundColor: '#ef444415' }]}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
+              )}
               <TouchableOpacity
                 onPress={() => {
                   if (budget.categoryId && budget.category?.name) {
@@ -223,7 +240,10 @@ export default function BudgetsScreen() {
       </TouchableOpacity>
     );
 
-    if (swipeSettings.enabled) {
+    // Disable swipe on web as react-native-gesture-handler doesn't support it
+    const isSwipeEnabled = swipeSettings.enabled && Platform.OS !== 'web';
+    
+    if (isSwipeEnabled) {
       return (
         <Swipeable
           key={budget.id}
@@ -427,6 +447,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  webActionButtons: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  webActionButton: {
+    padding: 6,
+    borderRadius: 6,
   },
   viewTransactionsButton: {
     padding: 6,

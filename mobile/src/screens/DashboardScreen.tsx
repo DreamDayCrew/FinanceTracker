@@ -184,7 +184,7 @@ export default function DashboardScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Spending Trend</Text>
-              <View style={styles.viewDetailsContainer}>
+              {/*<View style={styles.viewDetailsContainer}>
                 <TouchableOpacity onPress={() => navigation.navigate('ExpenseDetails')} style={styles.viewDetailsButton}>
                   <Text style={[styles.viewAll, { color: colors.primary }]}>Expenses</Text>
                   <Ionicons name="chevron-forward" size={14} color={colors.primary} />
@@ -194,10 +194,10 @@ export default function DashboardScreen() {
                   <Text style={[styles.viewAll, { color: colors.primary }]}>Credit Card</Text>
                   <Ionicons name="chevron-forward" size={14} color={colors.primary} />
                 </TouchableOpacity>
-              </View>
+              </View>*/}
             </View>
             <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
-              <View style={styles.legendContainer}>
+              {/*<View style={styles.legendContainer}>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: '#F44336' }]} />
                   <Text style={[styles.legendText, { color: colors.text }]}>Expenses</Text>
@@ -206,7 +206,7 @@ export default function DashboardScreen() {
                   <View style={[styles.legendDot, { backgroundColor: '#FF9800' }]} />
                   <Text style={[styles.legendText, { color: colors.text }]}>Credit Card</Text>
                 </View>
-              </View>
+              </View>*/}
               <LineChart
                 data={{
                   labels: monthlyExpenses.map(m => m.month),

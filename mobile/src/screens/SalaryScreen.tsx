@@ -70,6 +70,7 @@ export default function SalaryScreen() {
   const [markAsCredited, setMarkAsCredited] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showNextPaydayDatePicker, setShowNextPaydayDatePicker] = useState(false);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   const { data: profile, isLoading } = useQuery<SalaryProfile | null>({
     queryKey: ['salary-profile'],
@@ -98,6 +99,8 @@ export default function SalaryScreen() {
       return allAccounts.filter((acc: Account) => acc.type === 'bank');
     },
   });
+
+  const selectedAccount = accounts?.find(a => a.id === accountId);
 
   // Auto-select default account
   useMemo(() => {
@@ -318,31 +321,31 @@ export default function SalaryScreen() {
         
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textMuted }]}>Credit Account</Text>
-          <View style={[styles.accountSelector, { backgroundColor: colors.background, borderColor: colors.border }]}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.accountList}>
-                {accounts.map((account) => (
-                  <TouchableOpacity
-                    key={account.id}
-                    style={[
-                      styles.accountChip,
-                      { backgroundColor: colors.background, borderColor: colors.border },
-                      accountId === account.id && { borderColor: colors.primary, backgroundColor: colors.primary + '20' }
-                    ]}
-                    onPress={() => setAccountId(account.id)}
-                  >
-                    <Text style={[
-                      styles.accountChipText,
-                      { color: colors.text },
-                      accountId === account.id && { color: colors.primary, fontWeight: '600' }
-                    ]}>
-                      {account.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
+          <TouchableOpacity
+            style={[styles.dateButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setShowAccountPicker(!showAccountPicker)}
+          >
+            <Ionicons name="wallet-outline" size={20} color={colors.textMuted} />
+            <Text style={[styles.dateText, { color: selectedAccount ? colors.text : colors.textMuted }]}>
+              {selectedAccount ? selectedAccount.name : 'Select Account'}
+            </Text>
+          </TouchableOpacity>
+          {showAccountPicker && accounts && (
+            <View style={[styles.accountDropdown, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {accounts.map((account) => (
+                <TouchableOpacity
+                  key={account.id}
+                  style={styles.accountOption}
+                  onPress={() => { setAccountId(account.id); setShowAccountPicker(false); }}
+                >
+                  <Text style={[styles.accountName, { color: colors.text }]}>{account.name}</Text>
+                  <Text style={[styles.accountBalance, { color: colors.textMuted }]}>
+                    {formatCurrency(parseFloat(account.balance))}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.field}>
@@ -1019,23 +1022,36 @@ const styles = StyleSheet.create({
     top: 12,
     padding: 4,
   },
-  accountSelector: {
-    borderWidth: 1,
+  dateButton: {
+    height: 48,
     borderRadius: 8,
-    padding: 8,
-  },
-  accountList: {
+    borderWidth: 1,
+    paddingHorizontal: 12,
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    gap: 10,
   },
-  accountChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+  dateText: {
+    fontSize: 15,
+  },
+  accountDropdown: {
+    marginTop: 8,
     borderRadius: 8,
     borderWidth: 1,
+    overflow: 'hidden',
   },
-  accountChipText: {
+  accountOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 0.5,
+  },
+  accountName: {
     fontSize: 14,
+  },
+  accountBalance: {
+    fontSize: 13,
   },
   paydayRuleButtons: {
     gap: 12,

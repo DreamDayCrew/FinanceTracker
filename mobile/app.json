@@ -29,11 +29,6 @@
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
-    "owner": "kumudhaglory94",
-    "extra": {
-      "eas": {
-        "projectId": "4f51698b-55ca-49d7-a430-c6fda213e82a"
-      }
-    }
+    "owner": "gloryKumudha"
   }
 }

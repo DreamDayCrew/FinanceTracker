@@ -451,12 +451,20 @@ export default function LoansScreen() {
           }}
           renderRightActions={() => renderRightActions(item)}
           renderLeftActions={() => renderLeftActions(item)}
-          onSwipeableOpen={() => {
+          onSwipeableOpen={(direction) => {
             // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== item.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = item.id;
+            
+            // Trigger action based on swipe direction
+            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
+            if (action === 'edit') {
+              handleEdit(item);
+            } else {
+              handleDelete(item);
+            }
           }}
         >
           {content}

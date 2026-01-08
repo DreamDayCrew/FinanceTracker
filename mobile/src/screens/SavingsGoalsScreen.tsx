@@ -52,6 +52,8 @@ export default function SavingsGoalsScreen() {
   const [goalToDelete, setGoalToDelete] = useState<SavingsGoal | null>(null);
   const [contributeCreateTransaction, setContributeCreateTransaction] = useState(true);
   const [contributeAffectBalance, setContributeAffectBalance] = useState(true);
+  const [showFromAccountPicker, setShowFromAccountPicker] = useState(false);
+  const [showToAccountPicker, setShowToAccountPicker] = useState(false);
 
   const { data: goals, isLoading, refetch: refetchGoals } = useQuery<SavingsGoal[]>({
     queryKey: ['savings-goals'],
@@ -67,6 +69,10 @@ export default function SavingsGoalsScreen() {
     queryKey: ['accounts'],
     queryFn: api.getAccounts,
   });
+
+  const activeAccounts = accounts.filter((acc: any) => acc.type === 'bank' && acc.isActive);
+  const selectedFromAccount = activeAccounts.find((a: any) => a.id === newGoal.accountId);
+  const selectedToAccount = activeAccounts.find((a: any) => a.id === newGoal.toAccountId);
 
   const { data: contributions = [], refetch: refetchContributions } = useQuery({
     queryKey: ['contributions', selectedGoal?.id],
@@ -558,7 +564,10 @@ export default function SavingsGoalsScreen() {
                   </View>
                 );
 
-                if (swipeSettings.enabled) {
+                // Disable swipe on web as react-native-gesture-handler doesn't support it
+                const isSwipeEnabled = swipeSettings.enabled && Platform.OS !== 'web';
+                
+                if (isSwipeEnabled) {
                   return (
                     <Swipeable
                       key={goal.id}
@@ -660,73 +669,79 @@ export default function SavingsGoalsScreen() {
               />
 
               <Text style={[styles.label, { color: colors.text }]}>From Account *</Text>
-              <View style={[styles.accountSelector, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {accounts.filter((acc: any) => acc.type === 'bank' && acc.isActive).map((account: any) => (
+              <TouchableOpacity
+                style={[styles.dropdownButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => setShowFromAccountPicker(!showFromAccountPicker)}
+              >
+                <Ionicons name="wallet-outline" size={20} color={colors.textMuted} />
+                <Text style={[styles.dropdownText, { color: selectedFromAccount ? colors.text : colors.textMuted }]}>
+                  {selectedFromAccount ? selectedFromAccount.name : 'Select Account'}
+                </Text>
+              </TouchableOpacity>
+              {showFromAccountPicker && activeAccounts && (
+                <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  {activeAccounts.map((account: any) => (
                     <TouchableOpacity
                       key={account.id}
-                      style={[
-                        styles.accountOption,
-                        { borderColor: colors.border },
-                        newGoal.accountId === account.id && { borderColor: colors.primary, backgroundColor: `${colors.primary}20` }
-                      ]}
-                      onPress={() => setNewGoal({ ...newGoal, accountId: account.id })}
+                      style={styles.dropdownItem}
+                      onPress={() => { setNewGoal({ ...newGoal, accountId: account.id }); setShowFromAccountPicker(false); }}
                     >
-                      <View style={[styles.accountIcon, { backgroundColor: account.color || colors.primary }]}>
+                      <View style={[styles.accountIconSmall, { backgroundColor: account.color || colors.primary }]}>
                         <Ionicons name={(account.icon as any) || 'wallet'} size={16} color="#fff" />
                       </View>
-                      <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
-                        {account.name}
-                      </Text>
-                      <Text style={[styles.accountBalance, { color: colors.textMuted }]}>
-                        {formatCurrency(parseFloat(account.balance || '0'))}
-                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.dropdownItemText, { color: colors.text }]}>{account.name}</Text>
+                        <Text style={[styles.dropdownItemSubtext, { color: colors.textMuted }]}>
+                          {formatCurrency(parseFloat(account.balance || '0'))}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                   ))}
-                </ScrollView>
-              </View>
+                </View>
+              )}
 
               <Text style={[styles.label, { color: colors.text }]}>To Account (Optional)</Text>
-              <View style={[styles.accountSelector, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[styles.dropdownButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => setShowToAccountPicker(!showToAccountPicker)}
+              >
+                <Ionicons name="wallet-outline" size={20} color={colors.textMuted} />
+                <Text style={[styles.dropdownText, { color: selectedToAccount ? colors.text : colors.textMuted }]}>
+                  {selectedToAccount ? selectedToAccount.name : 'None'}
+                </Text>
+              </TouchableOpacity>
+              {showToAccountPicker && (
+                <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <TouchableOpacity
-                    style={[
-                      styles.accountOption,
-                      { borderColor: colors.border },
-                      newGoal.toAccountId === null && { borderColor: colors.primary, backgroundColor: `${colors.primary}20` }
-                    ]}
-                    onPress={() => setNewGoal({ ...newGoal, toAccountId: null })}
+                    style={styles.dropdownItem}
+                    onPress={() => { setNewGoal({ ...newGoal, toAccountId: null }); setShowToAccountPicker(false); }}
                   >
-                    <View style={[styles.accountIcon, { backgroundColor: colors.textMuted }]}>
+                    <View style={[styles.accountIconSmall, { backgroundColor: colors.textMuted }]}>
                       <Ionicons name="close" size={16} color="#fff" />
                     </View>
-                    <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
-                      None
-                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.dropdownItemText, { color: colors.text }]}>None</Text>
+                    </View>
                   </TouchableOpacity>
-                  {accounts.filter((acc: any) => acc.type === 'bank' && acc.isActive && acc.id !== newGoal.accountId).map((account: any) => (
+                  {activeAccounts.filter((acc: any) => acc.id !== newGoal.accountId).map((account: any) => (
                     <TouchableOpacity
                       key={account.id}
-                      style={[
-                        styles.accountOption,
-                        { borderColor: colors.border },
-                        newGoal.toAccountId === account.id && { borderColor: colors.primary, backgroundColor: `${colors.primary}20` }
-                      ]}
-                      onPress={() => setNewGoal({ ...newGoal, toAccountId: account.id })}
+                      style={styles.dropdownItem}
+                      onPress={() => { setNewGoal({ ...newGoal, toAccountId: account.id }); setShowToAccountPicker(false); }}
                     >
-                      <View style={[styles.accountIcon, { backgroundColor: account.color || colors.primary }]}>
+                      <View style={[styles.accountIconSmall, { backgroundColor: account.color || colors.primary }]}>
                         <Ionicons name={(account.icon as any) || 'wallet'} size={16} color="#fff" />
                       </View>
-                      <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
-                        {account.name}
-                      </Text>
-                      <Text style={[styles.accountBalance, { color: colors.textMuted }]}>
-                        {formatCurrency(parseFloat(account.balance || '0'))}
-                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.dropdownItemText, { color: colors.text }]}>{account.name}</Text>
+                        <Text style={[styles.dropdownItemSubtext, { color: colors.textMuted }]}>
+                          {formatCurrency(parseFloat(account.balance || '0'))}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                   ))}
-                </ScrollView>
-              </View>
+                </View>
+              )}
 
               <Text style={[styles.label, { color: colors.text }]}>Icon</Text>
               <View style={styles.iconGrid}>
@@ -1658,6 +1673,48 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 8,
     marginBottom: 16,
+  },
+  dropdownButton: {
+    height: 48,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  dropdownText: {
+    fontSize: 15,
+  },
+  dropdownList: {
+    marginTop: -8,
+    marginBottom: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 0.5,
+    gap: 12,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  dropdownItemSubtext: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  accountIconSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   accountOption: {
     width: 120,

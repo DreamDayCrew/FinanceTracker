@@ -109,7 +109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (account) {
         // Handle card details update
         if (cardData && (account.type === 'credit_card' || account.type === 'debit_card')) {
-          const existingCard = await storage.getCardDetailsByAccountId(account.id);
+          const existingCard = await storage.getCardDetails(account.id);
           const lastFourDigits = cardData.cardNumber.slice(-4);
           
           if (existingCard) {
@@ -445,7 +445,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               description: `Scheduled payment: ${payment.name}`,
               categoryId: payment.categoryId || null,
               accountId: account.id,
-              transactionDate: currentOccurrence.paidAt || currentOccurrence.dueDate,
+              transactionDate: (currentOccurrence.paidAt || currentOccurrence.dueDate).toISOString(),
               paymentOccurrenceId: occurrenceId,
             });
           }
@@ -474,11 +474,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const amount = parseFloat(payment.amount);
             if (!affectAccountBalance) {
               // Restore balance when toggle is disabled (add back the payment amount)
-              const newBalance = (parseFloat(account.balance) + amount).toString();
+              const newBalance = (parseFloat(account.balance || '0') + amount).toString();
               await storage.updateAccount(account.id, { balance: newBalance });
             } else if (affectAccountBalance && !currentOccurrence.affectAccountBalance) {
               // Deduct balance when toggle is re-enabled
-              const newBalance = (parseFloat(account.balance) - amount).toString();
+              const newBalance = (parseFloat(account.balance || '0') - amount).toString();
               await storage.updateAccount(account.id, { balance: newBalance });
             }
           }
@@ -620,7 +620,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Reverse from account balance change
           const fromAccount = await storage.getAccount(goal.accountId);
           if (fromAccount) {
-            const currentBalance = parseFloat(fromAccount.balance);
+            const currentBalance = parseFloat(fromAccount.balance || '0');
             const contributionAmount = parseFloat(validatedData.amount);
             // Add amount back to reverse the debit
             await storage.updateAccount(goal.accountId, {
@@ -631,7 +631,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Reverse to account balance change
           const toAccount = await storage.getAccount(goal.toAccountId);
           if (toAccount) {
-            const currentBalance = parseFloat(toAccount.balance);
+            const currentBalance = parseFloat(toAccount.balance || '0');
             const contributionAmount = parseFloat(validatedData.amount);
             // Subtract amount back to reverse the credit
             await storage.updateAccount(goal.toAccountId, {
@@ -667,7 +667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!affectAccountBalance) {
           const account = await storage.getAccount(goal.accountId);
           if (account) {
-            const currentBalance = parseFloat(account.balance);
+            const currentBalance = parseFloat(account.balance || '0');
             const contributionAmount = parseFloat(validatedData.amount);
             // Add amount back to reverse the debit
             await storage.updateAccount(goal.accountId, {
@@ -703,7 +703,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!affectAccountBalance) {
           const account = await storage.getAccount(goal.toAccountId);
           if (account) {
-            const currentBalance = parseFloat(account.balance);
+            const currentBalance = parseFloat(account.balance || '0');
             const contributionAmount = parseFloat(validatedData.amount);
             // Subtract amount back to reverse the credit
             await storage.updateAccount(goal.toAccountId, {
@@ -716,7 +716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (goal.accountId) {
           const account = await storage.getAccount(goal.accountId);
           if (account) {
-            const currentBalance = parseFloat(account.balance);
+            const currentBalance = parseFloat(account.balance || '0');
             const contributionAmount = parseFloat(validatedData.amount);
             // Subtract amount directly
             await storage.updateAccount(goal.accountId, {
@@ -728,7 +728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (goal.toAccountId) {
           const toAccount = await storage.getAccount(goal.toAccountId);
           if (toAccount) {
-            const currentBalance = parseFloat(toAccount.balance);
+            const currentBalance = parseFloat(toAccount.balance || '0');
             const contributionAmount = parseFloat(validatedData.amount);
             // Add amount directly
             await storage.updateAccount(goal.toAccountId, {
@@ -873,10 +873,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               salaryProfileId: profile.id,
               month: payday.month,
               year: payday.year,
-              expectedPayDate: payday.date.toISOString(),
-              expectedAmount: profile.monthlyAmount,
-              actualPayDate: null,
-              actualAmount: null,
+              expectedPayDate: payday.date,
+              expectedAmount: profile.monthlyAmount ?? undefined,
+              actualPayDate: undefined,
+              actualAmount: undefined,
             });
           }
         } catch (cycleError) {
@@ -913,10 +913,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 salaryProfileId: profile.id,
                 month: payday.month,
                 year: payday.year,
-                expectedPayDate: payday.date.toISOString(),
-                expectedAmount: profile.monthlyAmount,
-                actualPayDate: null,
-                actualAmount: null,
+                expectedPayDate: payday.date,
+                expectedAmount: profile.monthlyAmount ?? undefined,
+                actualPayDate: undefined,
+                actualAmount: undefined,
               });
             }
           } catch (cycleError) {
@@ -987,8 +987,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertSalaryCycleSchema.parse({
         ...req.body,
         salaryProfileId: profile.id,
-        expectedPayDate: expectedPayDate.toISOString(),
-        expectedAmount: profile.monthlyAmount,
+        expectedPayDate: expectedPayDate,
+        expectedAmount: profile.monthlyAmount ?? undefined,
       });
       const cycle = await storage.createSalaryCycle(validatedData);
       res.status(201).json(cycle);
@@ -1042,7 +1042,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             categoryId: salaryCategory.id,
             type: 'credit',
             amount: updateData.actualAmount,
-            transactionDate: new Date(updateData.actualPayDate),
+            transactionDate: new Date(updateData.actualPayDate).toISOString(),
             description: `Salary - ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][currentCycle.month - 1]} ${currentCycle.year}`,
           });
 
@@ -1178,7 +1178,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .reduce((sum, t) => sum + parseFloat(t.amount), 0);
         
         const creditLimit = card.creditLimit ? parseFloat(card.creditLimit) : 0;
-        const availableCredit = parseFloat(card.balance);
+        const availableCredit = parseFloat(card.balance || '0');
         const usedCredit = creditLimit - availableCredit;
         
         cardSpending.push({
@@ -1733,7 +1733,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const newPrincipal = currentPrincipal + topupAmountNum;
       
       // Calculate new tenure if additional tenure is provided
-      const currentTenure = loan.tenure || loan.tenureMonths || 0;
+      const currentTenure = loan.tenure || 0;
       const newTenure = additionalTenure ? currentTenure + parseInt(additionalTenure) : currentTenure;
       
       // Use new EMI if provided, otherwise keep existing
@@ -2376,7 +2376,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             type: "debit",
             description: `Insurance Premium - ${insurance.name}`,
             merchant: insurance.providerName || insurance.name,
-            transactionDate: new Date()
+            transactionDate: new Date().toISOString()
           });
           transactionId = transaction.id;
         }
@@ -2386,7 +2386,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (affectAccountBalance && targetAccountId) {
         const account = await storage.getAccount(targetAccountId);
         if (account) {
-          const currentBalance = parseFloat(account.balance) || 0;
+          const currentBalance = parseFloat(account.balance || '0') || 0;
           const paymentAmount = parseFloat(amount) || 0;
           const newBalance = (currentBalance - paymentAmount).toFixed(2);
           await storage.updateAccount(targetAccountId, { balance: newBalance });

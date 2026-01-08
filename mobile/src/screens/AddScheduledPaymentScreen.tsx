@@ -30,6 +30,8 @@ export default function AddScheduledPaymentScreen() {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [affectTransaction, setAffectTransaction] = useState(true);
   const [affectAccountBalance, setAffectAccountBalance] = useState(true);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   const { data: categories } = useQuery({
     queryKey: ['categories'],
@@ -40,6 +42,9 @@ export default function AddScheduledPaymentScreen() {
     queryKey: ['accounts'],
     queryFn: api.getAccounts,
   });
+
+  const selectedCategory = categories?.find((c: any) => c.id === selectedCategoryId);
+  const selectedAccount = accounts?.find((a: any) => a.id === selectedAccountId);
 
   const { data: payments } = useQuery({
     queryKey: ['scheduled-payments'],
@@ -216,60 +221,68 @@ export default function AddScheduledPaymentScreen() {
 
       <View style={styles.field}>
         <Text style={[styles.label, { color: colors.textMuted }]}>Category (optional)</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.categoryRow}>
+        <TouchableOpacity
+          style={[styles.dropdownButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setShowCategoryPicker(!showCategoryPicker)}
+        >
+          <Ionicons name="pricetag-outline" size={20} color={colors.textMuted} />
+          <Text style={[styles.dropdownText, { color: selectedCategory ? colors.text : colors.textMuted }]}>
+            {selectedCategory ? selectedCategory.name : 'Select Category'}
+          </Text>
+        </TouchableOpacity>
+        {showCategoryPicker && expenseCategories && (
+          <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => { setSelectedCategoryId(null); setShowCategoryPicker(false); }}
+            >
+              <Text style={[styles.dropdownItemText, { color: colors.textMuted }]}>None</Text>
+            </TouchableOpacity>
             {expenseCategories.map((category) => (
               <TouchableOpacity
                 key={category.id}
-                style={[
-                  styles.categoryChip,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                  selectedCategoryId === category.id && { backgroundColor: colors.primary }
-                ]}
-                onPress={() => setSelectedCategoryId(
-                  selectedCategoryId === category.id ? null : category.id
-                )}
+                style={styles.dropdownItem}
+                onPress={() => { setSelectedCategoryId(category.id); setShowCategoryPicker(false); }}
               >
-                <Text style={[
-                  styles.categoryChipText,
-                  { color: colors.text },
-                  selectedCategoryId === category.id && { color: '#fff' }
-                ]}>
-                  {category.name}
-                </Text>
+                <Text style={[styles.dropdownItemText, { color: colors.text }]}>{category.name}</Text>
               </TouchableOpacity>
             ))}
           </View>
-        </ScrollView>
+        )}
       </View>
 
       <View style={styles.field}>
         <Text style={[styles.label, { color: colors.textMuted }]}>Account (optional)</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.categoryRow}>
-            {accounts?.map((account) => (
+        <TouchableOpacity
+          style={[styles.dropdownButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setShowAccountPicker(!showAccountPicker)}
+        >
+          <Ionicons name="wallet-outline" size={20} color={colors.textMuted} />
+          <Text style={[styles.dropdownText, { color: selectedAccount ? colors.text : colors.textMuted }]}>
+            {selectedAccount ? selectedAccount.name : 'Select Account'}
+          </Text>
+        </TouchableOpacity>
+        {showAccountPicker && accounts && (
+          <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => { setSelectedAccountId(null); setShowAccountPicker(false); }}
+            >
+              <Text style={[styles.dropdownItemText, { color: colors.textMuted }]}>None</Text>
+            </TouchableOpacity>
+            {accounts.map((account) => (
               <TouchableOpacity
                 key={account.id}
-                style={[
-                  styles.categoryChip,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                  selectedAccountId === account.id && { backgroundColor: colors.primary }
-                ]}
-                onPress={() => setSelectedAccountId(
-                  selectedAccountId === account.id ? null : account.id
-                )}
+                style={styles.dropdownItem}
+                onPress={() => { setSelectedAccountId(account.id); setShowAccountPicker(false); }}
               >
-                <Text style={[
-                  styles.categoryChipText,
-                  { color: colors.text },
-                  selectedAccountId === account.id && { color: '#fff' }
-                ]}>
-                  {account.name}
-                </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.dropdownItemText, { color: colors.text }]}>{account.name}</Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
-        </ScrollView>
+        )}
       </View>
 
       <View style={styles.field}>
@@ -377,23 +390,33 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     fontSize: 16,
   },
-  categoryRow: {
+  dropdownButton: {
+    height: 48,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    gap: 10,
   },
-  categoryChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+  dropdownText: {
+    fontSize: 15,
   },
-  categoryChipActive: {
+  dropdownList: {
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
-  categoryChipText: {
+  dropdownItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 0.5,
+  },
+  dropdownItemText: {
     fontSize: 14,
-    fontWeight: '500',
-  },
-  categoryChipTextActive: {
-    color: '#ffffff',
   },
   toggleContainer: {
     borderRadius: 12,

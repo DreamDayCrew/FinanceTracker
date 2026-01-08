@@ -395,7 +395,10 @@ export default function ScheduledPaymentsScreen() {
       </View>
     );
 
-    if (swipeSettings.enabled) {
+    // Disable swipe on web as react-native-gesture-handler doesn't support it
+    const isSwipeEnabled = swipeSettings.enabled && Platform.OS !== 'web';
+    
+    if (isSwipeEnabled) {
       return (
         <Swipeable
           key={payment.id}
