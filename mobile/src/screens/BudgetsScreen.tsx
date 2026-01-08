@@ -157,21 +157,29 @@ export default function BudgetsScreen() {
     const percentage = budgetAmount > 0 ? Math.min((spent / budgetAmount) * 100, 100) : 0;
     const isOverBudget = spent > budgetAmount;
 
+    const handleCardPress = () => {
+      // Close any open swipeable first
+      if (currentOpenSwipeable.current !== null) {
+        swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+        currentOpenSwipeable.current = null;
+      }
+      
+      // Navigate to category transactions
+      if (budget.categoryId && budget.category?.name) {
+        navigation.navigate('CategoryTransactions', {
+          categoryId: budget.categoryId,
+          categoryName: budget.category.name,
+          month,
+          year,
+        });
+      }
+    };
+
     const content = (
       <TouchableOpacity
         style={[styles.budgetCard, { backgroundColor: colors.card }]}
-        onPress={swipeSettings.enabled ? undefined : () => {
-          if (budget.categoryId && budget.category?.name) {
-            navigation.navigate('CategoryTransactions', {
-              categoryId: budget.categoryId,
-              categoryName: budget.category.name,
-              month,
-              year,
-            });
-          }
-        }}
+        onPress={handleCardPress}
         activeOpacity={0.7}
-        disabled={swipeSettings.enabled}
       >
         <View style={styles.budgetContent}>
           <View style={styles.budgetHeader}>
@@ -228,20 +236,12 @@ export default function BudgetsScreen() {
           }}
           renderRightActions={() => renderRightActions(budget)}
           renderLeftActions={() => renderLeftActions(budget)}
-          onSwipeableOpen={(direction) => {
+          onSwipeableWillOpen={(direction) => {
             // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== budget.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = budget.id;
-            
-            // Trigger action based on swipe direction
-            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
-            if (action === 'edit') {
-              handleEdit(budget);
-            } else {
-              handleDelete(budget);
-            }
           }}
         >
           {content}
@@ -280,22 +280,15 @@ export default function BudgetsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <View style={styles.monthNav}>
-          <TouchableOpacity onPress={goToPreviousMonth} style={styles.monthNavButton}>
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.monthLabel, { color: colors.text }]}>{MONTH_NAMES[month - 1]} {year}</Text>
-          <TouchableOpacity onPress={goToNextMonth} style={styles.monthNavButton}>
-            <Ionicons name="chevron-forward" size={24} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity 
-          style={[styles.addButton, { backgroundColor: colors.primary }]}
-          onPress={() => navigation.navigate('AddBudget')}
-        >
-          <Ionicons name="add" size={20} color="#fff" />
-          <Text style={styles.addButtonText}>Add</Text>
+      <View style={styles.monthNav}>
+        <TouchableOpacity onPress={goToPreviousMonth} style={styles.monthNavButton}>
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.monthText, { color: colors.text }]}>
+          {MONTH_NAMES[month - 1]} {year}
+        </Text>
+        <TouchableOpacity onPress={goToNextMonth} style={styles.monthNavButton}>
+          <Ionicons name="chevron-forward" size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -312,6 +305,16 @@ export default function BudgetsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: colors.primary }]}
+        onPress={() => navigation.navigate('AddBudget')}
+        activeOpacity={0.8}
+        accessibilityLabel="Add new budget"
+        accessibilityRole="button"
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
 
       {/* Delete Confirmation Modal */}
       <Modal
@@ -371,30 +374,31 @@ const styles = StyleSheet.create({
   },
   monthNav: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 16,
   },
   monthNavButton: {
-    padding: 4,
+    padding: 8,
   },
-  monthLabel: {
+  monthText: {
     fontSize: 16,
     fontWeight: '600',
-    minWidth: 140,
-    textAlign: 'center',
   },
-  addButton: {
-    flexDirection: 'row',
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 4,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   scrollView: {
     flex: 1,

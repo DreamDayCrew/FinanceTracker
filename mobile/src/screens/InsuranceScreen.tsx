@@ -180,9 +180,9 @@ export default function InsuranceScreen() {
         }}
         renderRightActions={() => renderRightActions(item)}
         onSwipeableOpen={() => handleSwipeableOpen(item.id)}
-        friction={swipeSettings.friction}
-        overshootFriction={swipeSettings.overshootFriction}
-        rightThreshold={swipeSettings.swipeThreshold}
+        friction={2}
+        overshootFriction={8}
+        rightThreshold={40}
       >
         <TouchableOpacity
           style={[styles.insuranceCard, { backgroundColor: colors.card }]}

@@ -169,7 +169,7 @@ export default function InsuranceDetailsScreen() {
               onPress={() => (navigation as any).navigate('AddInsurance', { insuranceId: insurance.id })}
               data-testid="button-edit-insurance"
             >
-              <Ionicons name="create-outline" size={24} color={colors.textMuted} />
+              <Ionicons name="settings-outline" size={24} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
 
@@ -377,6 +377,9 @@ export default function InsuranceDetailsScreen() {
                 <Ionicons name="close" size={24} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
+            <Text style={[styles.modalSubtitle, { color: colors.danger }]}>
+              This action cannot be undone.
+            </Text>
 
             {selectedPremium && (
               <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>

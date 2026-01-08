@@ -1228,8 +1228,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteLoan(id: number): Promise<boolean> {
-    // Delete related installments and components first
+    // Delete related records first (due to foreign key constraints)
+    await db.delete(loanPayments).where(eq(loanPayments.loanId, id));
     await db.delete(loanInstallments).where(eq(loanInstallments.loanId, id));
+    await db.delete(loanTerms).where(eq(loanTerms.loanId, id));
     await db.delete(loanComponents).where(eq(loanComponents.loanId, id));
     const result = await db.delete(loans).where(eq(loans.id, id)).returning();
     return result.length > 0;

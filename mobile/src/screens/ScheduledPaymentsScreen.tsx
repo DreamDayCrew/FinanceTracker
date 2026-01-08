@@ -507,22 +507,7 @@ export default function ScheduledPaymentsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <View>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>My Monthly Payment Checklist</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
-            {activePayments.length} active payments
-          </Text>
-        </View>
-        <TouchableOpacity 
-          style={[styles.addButton, { backgroundColor: colors.primary }]}
-          onPress={() => navigation.navigate('AddScheduledPayment')}
-        >
-          <Ionicons name="add" size={20} color="#fff" />
-          <Text style={styles.addButtonText}>Add</Text>
-        </TouchableOpacity>
-      </View>
-
+      
       {/* Tabs */}
       <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
@@ -530,7 +515,7 @@ export default function ScheduledPaymentsScreen() {
           onPress={() => setActiveTab('checklist')}
         >
           <Text style={[styles.tabText, { color: activeTab === 'checklist' ? colors.primary : colors.textMuted }]}>
-            This Month
+            This Month - {activePayments.length} active payments
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -876,6 +861,16 @@ export default function ScheduledPaymentsScreen() {
         </View>
       </Modal>
 
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: colors.primary }]}
+        onPress={() => navigation.navigate('AddScheduledPayment')}
+        activeOpacity={0.8}
+        accessibilityLabel="Add new scheduled payment"
+        accessibilityRole="button"
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
+
       {/* Delete Confirmation Modal */}
       <Modal
         visible={showDeleteModal}
@@ -937,18 +932,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  addButton: {
-    flexDirection: 'row',
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 4,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   tabBar: {
     flexDirection: 'row',

@@ -333,22 +333,7 @@ export default function SavingsGoalsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <View>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>My Savings Goals</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
-            {activeGoals.length} active goals
-          </Text>
-        </View>
-        <TouchableOpacity 
-          style={[styles.addButton, { backgroundColor: colors.primary }]}
-          onPress={() => setIsAddModalOpen(true)}
-        >
-          <Ionicons name="add" size={20} color="#fff" />
-          <Text style={styles.addButtonText}>Add</Text>
-        </TouchableOpacity>
-      </View>
-
+      
       {/* Tabs */}
       <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
@@ -374,7 +359,7 @@ export default function SavingsGoalsScreen() {
           <View style={styles.tabContent}>
             {/* Total Card */}
             <View style={styles.totalCard}>
-              <Text style={styles.totalLabel}>Total Saved</Text>
+              <Text style={styles.totalLabel}>Total Saved from {activeGoals.length} active goals</Text>
               <Text style={styles.totalValue}>{formatCurrency(totalSaved)}</Text>
               <Text style={[styles.totalSubtitle]}>of {formatCurrency(totalTarget)} target</Text>
               <View style={styles.totalProgressBar}>
@@ -627,6 +612,16 @@ export default function SavingsGoalsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: colors.primary }]}
+        onPress={() => setIsAddModalOpen(true)}
+        activeOpacity={0.8}
+        accessibilityLabel="Add new savings goal"
+        accessibilityRole="button"
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
 
       {/* Add Goal Modal */}
       <Modal
@@ -1313,18 +1308,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 4,
-  },
   addButtonText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   tabBar: {
     flexDirection: 'row',
@@ -1857,17 +1859,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
     gap: 12,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-  },
-  toggleLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
   },
   toggleDescription: {
     fontSize: 14,
