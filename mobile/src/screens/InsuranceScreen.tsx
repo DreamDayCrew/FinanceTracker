@@ -146,25 +146,30 @@ export default function InsuranceScreen() {
   };
 
   const renderRightActions = (insurance: Insurance) => {
+    const action = swipeSettings.rightAction;
     return (
-      <View style={styles.swipeActionsContainer}>
-        <TouchableOpacity
-          style={[styles.swipeAction, { backgroundColor: '#f59e0b' }]}
-          onPress={() => handleEdit(insurance)}
-          data-testid={`button-edit-insurance-${insurance.id}`}
-        >
-          <Ionicons name="pencil" size={22} color="#fff" />
-          <Text style={styles.swipeActionText}>Edit</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.swipeAction, { backgroundColor: colors.danger }]}
-          onPress={() => handleDelete(insurance)}
-          data-testid={`button-delete-insurance-${insurance.id}`}
-        >
-          <Ionicons name="trash" size={22} color="#fff" />
-          <Text style={styles.swipeActionText}>Delete</Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : colors.danger }]}
+        onPress={() => action === 'edit' ? handleEdit(insurance) : handleDelete(insurance)}
+        data-testid={`button-${action}-insurance-${insurance.id}`}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderLeftActions = (insurance: Insurance) => {
+    const action = swipeSettings.leftAction;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : colors.danger }]}
+        onPress={() => action === 'edit' ? handleEdit(insurance) : handleDelete(insurance)}
+        data-testid={`button-${action}-insurance-left-${insurance.id}`}
+      >
+        <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
+        <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
+      </TouchableOpacity>
     );
   };
 
@@ -173,100 +178,115 @@ export default function InsuranceScreen() {
     const paidCount = item.premiums?.filter(p => p.status === 'paid').length || 0;
     const totalCount = item.premiums?.length || 0;
 
-    return (
-      <Swipeable
-        ref={(ref) => {
-          if (ref) swipeableRefs.current.set(item.id, ref);
-        }}
-        renderRightActions={() => renderRightActions(item)}
-        onSwipeableOpen={() => handleSwipeableOpen(item.id)}
-        friction={2}
-        overshootFriction={8}
-        rightThreshold={40}
+    const content = (
+      <TouchableOpacity
+        style={[styles.insuranceCard, { backgroundColor: colors.card }]}
+        onPress={() => navigation.navigate('InsuranceDetails', { insuranceId: item.id })}
+        data-testid={`card-insurance-${item.id}`}
       >
-        <TouchableOpacity
-          style={[styles.insuranceCard, { backgroundColor: colors.card }]}
-          onPress={() => navigation.navigate('InsuranceDetails', { insuranceId: item.id })}
-          data-testid={`card-insurance-${item.id}`}
-        >
-          <View style={styles.cardHeader}>
-            <View style={[styles.iconContainer, { backgroundColor: `${getStatusColor(item.status)}20` }]}>
-              <Ionicons name={getInsuranceIcon(item.type)} size={24} color={getStatusColor(item.status)} />
-            </View>
-            <View style={styles.headerInfo}>
-              <Text style={[styles.insuranceName, { color: colors.text }]}>{item.name}</Text>
-              <View style={styles.typeRow}>
-                <Text style={[styles.insuranceType, { color: colors.textMuted }]}>
-                  {getInsuranceTypeLabel(item.type)}
+        <View style={styles.cardHeader}>
+          <View style={[styles.iconContainer, { backgroundColor: `${getStatusColor(item.status)}20` }]}>
+            <Ionicons name={getInsuranceIcon(item.type)} size={24} color={getStatusColor(item.status)} />
+          </View>
+          <View style={styles.headerInfo}>
+            <Text style={[styles.insuranceName, { color: colors.text }]}>{item.name}</Text>
+            <View style={styles.typeRow}>
+              <Text style={[styles.insuranceType, { color: colors.textMuted }]}>
+                {getInsuranceTypeLabel(item.type)}
+              </Text>
+              <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(item.status)}20` }]}>
+                <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
+                  {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
                 </Text>
-                <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(item.status)}20` }]}>
-                  <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-                    {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                  </Text>
-                </View>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
           </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </View>
 
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-          <View style={styles.cardDetails}>
+        <View style={styles.cardDetails}>
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Premium</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>
+              {formatCurrency(parseFloat(item.premiumAmount))} / {getFrequencyLabel(item.premiumFrequency)}
+            </Text>
+          </View>
+          {item.termsPerPeriod > 1 && (
             <View style={styles.detailRow}>
-              <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Premium</Text>
+              <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Payment Terms</Text>
               <Text style={[styles.detailValue, { color: colors.text }]}>
-                {formatCurrency(parseFloat(item.premiumAmount))} / {getFrequencyLabel(item.premiumFrequency)}
+                {item.termsPerPeriod} installments
               </Text>
             </View>
-            {item.termsPerPeriod > 1 && (
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Payment Terms</Text>
-                <Text style={[styles.detailValue, { color: colors.text }]}>
-                  {item.termsPerPeriod} installments
+          )}
+          {item.providerName && (
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Provider</Text>
+              <Text style={[styles.detailValue, { color: colors.text }]}>{item.providerName}</Text>
+            </View>
+          )}
+          {nextPremium && (
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Next Due</Text>
+              <Text style={[
+                styles.detailValue, 
+                { color: nextPremium.status === 'overdue' ? colors.danger : colors.text }
+              ]}>
+                {formatDate(nextPremium.dueDate)} - {formatCurrency(parseFloat(nextPremium.amount))}
+              </Text>
+            </View>
+          )}
+          {totalCount > 0 && (
+            <View style={styles.progressContainer}>
+              <View style={styles.progressHeader}>
+                <Text style={[styles.progressLabel, { color: colors.textMuted }]}>
+                  Payments: {paidCount}/{totalCount}
                 </Text>
               </View>
-            )}
-            {item.providerName && (
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Provider</Text>
-                <Text style={[styles.detailValue, { color: colors.text }]}>{item.providerName}</Text>
+              <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+                <View 
+                  style={[
+                    styles.progressFill, 
+                    { 
+                      width: `${(paidCount / totalCount) * 100}%`,
+                      backgroundColor: colors.primary 
+                    }
+                  ]} 
+                />
               </View>
-            )}
-            {nextPremium && (
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Next Due</Text>
-                <Text style={[
-                  styles.detailValue, 
-                  { color: nextPremium.status === 'overdue' ? colors.danger : colors.text }
-                ]}>
-                  {formatDate(nextPremium.dueDate)} - {formatCurrency(parseFloat(nextPremium.amount))}
-                </Text>
-              </View>
-            )}
-            {totalCount > 0 && (
-              <View style={styles.progressContainer}>
-                <View style={styles.progressHeader}>
-                  <Text style={[styles.progressLabel, { color: colors.textMuted }]}>
-                    Payments: {paidCount}/{totalCount}
-                  </Text>
-                </View>
-                <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-                  <View 
-                    style={[
-                      styles.progressFill, 
-                      { 
-                        width: `${(paidCount / totalCount) * 100}%`,
-                        backgroundColor: colors.primary 
-                      }
-                    ]} 
-                  />
-                </View>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-      </Swipeable>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
     );
+
+    if (swipeSettings.enabled) {
+      return (
+        <Swipeable
+          ref={(ref) => {
+            if (ref) {
+              swipeableRefs.current.set(item.id, ref);
+            } else {
+              swipeableRefs.current.delete(item.id);
+            }
+          }}
+          renderRightActions={() => renderRightActions(item)}
+          renderLeftActions={() => renderLeftActions(item)}
+          onSwipeableOpen={() => {
+            if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== item.id) {
+              swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+            }
+            currentOpenSwipeable.current = item.id;
+          }}
+        >
+          {content}
+        </Swipeable>
+      );
+    }
+
+    return content;
   };
 
   const totalPremiums = useMemo(() => {
