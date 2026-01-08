@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, Animated } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -8,7 +8,7 @@ import Toast from 'react-native-toast-message';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { api } from '../lib/api';
-import type { Loan } from '../lib/types';
+import type { Loan, LoanInstallment } from '../lib/types';
 import { useTheme } from '../contexts/ThemeContext';
 import { useSwipeSettings } from '../hooks/useSwipeSettings';
 
@@ -27,6 +27,177 @@ type RootStackParamList = {
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+interface LoanCardProps {
+  loan: Loan;
+  colors: ReturnType<typeof getThemedColors>;
+  hideBalances: boolean;
+  onPress: () => void;
+  onDetailsPress: () => void;
+  nextInstallment?: LoanInstallment | null;
+}
+
+function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextInstallment }: LoanCardProps) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'outstanding'>('overview');
+
+  const getLoanIcon = (type: string): keyof typeof Ionicons.glyphMap => {
+    switch (type) {
+      case 'home_loan': return 'home';
+      case 'personal_loan': return 'cash';
+      case 'credit_card_loan': return 'card';
+      case 'item_emi': return 'cart';
+      default: return 'document';
+    }
+  };
+
+  const getLoanTypeLabel = (type: string) => {
+    switch (type) {
+      case 'home_loan': return 'HOME LOAN';
+      case 'personal_loan': return 'PERSONAL LOAN';
+      case 'credit_card_loan': return 'CREDIT CARD';
+      case 'item_emi': return 'ITEM EMI';
+      default: return type.toUpperCase();
+    }
+  };
+
+  const formatDate = (dateString: string | Date | null | undefined) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return `${String(date.getDate()).padStart(2, '0')} ${MONTH_NAMES[date.getMonth()]}, ${date.getFullYear()}`;
+  };
+
+  const formatShortDate = (dateString: string | Date | null | undefined) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return `${String(date.getDate()).padStart(2, '0')} ${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
+  };
+
+  const maskAccountNumber = (accNum: string | null | undefined) => {
+    if (!accNum) return 'N/A';
+    const last4 = accNum.slice(-4);
+    return `****${last4}`;
+  };
+
+  const calculateProgress = (): number => {
+    const principal = parseFloat(loan.principalAmount) || 0;
+    const outstanding = parseFloat(loan.outstandingAmount) || 0;
+    if (principal <= 0) return 0;
+    return Math.min(100, Math.max(0, ((principal - outstanding) / principal) * 100));
+  };
+
+  const principalPaid = parseFloat(loan.principalAmount) - parseFloat(loan.outstandingAmount);
+  const progress = calculateProgress();
+
+  return (
+    <TouchableOpacity 
+      style={[styles.loanCard, { backgroundColor: '#1a2744' }]}
+      onPress={onPress}
+      activeOpacity={0.9}
+    >
+      <View style={styles.cardHeader}>
+        <View style={styles.cardHeaderLeft}>
+          <View style={[styles.loanIconCircle, { backgroundColor: 'rgba(59, 130, 246, 0.3)' }]}>
+            <Ionicons name={getLoanIcon(loan.loanType || '')} size={20} color="#60a5fa" />
+          </View>
+          <View style={styles.loanTitleContainer}>
+            <Text style={styles.loanTypeLabel}>{getLoanTypeLabel(loan.loanType || '')}</Text>
+            <Text style={styles.loanPrincipal}>
+              {hideBalances ? '****' : formatCurrency(parseFloat(loan.principalAmount))}
+            </Text>
+            <Text style={styles.maturityDate}>
+              Matures on {formatShortDate(loan.endDate)}
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity 
+          style={styles.arrowButton}
+          onPress={onDetailsPress}
+        >
+          <Ionicons name="chevron-forward" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'overview' && styles.activeTab]}
+          onPress={() => setActiveTab('overview')}
+        >
+          <Text style={[styles.tabText, activeTab === 'overview' && styles.activeTabText]}>
+            Overview
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'outstanding' && styles.activeTab]}
+          onPress={() => setActiveTab('outstanding')}
+        >
+          <Text style={[styles.tabText, activeTab === 'outstanding' && styles.activeTabText]}>
+            Outstanding
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.tabContent}>
+        {activeTab === 'overview' ? (
+          <View style={styles.overviewContent}>
+            <View style={styles.overviewRow}>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>Loan A/c Number</Text>
+                <View style={styles.overviewValueRow}>
+                  <Text style={styles.overviewValue}>{maskAccountNumber(loan.loanAccountNumber)}</Text>
+                  {loan.loanAccountNumber && (
+                    <Ionicons name="copy-outline" size={14} color="#60a5fa" style={{ marginLeft: 6 }} />
+                  )}
+                </View>
+              </View>
+              <View style={styles.overviewItemRight}>
+                <Text style={styles.overviewLabel}>Rate of Interest</Text>
+                <Text style={styles.overviewValue}>{loan.interestRate}% p.a.</Text>
+              </View>
+            </View>
+            <View style={styles.overviewRow}>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>Upcoming EMI</Text>
+                <Text style={styles.overviewValue}>
+                  {hideBalances ? '****' : formatCurrency(parseFloat(loan.emiAmount || '0'))}
+                </Text>
+              </View>
+              <View style={styles.overviewItemRight}>
+                <Text style={styles.overviewLabel}>Due On</Text>
+                <Text style={[styles.overviewValue, { color: '#60a5fa' }]}>
+                  {nextInstallment ? formatDate(nextInstallment.dueDate) : formatDate(loan.nextEmiDate)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.outstandingContent}>
+            <View style={styles.outstandingRow}>
+              <Text style={styles.overviewLabel}>Outstanding Principal</Text>
+              <Text style={styles.outstandingAmount}>
+                {hideBalances ? '****' : formatCurrency(parseFloat(loan.outstandingAmount))}
+              </Text>
+            </View>
+            <View style={styles.outstandingRow}>
+              <Text style={styles.overviewLabel}>Principal Paid</Text>
+              <Text style={styles.paidAmount}>
+                {hideBalances ? '****' : `${formatCurrency(Math.max(0, principalPaid))}/${formatCurrency(parseFloat(loan.principalAmount))}`}
+              </Text>
+            </View>
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBarBg}>
+                <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+              </View>
+            </View>
+          </View>
+        )}
+      </View>
+
+      <Text style={styles.noteText}>
+        Note: Outstanding Principal & Principal Paid is shown as on {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function LoansScreen() {
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
@@ -39,12 +210,11 @@ export default function LoansScreen() {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [loanToDelete, setLoanToDelete] = useState<Loan | null>(null);
   const [hideBalances, setHideBalances] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<string>('all');
 
-  // Close all swipeables when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       return () => {
-        // Close all swipeables when leaving screen
         swipeableRefs.current.forEach(ref => ref?.close());
         currentOpenSwipeable.current = null;
       };
@@ -91,46 +261,9 @@ export default function LoansScreen() {
     return `${date.getDate()} ${MONTH_NAMES[date.getMonth()]}`;
   };
 
-  const calculateProgress = (loan: Loan): number => {
-    const principal = parseFloat(loan.principalAmount) || 0;
-    const outstanding = parseFloat(loan.outstandingAmount) || 0;
-    if (principal <= 0) return 0;
-    return Math.min(100, Math.max(0, Math.round(((principal - outstanding) / principal) * 100)));
-  };
-
-  const getLoanTypeLabel = (type: string) => {
-    switch (type) {
-      case 'home_loan': return 'Home Loan';
-      case 'personal_loan': return 'Personal Loan';
-      case 'credit_card_loan': return 'Credit Card';
-      case 'item_emi': return 'Item EMI';
-      default: return type;
-    }
-  };
-
-  const getLoanIcon = (type: string): keyof typeof Ionicons.glyphMap => {
-    switch (type) {
-      case 'home_loan': return 'home';
-      case 'personal_loan': return 'cash';
-      case 'credit_card_loan': return 'card';
-      case 'item_emi': return 'cart';
-      default: return 'document';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return colors.primary;
-      case 'closed': return colors.textMuted;
-      case 'defaulted': return colors.danger;
-      default: return colors.textMuted;
-    }
-  };
-
   const handleDelete = (loan: Loan) => {
     setLoanToDelete(loan);
     setDeleteModalVisible(true);
-    // Close the swipeable after showing modal
     if (currentOpenSwipeable.current !== null) {
       swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
       currentOpenSwipeable.current = null;
@@ -144,7 +277,6 @@ export default function LoansScreen() {
   };
 
   const handleEdit = (loan: Loan) => {
-    // Close the swipeable before navigation
     if (currentOpenSwipeable.current !== null) {
       swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
       currentOpenSwipeable.current = null;
@@ -190,70 +322,47 @@ export default function LoansScreen() {
     );
   };
 
+  const getLoanTypeLabel = (type: string) => {
+    switch (type) {
+      case 'home_loan': return 'Home Loan';
+      case 'personal_loan': return 'Personal Loan';
+      case 'credit_card_loan': return 'Credit Card';
+      case 'item_emi': return 'Item EMI';
+      default: return type;
+    }
+  };
+
+  const filterOptions = useMemo(() => {
+    if (!loans) return [];
+    const types = new Map<string, number>();
+    loans.forEach(loan => {
+      const type = loan.loanType || 'other';
+      types.set(type, (types.get(type) || 0) + 1);
+    });
+    return Array.from(types.entries()).map(([type, count]) => ({
+      key: type,
+      label: getLoanTypeLabel(type),
+      count
+    }));
+  }, [loans]);
+
+  const filteredLoans = useMemo(() => {
+    if (!loans) return [];
+    if (selectedFilter === 'all') return loans;
+    return loans.filter(loan => loan.loanType === selectedFilter);
+  }, [loans, selectedFilter]);
+
+  const activeLoansCount = loans?.filter(l => l.status === 'active').length || 0;
+
   const renderLoan = ({ item }: { item: Loan }) => {
-    const progress = calculateProgress(item);
-    const statusColor = getStatusColor(item.status);
-
     const content = (
-      <View style={[styles.loanCard, { backgroundColor: colors.card }]}>
-        <TouchableOpacity
-          style={styles.loanCardContent}
-          onPress={swipeSettings.enabled ? undefined : () => navigation.navigate('LoanDetails', { loanId: item.id })}
-          activeOpacity={swipeSettings.enabled ? 1 : 0.7}
-          disabled={swipeSettings.enabled}
-        >
-          <View style={styles.loanHeader}>
-            <View style={[styles.loanIcon, { backgroundColor: statusColor + '20' }]}>
-              <Ionicons name={getLoanIcon(item.loanType || '')} size={24} color={statusColor} />
-            </View>
-            <View style={styles.loanInfo}>
-              <Text style={[styles.loanName, { color: colors.text }]}>{item.name}</Text>
-              <Text style={[styles.loanType, { color: colors.textMuted }]}>{getLoanTypeLabel(item.loanType || '')}</Text>
-              {/* Impact Indicators for Loan Payments */}
-              <View style={styles.impactContainer}>
-                {item.affectBalance && (
-                  <View style={[styles.impactBadge, { backgroundColor: colors.primary + '15' }]}>
-                    <Ionicons name="wallet-outline" size={10} color={colors.primary} />
-                    <Text style={[styles.impactText, { color: colors.primary }]}>Updates Balance</Text>
-                  </View>
-                )}
-                
-                {item.createTransaction && (
-                  <View style={[styles.impactBadge, { backgroundColor: colors.textMuted + '15' }]}>
-                    <Ionicons name="receipt-outline" size={10} color={colors.textMuted} />
-                    <Text style={[styles.impactText, { color: colors.textMuted }]}>Creates Txn</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-            <View style={styles.loanRight}>
-              <TouchableOpacity
-                onPress={() => navigation.navigate('LoanDetails', { loanId: item.id })}
-                style={[styles.viewDetailsButton, { backgroundColor: colors.primary + '15' }]}
-              >
-                <Ionicons name="list-outline" size={16} color={colors.primary} />
-              </TouchableOpacity>
-              <View style={styles.loanAmounts}>
-                <Text style={[styles.outstandingAmount, { color: colors.text }]}>
-                  {hideBalances ? '****' : formatCurrency(parseFloat(item.outstandingAmount))}
-                </Text>
-                <Text style={[styles.remainingLabel, { color: colors.textMuted }]}>remaining</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Progress Bar */}
-          <View style={[styles.progressBar, { backgroundColor: colors.background }]}>
-            <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: colors.primary }]} />
-          </View>
-          <View style={styles.progressLabels}>
-            <Text style={[styles.progressText, { color: colors.textMuted }]}>{progress}% paid</Text>
-            <Text style={[styles.progressText, { color: colors.textMuted }]}>
-              EMI: {hideBalances ? '****' : formatCurrency(parseFloat(item.emiAmount || '0'))}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      </View>
+      <LoanCard
+        loan={item}
+        colors={colors}
+        hideBalances={hideBalances}
+        onPress={() => navigation.navigate('LoanDetails', { loanId: item.id })}
+        onDetailsPress={() => navigation.navigate('LoanDetails', { loanId: item.id })}
+      />
     );
 
     if (swipeSettings.enabled) {
@@ -270,13 +379,11 @@ export default function LoansScreen() {
           renderRightActions={() => renderRightActions(item)}
           renderLeftActions={() => renderLeftActions(item)}
           onSwipeableOpen={(direction) => {
-            // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== item.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = item.id;
             
-            // Automatically trigger action based on swipe direction
             const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
             if (action === 'edit') {
               handleEdit(item);
@@ -295,47 +402,52 @@ export default function LoansScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {loanSummary && (
-        <View style={[styles.summaryCard, { backgroundColor: '#1e293b' }]}>
-          <View style={styles.summaryHeader}>
-            <View style={styles.summaryIconCircle}>
-              <Ionicons name="business" size={20} color="#fff" />
-            </View>
-            <View style={styles.summaryTextContainer}>
-              <Text style={styles.summaryLabel}>Total Outstanding</Text>
-              <Text style={styles.summaryAmount}>
-                {hideBalances ? '****' : formatCurrency(loanSummary.totalOutstanding)}
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.hideToggle}
-              onPress={() => setHideBalances(!hideBalances)}
-            >
-              <Ionicons name={hideBalances ? 'eye-off' : 'eye'} size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.summaryStats}>
-            <View style={styles.summaryStat}>
-              <Text style={styles.summaryStatLabel}>Active Loans</Text>
-              <Text style={styles.summaryStatValue}>{loanSummary.totalLoans}</Text>
-            </View>
-            <View style={styles.summaryStat}>
-              <Text style={styles.summaryStatLabel}>EMI This Month</Text>
-              <Text style={styles.summaryStatValue}>
-                {hideBalances ? '****' : formatCurrency(loanSummary.totalEmiThisMonth)}
-              </Text>
-            </View>
-          </View>
-          {loanSummary.nextEmiDue && (
-            <View style={styles.nextEmiContainer}>
-              <Ionicons name="calendar" size={14} color="#fff" />
-              <Text style={styles.nextEmiText}>
-                Next: {loanSummary.nextEmiDue.loanName} - {formatCurrency(parseFloat(loanSummary.nextEmiDue.amount))} on {formatDate(loanSummary.nextEmiDue.dueDate)}
-              </Text>
-            </View>
-          )}
+      <View style={styles.headerSection}>
+        <View style={styles.activeLoansRow}>
+          <Text style={[styles.activeLoansText, { color: colors.text }]}>
+            Active Loans ({activeLoansCount})
+          </Text>
+          <TouchableOpacity onPress={() => setHideBalances(!hideBalances)}>
+            <Ionicons name={hideBalances ? 'eye-off' : 'eye'} size={20} color={colors.textMuted} />
+          </TouchableOpacity>
         </View>
-      )}
+
+        <View style={styles.filterRow}>
+          <TouchableOpacity
+            style={[
+              styles.filterChip,
+              selectedFilter === 'all' && styles.filterChipActive,
+              { borderColor: selectedFilter === 'all' ? colors.primary : colors.border }
+            ]}
+            onPress={() => setSelectedFilter('all')}
+          >
+            <Text style={[
+              styles.filterChipText,
+              { color: selectedFilter === 'all' ? colors.primary : colors.textMuted }
+            ]}>
+              All Loans ({loans?.length || 0})
+            </Text>
+          </TouchableOpacity>
+          {filterOptions.map(option => (
+            <TouchableOpacity
+              key={option.key}
+              style={[
+                styles.filterChip,
+                selectedFilter === option.key && styles.filterChipActive,
+                { borderColor: selectedFilter === option.key ? colors.primary : colors.border }
+              ]}
+              onPress={() => setSelectedFilter(option.key)}
+            >
+              <Text style={[
+                styles.filterChipText,
+                { color: selectedFilter === option.key ? colors.primary : colors.textMuted }
+              ]}>
+                {option.label} ({option.count})
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
 
       {(!loans || loans.length === 0) ? (
         <View style={styles.emptyState}>
@@ -347,7 +459,7 @@ export default function LoansScreen() {
         </View>
       ) : (
         <FlatList
-          data={loans}
+          data={filteredLoans}
           renderItem={renderLoan}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.list}
@@ -355,7 +467,6 @@ export default function LoansScreen() {
         />
       )}
 
-      {/* Floating Add Button */}
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: colors.primary }]}
         onPress={() => navigation.navigate('AddLoan', {})}
@@ -372,7 +483,6 @@ export default function LoansScreen() {
         </View>
       )}
 
-      {/* Delete Confirmation Modal */}
       <Modal
         visible={deleteModalVisible}
         transparent
@@ -425,147 +535,192 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  summaryCard: {
-    margin: 16,
-    padding: 20,
-    borderRadius: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-  },
-  summaryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  summaryIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  hideToggle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  summaryTextContainer: {
-    flex: 1,
-  },
-  summaryLabel: {
-    color: '#fff',
-    fontSize: 14,
-    opacity: 0.9,
-  },
-  summaryAmount: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
-  summaryStats: {
-    flexDirection: 'row',
+  headerSection: {
+    paddingHorizontal: 16,
     paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.2)',
-    gap: 16,
+    paddingBottom: 8,
   },
-  summaryStat: {
-    flex: 1,
+  activeLoansRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
-  summaryStatLabel: {
-    color: '#fff',
-    fontSize: 12,
-    opacity: 0.8,
-  },
-  summaryStatValue: {
-    color: '#fff',
-    fontSize: 18,
+  activeLoansText: {
+    fontSize: 16,
     fontWeight: '600',
-    marginTop: 2,
   },
-  nextEmiContainer: {
+  filterRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.2)',
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  nextEmiText: {
-    color: '#fff',
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  filterChipActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  filterChipText: {
     fontSize: 12,
-    flex: 1,
+    fontWeight: '500',
   },
   list: {
     padding: 16,
     paddingBottom: 100,
   },
   loanCard: {
-    borderRadius: 12,
-    marginBottom: 12,
-    elevation: 2,
+    borderRadius: 16,
+    marginBottom: 16,
+    padding: 16,
+    elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
   },
-  loanCardContent: {
-    padding: 16,
-  },
-  loanHeader: {
+  cardHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
   },
-  loanIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
+  },
+  loanIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-  loanInfo: {
+  loanTitleContainer: {
     flex: 1,
   },
-  loanName: {
-    fontSize: 16,
+  loanTypeLabel: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  loanPrincipal: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  maturityDate: {
+    fontSize: 11,
+    color: '#64748b',
+  },
+  arrowButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 12,
+  },
+  tab: {
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginRight: 24,
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#fff',
+  },
+  tabText: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  activeTabText: {
+    color: '#fff',
     fontWeight: '600',
   },
-  loanType: {
-    fontSize: 12,
-    marginTop: 2,
-    textTransform: 'capitalize',
+  tabContent: {
+    minHeight: 80,
   },
-  loanRight: {
+  overviewContent: {
+    gap: 12,
+  },
+  overviewRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
   },
-  viewDetailsButton: {
-    padding: 6,
-    borderRadius: 6,
+  overviewItem: {
+    flex: 1,
   },
-  loanAmounts: {
+  overviewItemRight: {
+    flex: 1,
     alignItems: 'flex-end',
   },
-  outstandingAmount: {
-    fontSize: 16,
-    fontWeight: '700',
+  overviewLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    marginBottom: 4,
   },
-  remainingLabel: {
+  overviewValue: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  overviewValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  outstandingContent: {
+    gap: 8,
+  },
+  outstandingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  outstandingAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  paidAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10b981',
+  },
+  progressContainer: {
+    marginTop: 8,
+  },
+  progressBarBg: {
+    height: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#10b981',
+    borderRadius: 4,
+  },
+  noteText: {
     fontSize: 10,
-    marginTop: 2,
+    color: '#475569',
+    marginTop: 12,
+    fontStyle: 'italic',
   },
   swipeAction: {
     justifyContent: 'center',
@@ -632,23 +787,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  progressBar: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginTop: 8,
-  },
-  progressFill: {
-    height: '100%',
-  },
-  progressLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  progressText: {
-    fontSize: 10,
-  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
@@ -679,24 +817,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 5,
-  },
-  impactContainer: {
-    flexDirection: 'row',
-    gap: 4,
-    marginTop: 4,
-    flexWrap: 'wrap',
-  },
-  impactBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 3,
-    gap: 3,
-  },
-  impactText: {
-    fontSize: 9, // Slightly smaller for the loan card sub-info
-    fontWeight: '700',
-    textTransform: 'uppercase',
   },
 });
