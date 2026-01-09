@@ -47,8 +47,10 @@ export default function AddLoanScreen() {
     accountId: '',
   });
   const [startDate, setStartDate] = useState(new Date());
+  const [endDate, setEndDate] = useState<Date | null>(null);
   const [nextEmiDate, setNextEmiDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   const [showNextEmiDatePicker, setShowNextEmiDatePicker] = useState(false);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
   const [isExistingLoan, setIsExistingLoan] = useState(false);
@@ -92,6 +94,10 @@ export default function AddLoanScreen() {
         setNextEmiDate(new Date(existingLoan.nextEmiDate));
       }
       
+      if (existingLoan.endDate) {
+        setEndDate(new Date(existingLoan.endDate));
+      }
+      
       setIsExistingLoan(existingLoan.isExistingLoan ?? false);
       
       // Set toggle values - check both snake_case and camelCase
@@ -113,6 +119,22 @@ export default function AddLoanScreen() {
     }
   }, [accounts, isEditMode]);
 
+  // Calculate end date based on start date and tenure
+  useEffect(() => {
+    if (formData.tenure && startDate) {
+      const tenureMonths = parseInt(formData.tenure);
+      if (!isNaN(tenureMonths) && tenureMonths > 0) {
+        const calculatedEndDate = new Date(startDate);
+        calculatedEndDate.setMonth(calculatedEndDate.getMonth() + tenureMonths);
+        setEndDate(calculatedEndDate);
+      } else {
+        setEndDate(null);
+      }
+    } else {
+      setEndDate(null);
+    }
+  }, [formData.tenure, startDate]);
+
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const payload: any = {
@@ -127,6 +149,7 @@ export default function AddLoanScreen() {
         emiAmount: data.emiAmount || undefined,
         emiDay: parseInt(data.emiDay) || undefined,
         startDate: startDate.toISOString(),
+        endDate: endDate ? endDate.toISOString() : undefined,
         accountId: data.accountId ? parseInt(data.accountId) : undefined,
         status: 'active' as const,
         userId: null,
@@ -178,6 +201,7 @@ export default function AddLoanScreen() {
         emiAmount: data.emiAmount || undefined,
         emiDay: parseInt(data.emiDay) || undefined,
         startDate: startDate.toISOString(),
+        endDate: endDate ? endDate.toISOString() : undefined,
         accountId: data.accountId ? parseInt(data.accountId) : undefined,
         createTransaction,
         affectBalance,
@@ -485,6 +509,44 @@ export default function AddLoanScreen() {
               setShowDatePicker(Platform.OS === 'ios');
               if (selectedDate) {
                 setStartDate(selectedDate);
+              }
+            }}
+          />
+        )}
+
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>Expected End Date</Text>
+          <TouchableOpacity
+            style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setShowEndDatePicker(true)}
+          >
+            <Ionicons name="calendar-outline" size={20} color={colors.text} />
+            <Text style={[styles.datePickerText, { color: endDate ? colors.text : colors.textMuted }]}>
+              {endDate ? endDate.toLocaleDateString('en-US', { 
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric'
+              }) : 'Auto-calculated from tenure'}
+            </Text>
+          </TouchableOpacity>
+          {endDate && (
+            <Text style={[styles.helperText, { color: colors.textMuted, marginTop: 4 }]}>
+              Calculated based on {formData.tenure} months tenure
+            </Text>
+          )}
+        </View>
+
+        {showEndDatePicker && (
+          <DateTimePicker
+            value={endDate || new Date()}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            themeVariant={resolvedTheme}
+            minimumDate={startDate}
+            onChange={(event, selectedDate) => {
+              setShowEndDatePicker(Platform.OS === 'ios');
+              if (selectedDate) {
+                setEndDate(selectedDate);
               }
             }}
           />

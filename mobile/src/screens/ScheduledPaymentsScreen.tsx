@@ -353,6 +353,7 @@ export default function ScheduledPaymentsScreen() {
   const renderPaymentCard = (payment: ScheduledPayment) => {
     const category = categories.find(c => c.id === payment.categoryId);
     const isActive = payment.status === 'active';
+    const isWeb = Platform.OS === 'web';
 
     const content = (
       <View
@@ -367,10 +368,18 @@ export default function ScheduledPaymentsScreen() {
             <Text style={[styles.paymentName, { color: colors.text }, !isActive && { color: colors.textMuted }]}>
               {payment.name}
             </Text>
-            <View style={[styles.frequencyBadge, { backgroundColor: `${colors.primary}20` }]}>
-              <Text style={[styles.frequencyText, { color: colors.primary }]}>
-                {FREQUENCY_OPTIONS[payment.frequency || 'monthly'] || 'Monthly'}
-              </Text>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {payment.paymentType === 'credit_card_bill' && (
+                <View style={[styles.creditCardBadge, { backgroundColor: `${colors.primary}30` }]}>
+                  <Ionicons name="card-outline" size={12} color={colors.primary} />
+                  <Text style={[styles.creditCardBadgeText, { color: colors.primary }]}>Card Bill</Text>
+                </View>
+              )}
+              <View style={[styles.frequencyBadge, { backgroundColor: `${colors.primary}20` }]}>
+                <Text style={[styles.frequencyText, { color: colors.primary }]}>
+                  {FREQUENCY_OPTIONS[payment.frequency || 'monthly'] || 'Monthly'}
+                </Text>
+              </View>
             </View>
           </View>
           <Text style={[styles.paymentDue, { color: colors.textMuted }]}>
@@ -382,9 +391,17 @@ export default function ScheduledPaymentsScreen() {
           )}
         </View>
         <View style={styles.paymentRight}>
-          <Text style={[styles.paymentAmount, { color: colors.text }, !isActive && { color: colors.textMuted }]}>
-            {formatCurrency(parseFloat(payment.amount))}
-          </Text>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={[styles.paymentAmount, { color: colors.text }, !isActive && { color: colors.textMuted }]}>
+              {payment.amount ? formatCurrency(parseFloat(payment.amount)) : '—'}
+            </Text>
+            {payment.paymentType === 'credit_card_bill' && !payment.amount && (
+              <View style={[styles.autoCalcBadge, { backgroundColor: `${colors.primary}15` }]}>
+                <Ionicons name="calculator-outline" size={10} color={colors.primary} />
+                <Text style={[styles.autoCalcBadgeText, { color: colors.primary }]}>Auto-calc</Text>
+              </View>
+            )}
+          </View>
           <Switch
             value={isActive}
             onValueChange={() => toggleStatus(payment)}
@@ -392,6 +409,22 @@ export default function ScheduledPaymentsScreen() {
             thumbColor={isActive ? colors.primary : colors.textMuted}
           />
         </View>
+        {isWeb && (
+          <View style={styles.webActions}>
+            <TouchableOpacity
+              style={[styles.webActionButton, { backgroundColor: colors.primary }]}
+              onPress={() => handleEdit(payment)}
+            >
+              <Ionicons name="pencil" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.webActionButton, { backgroundColor: '#ef4444' }]}
+              onPress={() => handleDelete(payment)}
+            >
+              <Ionicons name="trash-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
 
@@ -411,20 +444,12 @@ export default function ScheduledPaymentsScreen() {
           }}
           renderRightActions={() => renderRightActionsManage(payment)}
           renderLeftActions={() => renderLeftActionsManage(payment)}
-          onSwipeableOpen={(direction) => {
+          onSwipeableOpen={() => {
             // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== payment.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = payment.id;
-            
-            // Trigger action based on swipe direction
-            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
-            if (action === 'edit') {
-              handleEdit(payment);
-            } else {
-              handleDelete(payment);
-            }
           }}
         >
           {content}
@@ -501,7 +526,7 @@ export default function ScheduledPaymentsScreen() {
   };
 
   const activePayments = payments?.filter(p => p.status === 'active') || [];
-  const totalMonthly = activePayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+  const totalMonthly = activePayments.reduce((sum, p) => sum + (p.amount ? parseFloat(p.amount) : 0), 0);
   
   const paidOccurrences = occurrences.filter(o => o.status === 'paid');
   const pendingOccurrences = occurrences.filter(o => o.status === 'pending');
@@ -671,7 +696,7 @@ export default function ScheduledPaymentsScreen() {
                       styles.checklistAmount, 
                       { color: isPaid ? colors.textMuted : '#ef4444' }
                     ]}>
-                      {formatCurrency(parseFloat(payment?.amount || '0'))}
+                      {formatCurrency(parseFloat(occurrence.paidAmount || payment?.amount || '0'))}
                     </Text>
                   </View>
                 );
@@ -770,6 +795,7 @@ export default function ScheduledPaymentsScreen() {
                     }
                   }}
                   maximumDate={new Date()}
+                  themeVariant={resolvedTheme}
                 />
               )}
 
@@ -1123,6 +1149,32 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
+  creditCardBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  creditCardBadgeText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  autoCalcBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  autoCalcBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
   paymentDue: {
     fontSize: 12,
     marginTop: 4,
@@ -1162,6 +1214,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     fontWeight: '600',
+  },
+  webActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 8,
+  },
+  webActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   emptyCard: {
     padding: 40,

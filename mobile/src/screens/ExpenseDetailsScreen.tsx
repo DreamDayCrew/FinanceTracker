@@ -1,11 +1,15 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { PieChart } from 'react-native-chart-kit';
 import { api } from '../lib/api';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { useState, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
+
+const screenWidth = Dimensions.get('window').width;
 
 export default function ExpenseDetailsScreen() {
   const navigation = useNavigation();
@@ -67,15 +71,32 @@ export default function ExpenseDetailsScreen() {
     );
   }
 
+  const pieChartData = useMemo(() => {
+    if (!data?.breakdown || data.breakdown.length === 0) return [];
+    
+    return data.breakdown.map((item, index) => ({
+      name: item.categoryName.length > 12 ? item.categoryName.substring(0, 12) + '...' : item.categoryName,
+      amount: item.total,
+      color: item.color,
+      legendFontColor: colors.text,
+      legendFontSize: 13,
+    }));
+  }, [data, colors]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      <LinearGradient
+        colors={[colors.gradientStart, colors.gradientEnd]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Expense Details</Text>
+        <Text style={styles.headerTitle}>Expense Details</Text>
         <View style={{ width: 24 }} />
-      </View>
+      </LinearGradient>
 
       <View style={[styles.monthNavigation, { backgroundColor: colors.card }]}>
         <TouchableOpacity onPress={handlePreviousMonth} style={styles.navButton}>
@@ -98,6 +119,7 @@ export default function ExpenseDetailsScreen() {
       </View>
 
       <View style={[styles.totalCard, { backgroundColor: colors.card }]}>
+        <Ionicons name="wallet-outline" size={32} color={colors.danger} style={{ marginBottom: 8 }} />
         <Text style={[styles.totalLabel, { color: colors.textMuted }]}>Total Expenses</Text>
         <Text style={[styles.totalAmount, { color: colors.danger }]}>
           {formatCurrency(data?.totalExpenses || 0)}
@@ -105,6 +127,25 @@ export default function ExpenseDetailsScreen() {
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Pie Chart Section */}
+        {pieChartData.length > 0 && (
+          <View style={[styles.chartSection, { backgroundColor: colors.card }]}>
+            <Text style={[styles.chartTitle, { color: colors.text }]}>Expense Distribution</Text>
+            <PieChart
+              data={pieChartData}
+              width={screenWidth - 32}
+              height={220}
+              chartConfig={{
+                color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+              }}
+              accessor="amount"
+              backgroundColor="transparent"
+              paddingLeft="15"
+              absolute
+            />
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Category Breakdown</Text>
           
@@ -178,7 +219,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     paddingTop: 48,
-    borderBottomWidth: 1,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   backButton: {
     padding: 4,
@@ -186,6 +231,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
+    color: '#fff',
   },
   monthNavigation: {
     flexDirection: 'row',
@@ -193,95 +239,138 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingVertical: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
   navButton: {
     padding: 8,
   },
   monthText: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   totalCard: {
     marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 20,
-    borderRadius: 12,
+    marginTop: 16,
+    marginBottom: 8,
+    padding: 24,
+    borderRadius: 16,
     alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
   totalLabel: {
-    fontSize: 14,
+    fontSize: 13,
     marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   totalAmount: {
-    fontSize: 32,
-    fontWeight: '700',
+    fontSize: 36,
+    fontWeight: '800',
   },
   scrollView: {
     flex: 1,
     paddingHorizontal: 16,
+  },
+  chartSection: {
+    borderRadius: 16,
+    padding: 16,
+    marginVertical: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  chartTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
   },
   section: {
     marginBottom: 24,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
+    fontWeight: '700',
+    marginBottom: 16,
+    marginTop: 8,
   },
   categoryItem: {
-    padding: 16,
-    borderRadius: 12,
+    padding: 18,
+    borderRadius: 16,
     marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
   categoryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   categoryNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
     flex: 1,
   },
   colorDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   categoryName: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   categoryAmount: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
   },
   categoryFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   progressBar: {
     flex: 1,
-    height: 8,
-    borderRadius: 4,
+    height: 10,
+    borderRadius: 5,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 5,
   },
   percentageText: {
-    fontSize: 12,
-    fontWeight: '600',
-    minWidth: 35,
+    fontSize: 13,
+    fontWeight: '700',
+    minWidth: 38,
     textAlign: 'right',
   },
   transactionCount: {
     fontSize: 12,
+    opacity: 0.7,
   },
   emptyCard: {
     padding: 40,

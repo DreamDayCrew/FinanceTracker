@@ -179,10 +179,12 @@ export const scheduledPayments = pgTable("scheduled_payments", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
   name: varchar("name", { length: 200 }).notNull(),
-  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  paymentType: varchar("payment_type", { length: 20 }).default("regular"), // 'regular', 'credit_card_bill'
+  amount: decimal("amount", { precision: 12, scale: 2 }), // nullable for auto-calculated credit card bills
   dueDate: integer("due_date").notNull(), // day of month (1-31)
   categoryId: integer("category_id").references(() => categories.id),
   accountId: integer("account_id").references(() => accounts.id),
+  creditCardAccountId: integer("credit_card_account_id").references(() => accounts.id), // for credit card bills
   frequency: varchar("frequency", { length: 20 }).default("monthly"), // 'monthly', 'quarterly', 'half_yearly', 'yearly', 'one_time'
   startMonth: integer("start_month"), // 1-12, for quarterly/yearly payments
   status: varchar("status", { length: 20 }).default("active"), // 'active', 'inactive'
@@ -207,12 +209,26 @@ export const insertScheduledPaymentSchema = createInsertSchema(scheduledPayments
   lastNotifiedAt: true,
 }).extend({
   name: z.string().min(1, "Payment name is required"),
-  amount: z.string().min(1, "Amount is required"),
+  paymentType: z.enum(["regular", "credit_card_bill"]).optional(),
+  amount: z.string().optional(), // optional for auto-calculated credit card bills
   dueDate: z.number().min(1).max(31),
+  creditCardAccountId: z.number().optional(),
   frequency: z.enum(["monthly", "quarterly", "half_yearly", "yearly", "one_time"]).optional(),
   startMonth: z.number().min(1).max(12).optional(),
   status: z.enum(["active", "inactive"]).optional(),
-});
+}).refine(
+  (data) => {
+    // Amount is required for regular payments, optional for credit card bills
+    if (data.paymentType !== 'credit_card_bill' && !data.amount) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: "Amount is required for regular payments",
+    path: ["amount"],
+  }
+);
 
 export type InsertScheduledPayment = z.infer<typeof insertScheduledPaymentSchema>;
 export type ScheduledPayment = typeof scheduledPayments.$inferSelect;

@@ -146,6 +146,24 @@ export default function Loans() {
     },
   });
 
+  const regenerateInstallmentsMutation = useMutation({
+    mutationFn: async (loanId: number) => {
+      const response = await apiRequest("POST", `/api/loans/${loanId}/regenerate-installments`, {});
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/loans"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/loan-summary"] });
+      if (selectedLoan) {
+        queryClient.invalidateQueries({ queryKey: ["/api/loans", selectedLoan.id] });
+      }
+      toast({ title: "Installments regenerated", description: "Pending EMIs have been recalculated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to regenerate", description: error.message, variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       name: "",
@@ -361,6 +379,20 @@ export default function Loans() {
             )}
           </TabsContent>
         </Tabs>
+
+        <Button 
+          variant="outline" 
+          className="mt-4"
+          onClick={() => {
+            if (confirm("Regenerate all pending installments? This will delete pending EMIs and recalculate them based on current loan terms. Paid installments will not be affected.")) {
+              regenerateInstallmentsMutation.mutate(selectedLoan.id);
+            }
+          }}
+          disabled={regenerateInstallmentsMutation.isPending}
+          data-testid="button-regenerate-installments"
+        >
+          {regenerateInstallmentsMutation.isPending ? "Regenerating..." : "Regenerate Installments"}
+        </Button>
 
         <Button 
           variant="destructive" 

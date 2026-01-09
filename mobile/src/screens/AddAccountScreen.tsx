@@ -75,8 +75,8 @@ export default function AddAccountScreen() {
         // Load card details if available
         if (account.cardDetails) {
           setCardNumber(account.cardDetails.lastFourDigits ? `**** **** **** ${account.cardDetails.lastFourDigits}` : '');
-          setExpiryMonth(account.cardDetails.expiryMonth || '');
-          setExpiryYear(account.cardDetails.expiryYear || '');
+          setExpiryMonth(account.cardDetails.expiryMonth?.toString() || '');
+          setExpiryYear(account.cardDetails.expiryYear?.toString() || '');
           setCardholderName(account.cardDetails.cardholderName || '');
           setCardType(account.cardDetails.cardType || 'visa');
         }

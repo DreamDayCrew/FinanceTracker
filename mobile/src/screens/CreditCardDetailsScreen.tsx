@@ -1,11 +1,15 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { PieChart } from 'react-native-chart-kit';
 import { api } from '../lib/api';
 import { formatCurrency, getThemedColors, getOrdinalSuffix } from '../lib/utils';
 import { useState, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
+
+const screenWidth = Dimensions.get('window').width;
 
 export default function CreditCardDetailsScreen() {
   const navigation = useNavigation();
@@ -98,6 +102,18 @@ export default function CreditCardDetailsScreen() {
 
   const isCurrentMonth = selectedMonth === now.getMonth() && selectedYear === now.getFullYear();
 
+  const pieChartData = useMemo(() => {
+    if (!filteredData?.breakdown || filteredData.breakdown.length === 0) return [];
+    
+    return filteredData.breakdown.map((card, index) => ({
+      name: card.accountName.length > 12 ? card.accountName.substring(0, 12) + '...' : card.accountName,
+      amount: card.totalSpent,
+      color: card.color,
+      legendFontColor: colors.text,
+      legendFontSize: 13,
+    }));
+  }, [filteredData, colors]);
+
   if (isLoading) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
@@ -117,13 +133,18 @@ export default function CreditCardDetailsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      <LinearGradient
+        colors={[colors.gradientStart, colors.gradientEnd]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Credit Card Details</Text>
+        <Text style={styles.headerTitle}>Credit Card Details</Text>
         <View style={{ width: 24 }} />
-      </View>
+      </LinearGradient>
 
       <View style={[styles.monthNavigation, { backgroundColor: colors.card }]}>
         <TouchableOpacity onPress={handlePreviousMonth} style={styles.navButton}>
@@ -146,6 +167,7 @@ export default function CreditCardDetailsScreen() {
       </View>
 
       <View style={[styles.totalCard, { backgroundColor: colors.card }]}>
+        <Ionicons name="card-outline" size={32} color="#ff9800" style={{ marginBottom: 8 }} />
         <Text style={[styles.totalLabel, { color: colors.textMuted }]}>Total Credit Card Spending</Text>
         <Text style={[styles.totalAmount, { color: '#ff9800' }]}>
           {formatCurrency(filteredData?.totalSpending || 0)}
@@ -153,6 +175,25 @@ export default function CreditCardDetailsScreen() {
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Pie Chart Section */}
+        {pieChartData.length > 0 && (
+          <View style={[styles.chartSection, { backgroundColor: colors.card }]}>
+            <Text style={[styles.chartTitle, { color: colors.text }]}>Spending Distribution</Text>
+            <PieChart
+              data={pieChartData}
+              width={screenWidth - 32}
+              height={220}
+              chartConfig={{
+                color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+              }}
+              accessor="amount"
+              backgroundColor="transparent"
+              paddingLeft="15"
+              absolute
+            />
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Card Breakdown</Text>
           
@@ -294,7 +335,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     paddingTop: 48,
-    borderBottomWidth: 1,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   backButton: {
     padding: 4,
@@ -302,6 +347,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
+    color: '#fff',
   },
   monthNavigation: {
     flexDirection: 'row',
@@ -309,51 +355,88 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingVertical: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
   navButton: {
     padding: 8,
   },
   monthText: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   totalCard: {
     marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 20,
-    borderRadius: 12,
+    marginTop: 16,
+    marginBottom: 8,
+    padding: 24,
+    borderRadius: 16,
     alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
   totalLabel: {
-    fontSize: 14,
+    fontSize: 13,
     marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   totalAmount: {
-    fontSize: 32,
-    fontWeight: '700',
+    fontSize: 36,
+    fontWeight: '800',
   },
   scrollView: {
     flex: 1,
     paddingHorizontal: 16,
+  },
+  chartSection: {
+    borderRadius: 16,
+    padding: 16,
+    marginVertical: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  chartTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
   },
   section: {
     marginBottom: 24,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
+    fontWeight: '700',
+    marginBottom: 16,
+    marginTop: 8,
   },
   cardItem: {
-    padding: 16,
-    borderRadius: 12,
+    padding: 18,
+    borderRadius: 16,
     marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   cardNameRow: {
     flexDirection: 'row',
@@ -362,49 +445,56 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   colorDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   cardName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     marginBottom: 2,
   },
   billingInfo: {
     fontSize: 11,
+    opacity: 0.7,
   },
   cardAmounts: {
     alignItems: 'flex-end',
   },
   cardAmount: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
   },
   limitText: {
     fontSize: 11,
     marginTop: 2,
+    opacity: 0.7,
   },
   cardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   progressBar: {
     flex: 1,
-    height: 8,
-    borderRadius: 4,
+    height: 10,
+    borderRadius: 5,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 5,
   },
   percentageText: {
-    fontSize: 12,
-    fontWeight: '600',
-    minWidth: 35,
+    fontSize: 13,
+    fontWeight: '700',
+    minWidth: 38,
     textAlign: 'right',
   },
   utilizationRow: {

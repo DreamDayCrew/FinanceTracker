@@ -209,6 +209,12 @@ export const api = {
     }),
   generateInstallments: (loanId: number) => 
     apiRequest<LoanInstallment[]>(`/api/loans/${loanId}/generate-installments`, { method: 'POST' }),
+  regenerateInstallments: (loanId: number) => {
+    console.log('API: Calling regenerate installments for loan:', loanId);
+    const endpoint = `/api/loans/${loanId}/regenerate-installments`;
+    console.log('API: Full URL:', `${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000'}${endpoint}`);
+    return apiRequest<LoanInstallment[]>(endpoint, { method: 'POST' });
+  },
 
   getCardDetails: (accountId: number) => 
     apiRequest<CardDetails | null>(`/api/accounts/${accountId}/card-details`),
@@ -293,6 +299,24 @@ export const api = {
       spending: number;
       monthIndex: number;
     }>>('/api/credit-card-spending/monthly'),
+
+  // Credit Card Bills
+  getCreditCardBills: () =>
+    apiRequest<Array<{
+      accountId: number;
+      accountName: string;
+      bankName: string | null;
+      billingDate: number | null;
+      cycleSpending: string;
+      cycleStartDate: string;
+      cycleEndDate: string;
+      dueDate: string;
+      daysUntilDue: number;
+      paymentStatus: string;
+      paymentOccurrenceId: number | null;
+      scheduledPaymentId: number | null;
+      limit: number | null;
+    }>>('/api/credit-card-bills'),
 
   // Insurance
   getInsurances: () => apiRequest<Insurance[]>('/api/insurances'),

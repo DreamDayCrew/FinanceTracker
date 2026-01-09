@@ -124,7 +124,7 @@ export default function TransactionsScreen() {
     setSelectedTransaction(null);
   };
 
-  const filteredTransactions = transactions?.filter(t => {
+  const filteredTransactions = (transactions?.filter(t => {
     const matchesSearch = search === '' || 
       t.merchant?.toLowerCase().includes(search.toLowerCase()) ||
       t.description?.toLowerCase().includes(search.toLowerCase()) ||
@@ -133,7 +133,9 @@ export default function TransactionsScreen() {
     const matchesFilter = filter === 'all' || t.type === filter;
     
     return matchesSearch && matchesFilter;
-  }) || [];
+  }) || []).sort((a, b) => 
+    new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime()
+  );
 
   const handleEdit = (transaction: Transaction) => {
     // Close the swipeable before navigation
@@ -171,13 +173,10 @@ export default function TransactionsScreen() {
   };
 
   const renderTransaction = (transaction: Transaction) => {
+    const isWeb = Platform.OS === 'web';
+    
     const content = (
-      <TouchableOpacity 
-        style={[styles.transactionCard, { backgroundColor: colors.card }]}
-        onPress={swipeSettings.enabled ? undefined : () => handleEdit(transaction)}
-        activeOpacity={swipeSettings.enabled ? 1 : 0.7}
-        disabled={swipeSettings.enabled}
-      >
+      <View style={[styles.transactionCard, { backgroundColor: colors.card }]}>
         <View style={[
           styles.transactionIcon,
           { backgroundColor: typeConfig[transaction.type as keyof typeof typeConfig]?.bgColor || typeConfig.debit.bgColor }
@@ -203,10 +202,28 @@ export default function TransactionsScreen() {
         ]}>
           {transaction.type === 'credit' ? '+' : '-'}{formatCurrency(transaction.amount)}
         </Text>
-      </TouchableOpacity>
+        {isWeb && (
+          <View style={styles.webActions}>
+            <TouchableOpacity 
+              style={[styles.webActionButton, { backgroundColor: colors.primary }]}
+              onPress={() => handleEdit(transaction)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="pencil" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.webActionButton, { backgroundColor: '#ef4444' }]}
+              onPress={() => handleDelete(transaction)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     );
 
-    // Disable swipe on web as react-native-gesture-handler doesn't support it
+    // Enable swipe only on mobile (not web) when swipe settings are enabled
     const isSwipeEnabled = swipeSettings.enabled && Platform.OS !== 'web';
     
     if (isSwipeEnabled) {
@@ -222,20 +239,12 @@ export default function TransactionsScreen() {
           }}
           renderRightActions={() => renderRightActions(transaction)}
           renderLeftActions={() => renderLeftActions(transaction)}
-          onSwipeableOpen={(direction) => {
+          onSwipeableOpen={() => {
             // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== transaction.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = transaction.id;
-            
-            // Trigger action based on swipe direction
-            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
-            if (action === 'edit') {
-              handleEdit(transaction);
-            } else {
-              handleDelete(transaction);
-            }
           }}
         >
           {content}
@@ -450,6 +459,18 @@ const styles = StyleSheet.create({
   transactionAmount: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  webActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 8,
+  },
+  webActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   transactionActions: {
     flexDirection: 'row',

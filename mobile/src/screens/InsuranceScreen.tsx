@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -177,13 +177,15 @@ export default function InsuranceScreen() {
     const nextPremium = getNextPremiumDue(item);
     const paidCount = item.premiums?.filter(p => p.status === 'paid').length || 0;
     const totalCount = item.premiums?.length || 0;
+    const isWeb = Platform.OS === 'web';
 
     const content = (
-      <TouchableOpacity
-        style={[styles.insuranceCard, { backgroundColor: colors.card }]}
-        onPress={() => navigation.navigate('InsuranceDetails', { insuranceId: item.id })}
-        data-testid={`card-insurance-${item.id}`}
-      >
+      <View style={[styles.insuranceCard, { backgroundColor: colors.card }]}>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('InsuranceDetails', { insuranceId: item.id })}
+          data-testid={`card-insurance-${item.id}`}
+          style={{ flex: 1 }}
+        >
         <View style={styles.cardHeader}>
           <View style={[styles.iconContainer, { backgroundColor: `${getStatusColor(item.status)}20` }]}>
             <Ionicons name={getInsuranceIcon(item.type)} size={24} color={getStatusColor(item.status)} />
@@ -259,7 +261,24 @@ export default function InsuranceScreen() {
             </View>
           )}
         </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+        {isWeb && (
+          <View style={styles.webActions}>
+            <TouchableOpacity
+              style={[styles.webActionButton, { backgroundColor: colors.primary }]}
+              onPress={() => handleEdit(item)}
+            >
+              <Ionicons name="pencil" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.webActionButton, { backgroundColor: '#ef4444' }]}
+              onPress={() => handleDelete(item)}
+            >
+              <Ionicons name="trash-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     );
 
     if (swipeSettings.enabled) {
@@ -274,19 +293,11 @@ export default function InsuranceScreen() {
           }}
           renderRightActions={() => renderRightActions(item)}
           renderLeftActions={() => renderLeftActions(item)}
-          onSwipeableOpen={(direction) => {
+          onSwipeableOpen={() => {
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== item.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = item.id;
-            
-            // Trigger action based on swipe direction
-            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
-            if (action === 'edit') {
-              handleEdit(item);
-            } else {
-              handleDelete(item);
-            }
           }}
         >
           {content}
@@ -561,6 +572,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
     fontWeight: '500',
+  },
+  webActions: {
+    flexDirection: 'row',
+    gap: 8,
+    padding: 12,
+    paddingTop: 0,
+  },
+  webActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalOverlay: {
     flex: 1,

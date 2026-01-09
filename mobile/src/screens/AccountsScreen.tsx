@@ -76,7 +76,6 @@ export default function AccountsScreen() {
   });
 
   const handleDelete = (account: Account) => {
-    console.log('handleDelete called for account:', account.name);
     setSelectedAccount(account);
     setIsDeleteModalOpen(true);
     // Close the swipeable after showing modal
@@ -93,7 +92,6 @@ export default function AccountsScreen() {
   };
 
   const handleEdit = (account: Account) => {
-    console.log('handleEdit called for account:', account.name);
     // Close the swipeable before navigation
     if (currentOpenSwipeable.current !== null) {
       swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
@@ -110,18 +108,12 @@ export default function AccountsScreen() {
   const bankAccounts = accounts?.filter(a => a.type === 'bank') || [];
   const creditCards = accounts?.filter(a => a.type === 'credit_card') || [];
 
-  console.log('Swipe settings:', swipeSettings);
-
   const renderRightActions = (account: Account) => {
     const action = swipeSettings.rightAction;
-    console.log('renderRightActions - action:', action);
     return (
       <TouchableOpacity
         style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
-        onPress={() => {
-          console.log('Right swipe action pressed:', action);
-          action === 'edit' ? handleEdit(account) : handleDelete(account);
-        }}
+        onPress={() => action === 'edit' ? handleEdit(account) : handleDelete(account)}
       >
         <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
         <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
@@ -131,14 +123,10 @@ export default function AccountsScreen() {
 
   const renderLeftActions = (account: Account) => {
     const action = swipeSettings.leftAction;
-    console.log('renderLeftActions - action:', action);
     return (
       <TouchableOpacity
         style={[styles.swipeAction, { backgroundColor: action === 'edit' ? colors.primary : '#ef4444' }]}
-        onPress={() => {
-          console.log('Left swipe action pressed:', action);
-          action === 'edit' ? handleEdit(account) : handleDelete(account);
-        }}
+        onPress={() => action === 'edit' ? handleEdit(account) : handleDelete(account)}
       >
         <Ionicons name={action === 'edit' ? 'pencil' : 'trash-outline'} size={24} color="#fff" />
         <Text style={styles.swipeActionText}>{action === 'edit' ? 'Edit' : 'Delete'}</Text>
@@ -147,13 +135,9 @@ export default function AccountsScreen() {
   };
 
   const renderAccountCard = (account: Account) => {
+    const isWeb = Platform.OS === 'web';
     const content = (
-      <TouchableOpacity 
-        style={[styles.accountCard, { backgroundColor: colors.card }]}
-        onPress={swipeSettings.enabled ? undefined : () => handleEdit(account)}
-        activeOpacity={swipeSettings.enabled ? 1 : 0.7}
-        disabled={swipeSettings.enabled}
-      >
+      <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
         <View style={[styles.accountIcon, { backgroundColor: colors.primary + '20' }]}>
           <Ionicons name="business-outline" size={24} color={colors.primary} />
         </View>
@@ -172,7 +156,23 @@ export default function AccountsScreen() {
           )}
           <Text style={[styles.accountBalance, { color: colors.primary }]}>{formatCurrency(account.balance)}</Text>
         </View>
-      </TouchableOpacity>
+        {isWeb && (
+          <View style={styles.webActions}>
+            <TouchableOpacity
+              style={[styles.webActionButton, { backgroundColor: colors.primary }]}
+              onPress={() => handleEdit(account)}
+            >
+              <Ionicons name="pencil" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.webActionButton, { backgroundColor: '#ef4444' }]}
+              onPress={() => handleDelete(account)}
+            >
+              <Ionicons name="trash-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     );
 
     // Disable swipe on web as react-native-gesture-handler doesn't support it
@@ -191,20 +191,12 @@ export default function AccountsScreen() {
           }}
           renderRightActions={() => renderRightActions(account)}
           renderLeftActions={() => renderLeftActions(account)}
-          onSwipeableOpen={(direction) => {
+          onSwipeableOpen={() => {
             // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== account.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = account.id;
-            
-            // Trigger action based on swipe direction
-            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
-            if (action === 'edit') {
-              handleEdit(account);
-            } else {
-              handleDelete(account);
-            }
           }}
         >
           {content}
@@ -234,13 +226,9 @@ export default function AccountsScreen() {
     // Color logic: red if spent exceeds monthly limit, otherwise primary
     const spentColor = hasMonthlyLimit && spent > (monthlyLimit || 0) ? '#ef4444' : colors.primary;
 
+    const isWeb = Platform.OS === 'web';
     const content = (
-      <TouchableOpacity 
-        style={[styles.accountCard, { backgroundColor: colors.card }]}
-        onPress={swipeSettings.enabled ? undefined : () => handleEdit(account)}
-        activeOpacity={swipeSettings.enabled ? 1 : 0.7}
-        disabled={swipeSettings.enabled}
-      >
+      <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
         <View style={[styles.accountIcon, { backgroundColor: colors.danger + '20' }]}>
           <Ionicons name="card-outline" size={24} color={colors.danger} />
         </View>
@@ -301,7 +289,23 @@ export default function AccountsScreen() {
             </Text>
           )}
         </View>
-      </TouchableOpacity>
+        {isWeb && (
+          <View style={styles.webActions}>
+            <TouchableOpacity
+              style={[styles.webActionButton, { backgroundColor: colors.primary }]}
+              onPress={() => handleEdit(account)}
+            >
+              <Ionicons name="pencil" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.webActionButton, { backgroundColor: '#ef4444' }]}
+              onPress={() => handleDelete(account)}
+            >
+              <Ionicons name="trash-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     );
 
     // Disable swipe on web as react-native-gesture-handler doesn't support it
@@ -320,20 +324,12 @@ export default function AccountsScreen() {
           }}
           renderRightActions={() => renderRightActions(account)}
           renderLeftActions={() => renderLeftActions(account)}
-          onSwipeableOpen={(direction) => {
+          onSwipeableOpen={() => {
             // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== account.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = account.id;
-            
-            // Trigger action based on swipe direction
-            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
-            if (action === 'edit') {
-              handleEdit(account);
-            } else {
-              handleDelete(account);
-            }
           }}
         >
           {content}
@@ -544,17 +540,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginTop: 8,
   },
-  accountActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   swipeAction: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -566,6 +551,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     fontWeight: '600',
+  },
+  webActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 8,
+  },
+  webActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalOverlay: {
     flex: 1,

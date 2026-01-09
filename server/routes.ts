@@ -411,6 +411,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========== Credit Card Bills ==========
+  app.get("/api/credit-card-bills", async (_req, res) => {
+    try {
+      const bills = await storage.getCreditCardBills();
+      res.json(bills);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch credit card bills" });
+    }
+  });
+
   app.post("/api/payment-occurrences/generate", async (req, res) => {
     try {
       const { month, year } = req.body;
@@ -1616,6 +1626,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error) {
       res.status(500).json({ error: "Failed to delete loan" });
+    }
+  });
+
+  app.post("/api/loans/:id/regenerate-installments", async (req, res) => {
+    try {
+      const loanId = parseInt(req.params.id);
+      console.log('API: Regenerate installments requested for loan:', loanId);
+      const installments = await storage.regenerateLoanInstallments(loanId);
+      console.log('API: Regeneration successful, created', installments.length, 'installments');
+      console.log('API: First installment date:', installments[0]?.dueDate);
+      console.log('API: Last installment date:', installments[installments.length - 1]?.dueDate);
+      res.json(installments);
+    } catch (error: any) {
+      console.error('API: Regeneration failed:', error);
+      res.status(400).json({ error: error.message || "Failed to regenerate installments" });
     }
   });
 

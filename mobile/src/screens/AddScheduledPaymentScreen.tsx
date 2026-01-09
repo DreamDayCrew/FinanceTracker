@@ -32,6 +32,9 @@ export default function AddScheduledPaymentScreen() {
   const [affectAccountBalance, setAffectAccountBalance] = useState(true);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
+  const [paymentType, setPaymentType] = useState<'regular' | 'credit_card_bill'>('regular');
+  const [creditCardAccountId, setCreditCardAccountId] = useState<number | null>(null);
+  const [showCreditCardPicker, setShowCreditCardPicker] = useState(false);
 
   const { data: categories } = useQuery({
     queryKey: ['categories'],
@@ -45,6 +48,8 @@ export default function AddScheduledPaymentScreen() {
 
   const selectedCategory = categories?.find((c: any) => c.id === selectedCategoryId);
   const selectedAccount = accounts?.find((a: any) => a.id === selectedAccountId);
+  const creditCardAccounts = accounts?.filter((a: any) => a.type === 'credit_card') || [];
+  const selectedCreditCard = creditCardAccounts.find((a: any) => a.id === creditCardAccountId);
 
   const { data: payments } = useQuery({
     queryKey: ['scheduled-payments'],
@@ -75,9 +80,19 @@ export default function AddScheduledPaymentScreen() {
         setSelectedAccountId(payment.accountId || null);
         setAffectTransaction(payment.affectTransaction ?? true);
         setAffectAccountBalance(payment.affectAccountBalance ?? true);
+        setPaymentType(payment.paymentType || 'regular');
+        setCreditCardAccountId(payment.creditCardAccountId || null);
+        
+        // If it's a credit card bill, auto-populate billing date and name
+        if (payment.paymentType === 'credit_card_bill' && payment.creditCardAccountId) {
+          const card = accounts?.find((a: any) => a.id === payment.creditCardAccountId);
+          if (card && card.billingDate) {
+            setDueDate(card.billingDate.toString());
+          }
+        }
       }
     }
-  }, [isEditMode, payments, paymentId]);
+  }, [isEditMode, payments, paymentId, accounts]);
 
   const createMutation = useMutation({
     mutationFn: api.createScheduledPayment,
@@ -141,7 +156,9 @@ export default function AddScheduledPaymentScreen() {
       });
       return;
     }
-    if (!amount || parseFloat(amount) <= 0) {
+    
+    // Amount is required only for regular payments
+    if (paymentType === 'regular' && (!amount || parseFloat(amount) <= 0)) {
       Toast.show({
         type: 'error',
         text1: 'Validation Error',
@@ -151,6 +168,19 @@ export default function AddScheduledPaymentScreen() {
       });
       return;
     }
+    
+    // For credit card bills with amount, validate it
+    if (paymentType === 'credit_card_bill' && amount && parseFloat(amount) <= 0) {
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Please enter a valid amount',
+        position: 'bottom',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+    
     const dueDateNum = parseInt(dueDate);
     if (!dueDate || isNaN(dueDateNum) || dueDateNum < 1 || dueDateNum > 31) {
       Toast.show({
@@ -165,7 +195,7 @@ export default function AddScheduledPaymentScreen() {
 
     mutation.mutate({
       name: name.trim(),
-      amount,
+      amount: amount || undefined, // Send undefined for empty amount (auto-calculate)
       dueDate: dueDateNum,
       notes: notes.trim() || null,
       categoryId: selectedCategoryId,
@@ -173,13 +203,121 @@ export default function AddScheduledPaymentScreen() {
       status: 'active',
       affectTransaction,
       affectAccountBalance,
+      paymentType,
+      creditCardAccountId: paymentType === 'credit_card_bill' ? creditCardAccountId : null,
     });
   };
 
   const expenseCategories = categories?.filter(c => c.type === 'expense') || [];
 
+  // Auto-populate credit card bill details when credit card is selected
+  React.useEffect(() => {
+    if (paymentType === 'credit_card_bill' && creditCardAccountId && !isEditMode) {
+      const card = creditCardAccounts.find((a: any) => a.id === creditCardAccountId);
+      if (card) {
+        // Auto-fill name if empty
+        if (!name) {
+          setName(`${card.name} Bill Payment`);
+        }
+        // Auto-fill billing date
+        if (card.billingDate) {
+          setDueDate(card.billingDate.toString());
+        }
+      }
+    }
+  }, [paymentType, creditCardAccountId, creditCardAccounts, isEditMode]);
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
+      <View style={styles.field}>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Payment Type</Text>
+        <View style={styles.paymentTypeRow}>
+          <TouchableOpacity
+            style={[
+              styles.paymentTypeButton,
+              { backgroundColor: paymentType === 'regular' ? colors.primary : colors.card, borderColor: colors.border }
+            ]}
+            onPress={() => setPaymentType('regular')}
+          >
+            <Ionicons 
+              name="calendar-outline" 
+              size={20} 
+              color={paymentType === 'regular' ? '#fff' : colors.text} 
+            />
+            <Text style={[
+              styles.paymentTypeText,
+              { color: paymentType === 'regular' ? '#fff' : colors.text }
+            ]}>
+              Regular Payment
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.paymentTypeButton,
+              { backgroundColor: paymentType === 'credit_card_bill' ? colors.primary : colors.card, borderColor: colors.border }
+            ]}
+            onPress={() => setPaymentType('credit_card_bill')}
+          >
+            <Ionicons 
+              name="card-outline" 
+              size={20} 
+              color={paymentType === 'credit_card_bill' ? '#fff' : colors.text} 
+            />
+            <Text style={[
+              styles.paymentTypeText,
+              { color: paymentType === 'credit_card_bill' ? '#fff' : colors.text }
+            ]}>
+              Credit Card Bill
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {paymentType === 'credit_card_bill' && (
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>Credit Card</Text>
+          <TouchableOpacity
+            style={[styles.dropdownButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setShowCreditCardPicker(!showCreditCardPicker)}
+          >
+            <Ionicons name="card-outline" size={20} color={colors.textMuted} />
+            <Text style={[styles.dropdownText, { color: selectedCreditCard ? colors.text : colors.textMuted }]}>
+              {selectedCreditCard ? selectedCreditCard.name : 'Select Credit Card'}
+            </Text>
+          </TouchableOpacity>
+          {showCreditCardPicker && creditCardAccounts && creditCardAccounts.length > 0 ? (
+            <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {creditCardAccounts.map((card: any) => (
+                <TouchableOpacity
+                  key={card.id}
+                  style={styles.dropdownItem}
+                  onPress={() => { 
+                    setCreditCardAccountId(card.id); 
+                    setShowCreditCardPicker(false); 
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.dropdownItemText, { color: colors.text }]}>{card.name}</Text>
+                    {card.bankName && (
+                      <Text style={[styles.dropdownItemSubtext, { color: colors.textMuted }]}>
+                        {card.bankName} • Due: {card.billingDate || 'Not set'}th
+                      </Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : showCreditCardPicker && (
+            <View style={[styles.infoBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="information-circle-outline" size={20} color={colors.primary} style={styles.infoIcon} />
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                No credit card accounts found. Add a credit card account first.
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
       <View style={styles.field}>
         <Text style={[styles.label, { color: colors.textMuted }]}>Payment Name</Text>
         <TextInput
@@ -192,12 +330,22 @@ export default function AddScheduledPaymentScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={[styles.label, { color: colors.textMuted }]}>Amount</Text>
+        <Text style={[styles.label, { color: colors.textMuted }]}>
+          Amount {paymentType === 'credit_card_bill' && '(optional)'}
+        </Text>
+        {paymentType === 'credit_card_bill' && (
+          <View style={[styles.infoBox, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 8 }]}>
+            <Ionicons name="information-circle-outline" size={20} color={colors.primary} style={styles.infoIcon} />
+            <Text style={[styles.infoText, { color: colors.textMuted }]}>
+              Leave blank to auto-calculate from your actual spending each billing cycle. Or enter a fixed amount to pay monthly.
+            </Text>
+          </View>
+        )}
         <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
           <Text style={[styles.currencyPrefix, { color: colors.textMuted }]}>₹</Text>
           <TextInput
             style={[styles.amountInput, { color: colors.text }]}
-            placeholder="0"
+            placeholder={paymentType === 'credit_card_bill' ? "Auto-calculated" : "0"}
             placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
             value={amount}
@@ -417,6 +565,28 @@ const styles = StyleSheet.create({
   },
   dropdownItemText: {
     fontSize: 14,
+  },
+  dropdownItemSubtext: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  paymentTypeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  paymentTypeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  paymentTypeText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   toggleContainer: {
     borderRadius: 12,

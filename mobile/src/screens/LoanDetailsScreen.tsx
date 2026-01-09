@@ -29,6 +29,7 @@ export default function LoanDetailsScreen() {
 
   const [activeTab, setActiveTab] = useState<'upcoming' | 'payments' | 'terms'>('upcoming');
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [regenerateModalVisible, setRegenerateModalVisible] = useState(false);
   const [preclosureModalVisible, setPreclosureModalVisible] = useState(false);
   const [topupModalVisible, setTopupModalVisible] = useState(false);
   const [addTermModalVisible, setAddTermModalVisible] = useState(false);
@@ -153,6 +154,35 @@ export default function LoanDetailsScreen() {
         type: 'error',
         text1: 'Top-Up Failed',
         text2: error.message || 'Could not top-up loan',
+        position: 'bottom',
+      });
+    },
+  });
+
+  const regenerateInstallmentsMutation = useMutation({
+    mutationFn: () => {
+      console.log('Regenerating installments for loan:', loanId);
+      return api.regenerateInstallments(loanId);
+    },
+    onSuccess: (data) => {
+      console.log('Regeneration successful:', data);
+      queryClient.invalidateQueries({ queryKey: ['loan-installments', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loans'] });
+      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      Toast.show({
+        type: 'success',
+        text1: 'Installments Regenerated',
+        text2: 'Pending installments have been recalculated',
+        position: 'bottom',
+      });
+    },
+    onError: (error: any) => {
+      console.error('Regeneration error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Regeneration Failed',
+        text2: error.message || 'Could not regenerate installments',
         position: 'bottom',
       });
     },
@@ -477,8 +507,11 @@ export default function LoanDetailsScreen() {
         )}
 
         {/* Loan Actions */}
-        {loan.status === 'active' && (
+        {/* Debug: Show for all loan statuses temporarily */}
+        {loan && (
           <View style={styles.loanActionsContainer}>
+            {loan.status === 'active' && (
+              <>
             {/* Top-Up Action */}
             <TouchableOpacity
               style={[styles.loanActionButton, { backgroundColor: colors.card, borderColor: colors.success }]}
@@ -507,6 +540,28 @@ export default function LoanDetailsScreen() {
                 <Text style={[styles.preclosureButtonTitle, { color: colors.text }]}>Pre-Close Loan</Text>
                 <Text style={[styles.preclosureButtonSubtitle, { color: colors.textMuted }]}>
                   Close loan early with settlement amount
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+              </>
+            )}
+
+            {/* Regenerate Installments Action */}
+            <TouchableOpacity
+              style={[styles.loanActionButton, { backgroundColor: colors.card, borderColor: colors.warning }]}
+              onPress={() => setRegenerateModalVisible(true)}
+              disabled={regenerateInstallmentsMutation.isPending}
+            >
+              {regenerateInstallmentsMutation.isPending ? (
+                <ActivityIndicator size="small" color={colors.warning} />
+              ) : (
+                <Ionicons name="refresh-circle" size={20} color={colors.warning} />
+              )}
+              <View style={styles.preclosureButtonContent}>
+                <Text style={[styles.preclosureButtonTitle, { color: colors.text }]}>Regenerate Installments</Text>
+                <Text style={[styles.preclosureButtonSubtitle, { color: colors.textMuted }]}>
+                  {regenerateInstallmentsMutation.isPending ? 'Regenerating...' : 'Recalculate pending EMIs from current terms'}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
@@ -1449,6 +1504,60 @@ export default function LoanDetailsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Regenerate Confirmation Modal */}
+      <Modal
+        visible={regenerateModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRegenerateModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <Ionicons name="refresh-circle" size={48} color={colors.warning} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Regenerate Installments?</Text>
+            <Text style={[styles.modalMessage, { color: colors.textMuted }]}>
+              This will delete all pending installments and recreate them starting from current month based on loan terms. Paid installments will not be affected.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
+                onPress={() => setRegenerateModalVisible(false)}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.warning }]}
+                onPress={() => {
+                  setRegenerateModalVisible(false);
+                  regenerateInstallmentsMutation.mutate();
+                }}
+              >
+                <Text style={styles.confirmButtonText}>Regenerate</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Loading Overlay for Regeneration */}
+      <Modal
+        visible={regenerateInstallmentsMutation.isPending}
+        transparent
+        animationType="fade"
+      >
+        <View style={styles.loadingOverlay}>
+          <View style={[styles.loadingCard, { backgroundColor: colors.card }]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.text }]}>
+              Regenerating Installments...
+            </Text>
+            <Text style={[styles.loadingSubtext, { color: colors.textMuted }]}>
+              Please wait, this may take a few seconds
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2007,5 +2116,27 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     alignItems: 'center',
+  },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingCard: {
+    padding: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    minWidth: 200,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  loadingSubtext: {
+    fontSize: 13,
+    marginTop: 4,
+    textAlign: 'center',
   },
 });

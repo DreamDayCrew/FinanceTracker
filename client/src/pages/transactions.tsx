@@ -96,7 +96,7 @@ export default function Transactions() {
     return matchesSearch && matchesCategory && matchesDate;
   });
 
-  // Group by date
+  // Group by date and sort by latest first
   const groupedTransactions = filteredTransactions.reduce((acc, tx) => {
     const date = formatDate(tx.transactionDate);
     if (!acc[date]) {
@@ -105,6 +105,11 @@ export default function Transactions() {
     acc[date].push(tx);
     return acc;
   }, {} as Record<string, TransactionWithRelations[]>);
+
+  // Sort date groups by latest first
+  const sortedDateEntries = Object.entries(groupedTransactions).sort((a, b) => {
+    return new Date(b[1][0].transactionDate).getTime() - new Date(a[1][0].transactionDate).getTime();
+  });
 
   const hasFilters = searchQuery || selectedCategory !== "all" || dateRange !== "all";
 
@@ -180,7 +185,7 @@ export default function Transactions() {
       {/* Transaction list */}
       {Object.keys(groupedTransactions).length > 0 ? (
         <div className="space-y-4">
-          {Object.entries(groupedTransactions).map(([date, txs]) => (
+          {sortedDateEntries.map(([date, txs]) => (
             <div key={date}>
               <p className="text-xs font-medium text-muted-foreground mb-2">{date}</p>
               <div className="space-y-2">

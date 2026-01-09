@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -33,10 +33,12 @@ interface LoanCardProps {
   hideBalances: boolean;
   onPress: () => void;
   onDetailsPress: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
   nextInstallment?: LoanInstallment | null;
 }
 
-function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextInstallment }: LoanCardProps) {
+function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, onEdit, onDelete, nextInstallment }: LoanCardProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'outstanding'>('overview');
   const [showAccountNumber, setShowAccountNumber] = useState(false);
 
@@ -149,11 +151,10 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
   const displayPrincipal = getDisplayPrincipal();
   const principalPaid = getPrincipalPaid();
   const progress = calculateProgress();
-  const endDate = calculateEndDate();
-
+  const endDate = calculateEndDate();  const isWeb = Platform.OS === 'web';
   return (
     <TouchableOpacity 
-      style={[styles.loanCard, { backgroundColor: '#0f172a' }]}
+      style={[styles.loanCard, { backgroundColor: colors.card }]}
       onPress={onPress}
       activeOpacity={0.9}
     >
@@ -163,12 +164,12 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
             <Ionicons name={getLoanIcon(loan.loanType || '')} size={20} color="#60a5fa" />
           </View>
           <View style={styles.loanTitleContainer}>
-            <Text style={styles.loanName}>{loan.name}</Text>
-            <Text style={styles.loanTypeLabel}>{getLoanTypeLabel(loan.loanType || '')}</Text>
-            <Text style={styles.loanPrincipal}>
+            <Text style={[styles.loanName, { color: colors.text }]}>{loan.name}</Text>
+            <Text style={[styles.loanTypeLabel, { color: colors.textMuted }]}>{getLoanTypeLabel(loan.loanType || '')}</Text>
+            <Text style={[styles.loanPrincipal, { color: colors.text }]}>
               {hideBalances ? '****' : formatCurrency(displayPrincipal)}
             </Text>
-            <Text style={styles.maturityDate}>
+            <Text style={[styles.maturityDate, { color: colors.textMuted }]}>
               Matures on {endDate ? formatShortDate(endDate) : 'N/A'}
             </Text>
           </View>
@@ -181,13 +182,13 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
         </TouchableOpacity>
       </View>
 
-      <View style={styles.subCard}>
-        <View style={styles.tabContainer}>
+      <View style={[styles.subCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+        <View style={[styles.tabContainer, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'overview' && styles.activeTab]}
           onPress={() => setActiveTab('overview')}
         >
-          <Text style={[styles.tabText, activeTab === 'overview' && styles.activeTabText]}>
+          <Text style={[styles.tabText, { color: activeTab === 'overview' ? colors.text : colors.textMuted }, activeTab === 'overview' && styles.activeTabText]}>
             Overview
           </Text>
         </TouchableOpacity>
@@ -195,7 +196,7 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
           style={[styles.tab, activeTab === 'outstanding' && styles.activeTab]}
           onPress={() => setActiveTab('outstanding')}
         >
-          <Text style={[styles.tabText, activeTab === 'outstanding' && styles.activeTabText]}>
+          <Text style={[styles.tabText, { color: activeTab === 'outstanding' ? colors.text : colors.textMuted }, activeTab === 'outstanding' && styles.activeTabText]}>
             Outstanding
           </Text>
         </TouchableOpacity>
@@ -206,9 +207,9 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
           <View style={styles.overviewContent}>
             <View style={styles.overviewRow}>
               <View style={styles.overviewItem}>
-                <Text style={styles.overviewLabel}>Loan A/c Number</Text>
+                <Text style={[styles.overviewLabel, { color: colors.textMuted }]}>Loan A/c Number</Text>
                 <View style={styles.overviewValueRow}>
-                  <Text style={styles.overviewValue}>{getDisplayAccountNumber()}</Text>
+                  <Text style={[styles.overviewValue, { color: colors.text }]}>{getDisplayAccountNumber()}</Text>
                   {loan.loanAccountNumber && (
                     <TouchableOpacity 
                       onPress={() => setShowAccountNumber(!showAccountNumber)}
@@ -224,20 +225,20 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
                 </View>
               </View>
               <View style={styles.overviewItemRight}>
-                <Text style={styles.overviewLabel}>Rate of Interest</Text>
-                <Text style={styles.overviewValue}>{loan.interestRate}% p.a.</Text>
+                <Text style={[styles.overviewLabel, { color: colors.textMuted }]}>Rate of Interest</Text>
+                <Text style={[styles.overviewValue, { color: colors.text }]}>{loan.interestRate}% p.a.</Text>
               </View>
             </View>
             <View style={styles.overviewRow}>
               <View style={styles.overviewItem}>
-                <Text style={styles.overviewLabel}>Upcoming EMI</Text>
-                <Text style={styles.overviewValue}>
+                <Text style={[styles.overviewLabel, { color: colors.textMuted }]}>Upcoming EMI</Text>
+                <Text style={[styles.overviewValue, { color: colors.text }]}>
                   {hideBalances ? '****' : formatCurrency(parseFloat(loan.emiAmount || '0'))}
                 </Text>
               </View>
               <View style={styles.overviewItemRight}>
-                <Text style={styles.overviewLabel}>Due On</Text>
-                <Text style={[styles.overviewValue, { color: '#60a5fa' }]}>
+                <Text style={[styles.overviewLabel, { color: colors.textMuted }]}>Due On</Text>
+                <Text style={[styles.overviewValue, { color: colors.primary }]}>
                   {formatDate(getNextDueDate())}
                 </Text>
               </View>
@@ -246,13 +247,13 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
         ) : (
           <View style={styles.outstandingContent}>
             <View style={styles.outstandingRow}>
-              <Text style={styles.overviewLabel}>Outstanding Principal</Text>
-              <Text style={styles.outstandingAmount}>
+              <Text style={[styles.overviewLabel, { color: colors.textMuted }]}>Outstanding Principal</Text>
+              <Text style={[styles.outstandingAmount, { color: colors.text }]}>
                 {hideBalances ? '****' : formatCurrency(parseFloat(loan.outstandingAmount))}
               </Text>
             </View>
             <View style={styles.outstandingRow}>
-              <Text style={styles.overviewLabel}>Principal Paid</Text>
+              <Text style={[styles.overviewLabel, { color: colors.textMuted }]}>Principal Paid</Text>
               <Text style={styles.paidAmount}>
                 {hideBalances ? '****' : `${formatCurrency(principalPaid)}/${formatCurrency(displayPrincipal)}`}
               </Text>
@@ -266,10 +267,26 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
         )}
       </View>
 
-        <Text style={styles.noteText}>
+        <Text style={[styles.noteText, { color: colors.textMuted }]}>
           Note: Outstanding Principal & Principal Paid is shown as on {getTodayFormatted()}
         </Text>
       </View>
+      {isWeb && (
+        <View style={styles.webActions}>
+          <TouchableOpacity
+            style={[styles.webActionButton, { backgroundColor: colors.primary }]}
+            onPress={onEdit}
+          >
+            <Ionicons name="pencil" size={18} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.webActionButton, { backgroundColor: '#ef4444' }]}
+            onPress={onDelete}
+          >
+            <Ionicons name="trash-outline" size={18} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -438,6 +455,8 @@ export default function LoansScreen() {
         hideBalances={hideBalances}
         onPress={() => navigation.navigate('LoanDetails', { loanId: item.id })}
         onDetailsPress={() => navigation.navigate('LoanDetails', { loanId: item.id })}
+        onEdit={() => handleEdit(item)}
+        onDelete={() => handleDelete(item)}
       />
     );
 
@@ -454,20 +473,12 @@ export default function LoansScreen() {
           }}
           renderRightActions={() => renderRightActions(item)}
           renderLeftActions={() => renderLeftActions(item)}
-          onSwipeableOpen={(direction) => {
+          onSwipeableOpen={() => {
             // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== item.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = item.id;
-            
-            // Trigger action based on swipe direction
-            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
-            if (action === 'edit') {
-              handleEdit(item);
-            } else {
-              handleDelete(item);
-            }
           }}
         >
           {content}
@@ -685,12 +696,10 @@ const styles = StyleSheet.create({
   loanName: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#fff',
     marginBottom: 4,
   },
   loanTypeLabel: {
     fontSize: 11,
-    color: '#94a3b8',
     fontWeight: '600',
     letterSpacing: 0.5,
     marginBottom: 4,
@@ -698,12 +707,10 @@ const styles = StyleSheet.create({
   loanPrincipal: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#fff',
     marginBottom: 2,
   },
   maturityDate: {
     fontSize: 11,
-    color: '#64748b',
   },
   arrowButton: {
     width: 36,
@@ -714,14 +721,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   subCard: {
-    backgroundColor: '#1a2744',
     borderRadius: 12,
     padding: 16,
+    borderWidth: 1,
   },
   tabContainer: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
     marginBottom: 12,
   },
   tab: {
@@ -735,11 +741,9 @@ const styles = StyleSheet.create({
   },
   tabText: {
     fontSize: 14,
-    color: '#64748b',
     fontWeight: '500',
   },
   activeTabText: {
-    color: '#fff',
     fontWeight: '600',
   },
   tabContent: {
@@ -761,12 +765,10 @@ const styles = StyleSheet.create({
   },
   overviewLabel: {
     fontSize: 11,
-    color: '#64748b',
     marginBottom: 4,
   },
   overviewValue: {
     fontSize: 14,
-    color: '#fff',
     fontWeight: '600',
   },
   overviewValueRow: {
@@ -788,7 +790,6 @@ const styles = StyleSheet.create({
   outstandingAmount: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#fff',
   },
   paidAmount: {
     fontSize: 14,
@@ -811,7 +812,6 @@ const styles = StyleSheet.create({
   },
   noteText: {
     fontSize: 10,
-    color: '#475569',
     marginTop: 12,
     fontStyle: 'italic',
   },
@@ -826,6 +826,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginTop: 4,
+  },
+  webActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 8,
+  },
+  webActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalOverlay: {
     flex: 1,

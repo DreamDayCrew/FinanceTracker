@@ -37,13 +37,13 @@ export function GradientHeader({ title, canGoBack, onBackPress }: GradientHeader
 
 const styles = StyleSheet.create({
   header: {
-    paddingBottom: 12,
+    paddingBottom: 16,
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    minHeight: 44,
+    paddingVertical: 12,
   },
   backButton: {
     marginRight: 12,

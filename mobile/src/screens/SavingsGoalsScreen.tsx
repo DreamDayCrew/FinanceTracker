@@ -519,6 +519,7 @@ export default function SavingsGoalsScreen() {
                 const isActive = goal.status === 'active';
                 const progress = calculateProgress(goal.currentAmount, goal.targetAmount);
 
+                const isWeb = Platform.OS === 'web';
                 const content = (
                   <View
                     style={[
@@ -561,6 +562,22 @@ export default function SavingsGoalsScreen() {
                         />
                       </View>
                     </View>
+                    {isWeb && (
+                      <View style={styles.webActions}>
+                        <TouchableOpacity
+                          style={[styles.webActionButton, { backgroundColor: colors.primary }]}
+                          onPress={() => handleEdit(goal)}
+                        >
+                          <Ionicons name="pencil" size={18} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.webActionButton, { backgroundColor: '#ef4444' }]}
+                          onPress={() => handleDelete(goal)}
+                        >
+                          <Ionicons name="trash-outline" size={18} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                 );
 
@@ -580,20 +597,12 @@ export default function SavingsGoalsScreen() {
                       }}
                       renderRightActions={() => renderRightActions(goal)}
                       renderLeftActions={() => renderLeftActions(goal)}
-                      onSwipeableOpen={(direction) => {
+                      onSwipeableOpen={() => {
                         // Close previously opened swipeable
                         if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== goal.id) {
                           swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
                         }
                         currentOpenSwipeable.current = goal.id;
-                        
-                        // Trigger action based on swipe direction
-                        const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
-                        if (action === 'edit') {
-                          handleEdit(goal);
-                        } else {
-                          handleDelete(goal);
-                        }
                       }}
                     >
                       {content}
@@ -1112,6 +1121,7 @@ export default function SavingsGoalsScreen() {
                     }
                   }}
                   maximumDate={new Date()}
+                  themeVariant={resolvedTheme}
                 />
               )}
 
@@ -1856,6 +1866,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginTop: 4,
+  },
+  webActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    marginLeft: 12,
+  },
+  webActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   deleteModalOverlay: {
     flex: 1,

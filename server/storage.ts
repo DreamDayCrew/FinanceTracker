@@ -80,6 +80,7 @@ export interface IStorage {
   createScheduledPayment(payment: InsertScheduledPayment): Promise<ScheduledPayment>;
   updateScheduledPayment(id: number, payment: Partial<InsertScheduledPayment>): Promise<ScheduledPayment | undefined>;
   deleteScheduledPayment(id: number): Promise<boolean>;
+  getCreditCardBills(): Promise<any[]>;
 
   // SMS Logs
   createSmsLog(smsLog: InsertSmsLog): Promise<SmsLog>;
@@ -587,6 +588,99 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
+  async getCreditCardBills(): Promise<any[]> {
+    // Get all credit card accounts
+    const creditCardAccounts = await db.select().from(accounts).where(eq(accounts.type, 'credit_card'));
+    
+    if (creditCardAccounts.length === 0) {
+      return [];
+    }
+
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    const bills = await Promise.all(
+      creditCardAccounts.map(async (account) => {
+        // Find credit card bill payment occurrence for this month
+        const billPayment = await db
+          .select()
+          .from(scheduledPayments)
+          .where(
+            and(
+              eq(scheduledPayments.paymentType, 'credit_card_bill'),
+              eq(scheduledPayments.creditCardAccountId, account.id)
+            )
+          )
+          .limit(1);
+
+        // Calculate billing cycle dates
+        const billingDate = account.billingDate || 1;
+        const cycleStartDate = new Date(currentYear, currentMonth - 2, billingDate);
+        const cycleEndDate = new Date(currentYear, currentMonth - 1, billingDate - 1);
+        
+        // Calculate current cycle spending
+        const cycleTransactions = await db
+          .select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.accountId, account.id),
+              eq(transactions.type, 'debit'),
+              gte(transactions.transactionDate, cycleStartDate.toISOString().split('T')[0]),
+              lte(transactions.transactionDate, cycleEndDate.toISOString().split('T')[0])
+            )
+          );
+
+        const cycleSpending = cycleTransactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+        // Get payment occurrence for this month
+        let paymentOccurrence = null;
+        let paymentStatus = 'pending';
+        if (billPayment.length > 0) {
+          const occurrences = await db
+            .select()
+            .from(paymentOccurrences)
+            .where(
+              and(
+                eq(paymentOccurrences.scheduledPaymentId, billPayment[0].id),
+                eq(paymentOccurrences.month, currentMonth),
+                eq(paymentOccurrences.year, currentYear)
+              )
+            )
+            .limit(1);
+          
+          if (occurrences.length > 0) {
+            paymentOccurrence = occurrences[0];
+            paymentStatus = paymentOccurrence.status;
+          }
+        }
+
+        // Calculate days until due
+        const dueDate = new Date(currentYear, currentMonth - 1, billingDate);
+        const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        return {
+          accountId: account.id,
+          accountName: account.name,
+          bankName: account.bankName,
+          billingDate: account.billingDate,
+          cycleSpending: cycleSpending.toFixed(2),
+          cycleStartDate: cycleStartDate.toISOString().split('T')[0],
+          cycleEndDate: cycleEndDate.toISOString().split('T')[0],
+          dueDate: dueDate.toISOString().split('T')[0],
+          daysUntilDue,
+          paymentStatus,
+          paymentOccurrenceId: paymentOccurrence?.id || null,
+          scheduledPaymentId: billPayment[0]?.id || null,
+          limit: account.monthlySpendingLimit ? parseFloat(account.monthlySpendingLimit) : null,
+        };
+      })
+    );
+
+    return bills;
+  }
+
   // SMS Logs
   async createSmsLog(smsLog: InsertSmsLog): Promise<SmsLog> {
     const [newLog] = await db.insert(smsLogs).values({
@@ -870,12 +964,51 @@ export class DatabaseStorage implements IStorage {
         if (existing.length === 0) {
           const dueDay = Math.min(payment.dueDate, new Date(year, month, 0).getDate());
           const dueDateObj = new Date(year, month - 1, dueDay);
+          
+          // Auto-calculate amount for credit card bills
+          let occurrenceAmount: string | undefined;
+          if (payment.paymentType === 'credit_card_bill' && !payment.amount && payment.creditCardAccountId) {
+            // Get the credit card account to find billing date
+            const [creditCardAccount] = await db.select()
+              .from(accounts)
+              .where(eq(accounts.id, payment.creditCardAccountId));
+            
+            if (creditCardAccount && creditCardAccount.billingDate) {
+              const billingDate = creditCardAccount.billingDate;
+              
+              // Calculate previous billing cycle dates
+              // Cycle is from billingDate of previous month to (billingDate - 1) of current month
+              const cycleStartDate = new Date(year, month - 2, billingDate);
+              const cycleEndDate = new Date(year, month - 1, billingDate - 1);
+              
+              // Get all debit transactions on this credit card during the billing cycle
+              const cycleTransactions = await db.select()
+                .from(transactions)
+                .where(
+                  and(
+                    eq(transactions.accountId, payment.creditCardAccountId),
+                    eq(transactions.type, 'debit'),
+                    gte(transactions.transactionDate, cycleStartDate),
+                    lte(transactions.transactionDate, cycleEndDate)
+                  )
+                );
+              
+              // Sum up the amounts
+              const totalSpending = cycleTransactions.reduce((sum, t) => {
+                return sum + parseFloat(t.amount);
+              }, 0);
+              
+              occurrenceAmount = totalSpending.toFixed(2);
+            }
+          }
+          
           const [newOccurrence] = await db.insert(paymentOccurrences).values({
             scheduledPaymentId: payment.id,
             month,
             year,
             dueDate: dueDateObj,
             status: 'pending',
+            ...(occurrenceAmount && { paidAmount: occurrenceAmount }),
           }).returning();
           generatedOccurrences.push(newOccurrence);
         }
@@ -1275,6 +1408,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Loan Installments
+  async regenerateLoanInstallments(loanId: number): Promise<LoanInstallment[]> {
+    console.log('Storage: Regenerating installments for loan:', loanId);
+    // Delete all pending installments
+    const deleteResult = await db.delete(loanInstallments)
+      .where(and(
+        eq(loanInstallments.loanId, loanId),
+        eq(loanInstallments.status, 'pending')
+      ));
+    console.log('Storage: Deleted pending installments');
+    
+    // Generate new installments using current date as base
+    console.log('Storage: Generating new installments from current date...');
+    const newInstallments = await this.generateLoanInstallments(loanId, true);
+    console.log('Storage: Generated', newInstallments.length, 'new installments');
+    return newInstallments;
+  }
+
   async getLoanInstallments(loanId: number): Promise<LoanInstallment[]> {
     return db.select().from(loanInstallments)
       .where(eq(loanInstallments.loanId, loanId))
@@ -1310,7 +1460,7 @@ export class DatabaseStorage implements IStorage {
     return updated || undefined;
   }
 
-  async generateLoanInstallments(loanId: number): Promise<LoanInstallment[]> {
+  async generateLoanInstallments(loanId: number, useCurrentDate = false): Promise<LoanInstallment[]> {
     const loan = await this.getLoan(loanId);
     if (!loan || !loan.emiAmount || !loan.tenure) return [];
 
@@ -1321,15 +1471,26 @@ export class DatabaseStorage implements IStorage {
     const emiAmount = parseFloat(loan.emiAmount);
     const interestRate = parseFloat(loan.interestRate) / 100 / 12; // Monthly rate
     
-    // For existing loans: use nextEmiDate and outstanding amount
-    // For new loans: use startDate and principal amount
-    const isExistingLoan = loan.isExistingLoan ?? false;
-    const baseDate = isExistingLoan && loan.nextEmiDate 
-      ? new Date(loan.nextEmiDate) 
-      : new Date(loan.startDate);
+    // Determine the base date for calculation
+    let baseDate: Date;
+    if (useCurrentDate) {
+      // For regeneration, always start from current month
+      baseDate = new Date();
+      console.log('Using current date as base:', baseDate.toISOString());
+    } else {
+      // For initial generation, use existing logic
+      const isExistingLoan = loan.isExistingLoan ?? false;
+      baseDate = isExistingLoan && loan.nextEmiDate 
+        ? new Date(loan.nextEmiDate) 
+        : new Date(loan.startDate);
+      console.log('Using stored date as base:', baseDate.toISOString());
+    }
+    
     const emiDay = loan.emiDay || baseDate.getDate();
+    console.log('EMI day:', emiDay, 'Base date:', baseDate.toISOString());
     
     // For existing loans, use outstanding amount as the starting principal
+    const isExistingLoan = loan.isExistingLoan ?? false;
     const principal = isExistingLoan 
       ? parseFloat(loan.outstandingAmount) 
       : parseFloat(loan.principalAmount);
@@ -1344,18 +1505,16 @@ export class DatabaseStorage implements IStorage {
       const principalAmount = emiAmount - interestAmount;
       remainingPrincipal = Math.max(0, remainingPrincipal - principalAmount);
 
-      // Calculate due date
-      let dueDate: Date;
-      if (isExistingLoan && loan.nextEmiDate) {
-        // For existing loans, start from nextEmiDate
-        dueDate = new Date(loan.nextEmiDate);
-        dueDate.setMonth(dueDate.getMonth() + (i - 1)); // i-1 because first installment is the next EMI date
-      } else {
-        // For new loans, start from startDate + 1 month
-        dueDate = new Date(loan.startDate);
-        dueDate.setMonth(dueDate.getMonth() + i);
-      }
-      dueDate.setDate(Math.min(emiDay, new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0).getDate()));
+      // Calculate due date - start from baseDate and add months
+      const baseYear = baseDate.getFullYear();
+      const baseMonth = baseDate.getMonth();
+      const targetMonth = baseMonth + i;
+      const targetYear = baseYear + Math.floor(targetMonth / 12);
+      const adjustedMonth = targetMonth % 12;
+      let dueDate = new Date(targetYear, adjustedMonth, 1);
+      // Set the day, ensuring it doesn't exceed the month's last day
+      const lastDayOfMonth = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0).getDate();
+      dueDate.setDate(Math.min(emiDay, lastDayOfMonth));
 
       const [newInstallment] = await db.insert(loanInstallments).values({
         loanId,
