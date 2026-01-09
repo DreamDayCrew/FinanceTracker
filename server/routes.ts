@@ -55,7 +55,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/accounts", async (_req, res) => {
     try {
       const accounts = await storage.getAllAccounts();
-      res.json(accounts);
+      // Attach card details for credit_card and debit_card accounts
+      const accountsWithCards = await Promise.all(
+        accounts.map(async (account) => {
+          if (account.type === 'credit_card' || account.type === 'debit_card') {
+            const cardDetails = await storage.getCardDetails(account.id);
+            return { ...account, cardDetails };
+          }
+          return account;
+        })
+      );
+      res.json(accountsWithCards);
     } catch (error) {
       console.error("Error fetching accounts:", error);
       res.status(500).json({ error: "Failed to fetch accounts" });
