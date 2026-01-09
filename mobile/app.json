@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "My Tracker",
-    "slug": "finance-tracker",
-    "version": "1.0.8",
+    "slug": "my-tracker",
+    "version": "1.0.9",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -29,6 +29,11 @@
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
-    "owner": "gloryKumudha"
+    "owner": "glorykumudha",
+    "extra": {
+      "eas": {
+        "projectId": "00f2d123-84f6-4e1d-a027-a2c0464eb435"
+      }
+    }
   }
 }

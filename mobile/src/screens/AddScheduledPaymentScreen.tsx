@@ -320,7 +320,7 @@ export default function AddScheduledPaymentScreen() {
               trackColor={{ false: colors.border, true: colors.primary }}
               thumbColor="#fff"
             />
-          </View>S
+          </View>
           <View style={styles.toggleRow}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.toggleLabel, { color: colors.text }]}>Affect Account Balance</Text>

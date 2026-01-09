@@ -3,8 +3,8 @@ export function formatCurrency(amount: number | string): string {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(num);
 }
 
@@ -43,6 +43,11 @@ export const COLORS = {
   danger: '#dc2626',
   warning: '#f59e0b',
   success: '#16a34a',
+  // Gradient colors for headers
+  gradientStart: '#16a34a',    // Green - light theme start
+  gradientEnd: '#22c55e',       // Lighter green - light theme end
+  gradientStartDark: '#15803d', // Dark green - dark theme start
+  gradientEndDark: '#16a34a',   // Medium green - dark theme end
 };
 
 export function getThemedColors(theme: 'light' | 'dark') {
@@ -57,5 +62,7 @@ export function getThemedColors(theme: 'light' | 'dark') {
     danger: COLORS.danger,
     warning: COLORS.warning,
     success: COLORS.success,
+    gradientStart: theme === 'dark' ? COLORS.gradientStartDark : COLORS.gradientStart,
+    gradientEnd: theme === 'dark' ? COLORS.gradientEndDark : COLORS.gradientEnd,
   };
 }

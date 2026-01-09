@@ -32,6 +32,9 @@ export default function AddTransactionScreen() {
   const [selectedToAccountId, setSelectedToAccountId] = useState<number | null>(null);
   const [transactionDate, setTransactionDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
+  const [showToAccountPicker, setShowToAccountPicker] = useState(false);
   
   const [showSmsModal, setShowSmsModal] = useState(false);
   const [smsText, setSmsText] = useState('');
@@ -314,6 +317,8 @@ export default function AddTransactionScreen() {
             }
           }}
           maximumDate={new Date()}
+          themeVariant={resolvedTheme}
+          textColor={colors.text}
         />
       )}
 
@@ -330,27 +335,30 @@ export default function AddTransactionScreen() {
 
       <View style={styles.field}>
         <Text style={[styles.label, { color: colors.textMuted }]}>Category</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-          {filteredCategories.map((category) => (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categoryChip,
-                { backgroundColor: colors.card, borderColor: colors.border },
-                selectedCategoryId === category.id && { backgroundColor: colors.primary }
-              ]}
-              onPress={() => setSelectedCategoryId(category.id)}
-            >
-              <Text style={[
-                styles.categoryChipText,
-                { color: colors.text },
-                selectedCategoryId === category.id && { color: '#fff' }
-              ]}>
-                {category.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <TouchableOpacity
+          style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, justifyContent: 'center' }]}
+          onPress={() => setShowCategoryPicker(!showCategoryPicker)}
+        >
+          <Text style={[styles.pickerText, { color: selectedCategoryId ? colors.text : colors.textMuted }]}>
+            {selectedCategoryId 
+              ? filteredCategories.find(c => c.id === selectedCategoryId)?.name || 'Select Category'
+              : 'Select Category'}
+          </Text>
+          <Ionicons name="chevron-down" size={20} color={colors.textMuted} style={styles.dropdownIcon} />
+        </TouchableOpacity>
+        {showCategoryPicker && (
+          <View style={[styles.pickerList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {filteredCategories.map((category) => (
+              <TouchableOpacity
+                key={category.id}
+                style={styles.pickerOption}
+                onPress={() => { setSelectedCategoryId(category.id); setShowCategoryPicker(false); }}
+              >
+                <Text style={[styles.pickerOptionText, { color: colors.text }]}>{category.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       {accounts && accounts.length > 0 && (
@@ -358,66 +366,72 @@ export default function AddTransactionScreen() {
           <Text style={[styles.label, { color: colors.textMuted }]}>
             {type === 'transfer' ? 'From Account' : 'Account'}
           </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-            {accounts.map((account) => (
-              <TouchableOpacity
-                key={account.id}
-                style={[
-                  styles.categoryChip,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                  selectedAccountId === account.id && { backgroundColor: colors.primary }
-                ]}
-                onPress={() => setSelectedAccountId(account.id)}
-              >
-                <Ionicons 
-                  name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
-                  size={14} 
-                  color={selectedAccountId === account.id ? '#fff' : colors.textMuted}
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={[
-                  styles.categoryChipText,
-                  { color: colors.text },
-                  selectedAccountId === account.id && { color: '#fff' }
-                ]}>
-                  {account.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          <TouchableOpacity
+            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, justifyContent: 'center' }]}
+            onPress={() => setShowAccountPicker(!showAccountPicker)}
+          >
+            <Text style={[styles.pickerText, { color: selectedAccountId ? colors.text : colors.textMuted }]}>
+              {selectedAccountId 
+                ? accounts.find(a => a.id === selectedAccountId)?.name || 'Select Account'
+                : 'Select Account'}
+            </Text>
+            <Ionicons name="chevron-down" size={20} color={colors.textMuted} style={styles.dropdownIcon} />
+          </TouchableOpacity>
+          {showAccountPicker && (
+            <View style={[styles.pickerList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {accounts.map((account) => (
+                <TouchableOpacity
+                  key={account.id}
+                  style={styles.pickerOption}
+                  onPress={() => { setSelectedAccountId(account.id); setShowAccountPicker(false); }}
+                >
+                  <Ionicons 
+                    name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
+                    size={16} 
+                    color={colors.textMuted}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={[styles.pickerOptionText, { color: colors.text }]}>{account.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
       )}
 
       {type === 'transfer' && accounts && accounts.length > 0 && (
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textMuted }]}>To Account</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-            {accounts.filter(acc => acc.id !== selectedAccountId).map((account) => (
-              <TouchableOpacity
-                key={account.id}
-                style={[
-                  styles.categoryChip,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                  selectedToAccountId === account.id && { backgroundColor: '#007AFF' }
-                ]}
-                onPress={() => setSelectedToAccountId(account.id)}
-              >
-                <Ionicons 
-                  name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
-                  size={14} 
-                  color={selectedToAccountId === account.id ? '#fff' : colors.textMuted}
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={[
-                  styles.categoryChipText,
-                  { color: colors.text },
-                  selectedToAccountId === account.id && { color: '#fff' }
-                ]}>
-                  {account.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          <TouchableOpacity
+            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, justifyContent: 'center' }]}
+            onPress={() => setShowToAccountPicker(!showToAccountPicker)}
+          >
+            <Text style={[styles.pickerText, { color: selectedToAccountId ? colors.text : colors.textMuted }]}>
+              {selectedToAccountId 
+                ? accounts.find(a => a.id === selectedToAccountId)?.name || 'Select Account'
+                : 'Select Destination Account'}
+            </Text>
+            <Ionicons name="chevron-down" size={20} color={colors.textMuted} style={styles.dropdownIcon} />
+          </TouchableOpacity>
+          {showToAccountPicker && (
+            <View style={[styles.pickerList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {accounts.filter(acc => acc.id !== selectedAccountId).map((account) => (
+                <TouchableOpacity
+                  key={account.id}
+                  style={styles.pickerOption}
+                  onPress={() => { setSelectedToAccountId(account.id); setShowToAccountPicker(false); }}
+                >
+                  <Ionicons 
+                    name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
+                    size={16} 
+                    color={colors.textMuted}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={[styles.pickerOptionText, { color: colors.text }]}>{account.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
       )}
 
@@ -562,6 +576,33 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
+    borderWidth: 1,
+  },
+  pickerText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  dropdownIcon: {
+    position: 'absolute',
+    right: 16,
+  },
+  pickerList: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    maxHeight: 200,
+    overflow: 'hidden',
+  },
+  pickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  pickerOptionText: {
+    fontSize: 16,
+    flex: 1,
   },
   dateInput: {
     borderRadius: 12,

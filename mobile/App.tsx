@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import DashboardScreen from './src/screens/DashboardScreen';
 import AccountsScreen from './src/screens/AccountsScreen';
@@ -59,7 +60,7 @@ export type MoreStackParamList = {
   SavingsGoals: undefined;
   Salary: undefined;
   Loans: undefined;
-  AddLoan: undefined;
+  AddLoan: { loanId?: number } | undefined;
   LoanDetails: { loanId: number };
   Insurance: undefined;
   AddInsurance: { insuranceId?: number } | undefined;
@@ -94,10 +95,15 @@ function MoreStackNavigator() {
   return (
     <MoreStack.Navigator
       screenOptions={{
-        headerStyle: {
-          backgroundColor: colors.background,
-        },
-        headerTintColor: colors.text,
+        headerBackground: () => (
+          <LinearGradient
+            colors={[colors.gradientStart, colors.gradientEnd]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ flex: 1 }}
+          />
+        ),
+        headerTintColor: '#fff',
         headerTitleStyle: {
           fontWeight: '600',
         },
@@ -223,10 +229,15 @@ function TabNavigator() {
           paddingBottom: 5,
           height: 60,
         },
-        headerStyle: {
-          backgroundColor: colors.background,
-        },
-        headerTintColor: colors.text,
+        headerBackground: () => (
+          <LinearGradient
+            colors={[colors.gradientStart, colors.gradientEnd]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ flex: 1 }}
+          />
+        ),
+        headerTintColor: '#fff',
         headerTitleStyle: {
           fontWeight: '600',
         },
@@ -299,10 +310,15 @@ function MainApp() {
     <NavigationContainer theme={navigationTheme}>
       <RootStack.Navigator
         screenOptions={{
-          headerStyle: {
-            backgroundColor: colors.background,
-          },
-          headerTintColor: colors.text,
+          headerBackground: () => (
+            <LinearGradient
+              colors={[colors.gradientStart, colors.gradientEnd]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{ flex: 1 }}
+            />
+          ),
+          headerTintColor: '#fff',
           headerTitleStyle: {
             fontWeight: '600',
           },

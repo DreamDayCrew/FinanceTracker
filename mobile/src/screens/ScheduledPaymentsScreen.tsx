@@ -411,12 +411,20 @@ export default function ScheduledPaymentsScreen() {
           }}
           renderRightActions={() => renderRightActionsManage(payment)}
           renderLeftActions={() => renderLeftActionsManage(payment)}
-          onSwipeableOpen={() => {
+          onSwipeableOpen={(direction) => {
             // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== payment.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = payment.id;
+            
+            // Trigger action based on swipe direction
+            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
+            if (action === 'edit') {
+              handleEdit(payment);
+            } else {
+              handleDelete(payment);
+            }
           }}
         >
           {content}
@@ -518,7 +526,7 @@ export default function ScheduledPaymentsScreen() {
           onPress={() => setActiveTab('checklist')}
         >
           <Text style={[styles.tabText, { color: activeTab === 'checklist' ? colors.primary : colors.textMuted }]}>
-            This Month - {activePayments.length} active payments
+            This Month ({activePayments.length}) active
           </Text>
         </TouchableOpacity>
         <TouchableOpacity

@@ -261,7 +261,7 @@ export default function DashboardScreen() {
         {((nextPayday && daysUntilPayday !== null) || paymentStats.total > 0 || savingsStats.count > 0) && (
           <View style={styles.threeColumnRow}>
             {/* Next Payday Card */}
-            {nextPayday && daysUntilPayday !== null ? (
+            {nextPayday && daysUntilPayday !== null && (
               <TouchableOpacity 
                 style={[styles.columnCard, { backgroundColor: colors.primary + '20', borderColor: colors.primary }]}
                 onPress={() => navigation.navigate('Salary' as any)}
@@ -281,10 +281,10 @@ export default function DashboardScreen() {
                   })}
                 </Text>
               </TouchableOpacity>
-            ) : <View style={styles.columnCard} />}
+            )}
 
             {/* Scheduled Payments Card */}
-            {paymentStats.total > 0 ? (
+            {paymentStats.total > 0 && (
               <TouchableOpacity 
                 style={[styles.columnCard, { backgroundColor: colors.card }]}
                 onPress={() => navigation.navigate('ScheduledPayments' as any)}
@@ -304,10 +304,10 @@ export default function DashboardScreen() {
                   }]} />
                 </View>
               </TouchableOpacity>
-            ) : <View style={styles.columnCard} />}
+            )}
 
             {/* Savings Goals Card */}
-            {savingsStats.count > 0 ? (
+            {savingsStats.count > 0 && (
               <TouchableOpacity 
                 style={[styles.columnCard, { backgroundColor: colors.card }]}
                 onPress={() => navigation.navigate('SavingsGoals' as any)}
@@ -327,7 +327,7 @@ export default function DashboardScreen() {
                   }]} />
                 </View>
               </TouchableOpacity>
-            ) : <View style={styles.columnCard} />}
+            )}
           </View>
         )}
 

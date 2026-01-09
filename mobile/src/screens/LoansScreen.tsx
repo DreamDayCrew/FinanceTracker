@@ -153,7 +153,7 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
 
   return (
     <TouchableOpacity 
-      style={[styles.loanCard, { backgroundColor: '#1a2744' }]}
+      style={[styles.loanCard, { backgroundColor: '#0f172a' }]}
       onPress={onPress}
       activeOpacity={0.9}
     >
@@ -163,6 +163,7 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
             <Ionicons name={getLoanIcon(loan.loanType || '')} size={20} color="#60a5fa" />
           </View>
           <View style={styles.loanTitleContainer}>
+            <Text style={styles.loanName}>{loan.name}</Text>
             <Text style={styles.loanTypeLabel}>{getLoanTypeLabel(loan.loanType || '')}</Text>
             <Text style={styles.loanPrincipal}>
               {hideBalances ? '****' : formatCurrency(displayPrincipal)}
@@ -180,7 +181,8 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
         </TouchableOpacity>
       </View>
 
-      <View style={styles.tabContainer}>
+      <View style={styles.subCard}>
+        <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'overview' && styles.activeTab]}
           onPress={() => setActiveTab('overview')}
@@ -264,9 +266,10 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, nextIns
         )}
       </View>
 
-      <Text style={styles.noteText}>
-        Note: Outstanding Principal & Principal Paid is shown as on {getTodayFormatted()}
-      </Text>
+        <Text style={styles.noteText}>
+          Note: Outstanding Principal & Principal Paid is shown as on {getTodayFormatted()}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -409,7 +412,7 @@ export default function LoansScreen() {
     if (!loans) return [];
     const types = new Map<string, number>();
     loans.forEach(loan => {
-      const type = loan.loanType || 'other';
+      const type = loan.loanType && loan.loanType.trim() !== '' ? loan.loanType : 'other';
       types.set(type, (types.get(type) || 0) + 1);
     });
     return Array.from(types.entries()).map(([type, count]) => ({
@@ -679,15 +682,21 @@ const styles = StyleSheet.create({
   loanTitleContainer: {
     flex: 1,
   },
+  loanName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 4,
+  },
   loanTypeLabel: {
     fontSize: 11,
     color: '#94a3b8',
     fontWeight: '600',
     letterSpacing: 0.5,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   loanPrincipal: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: '#fff',
     marginBottom: 2,
@@ -703,6 +712,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  subCard: {
+    backgroundColor: '#1a2744',
+    borderRadius: 12,
+    padding: 16,
   },
   tabContainer: {
     flexDirection: 'row',

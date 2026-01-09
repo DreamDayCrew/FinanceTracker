@@ -256,12 +256,20 @@ export default function BudgetsScreen() {
           }}
           renderRightActions={() => renderRightActions(budget)}
           renderLeftActions={() => renderLeftActions(budget)}
-          onSwipeableWillOpen={(direction) => {
+          onSwipeableOpen={(direction) => {
             // Close previously opened swipeable
             if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== budget.id) {
               swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
             }
             currentOpenSwipeable.current = budget.id;
+            
+            // Trigger action based on swipe direction
+            const action = direction === 'right' ? swipeSettings.rightAction : swipeSettings.leftAction;
+            if (action === 'edit') {
+              handleEdit(budget);
+            } else {
+              handleDelete(budget);
+            }
           }}
         >
           {content}

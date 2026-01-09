@@ -50,6 +50,7 @@ export default function AddLoanScreen() {
   const [nextEmiDate, setNextEmiDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showNextEmiDatePicker, setShowNextEmiDatePicker] = useState(false);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
   const [isExistingLoan, setIsExistingLoan] = useState(false);
   const [createTransaction, setCreateTransaction] = useState(false);
   const [affectBalance, setAffectBalance] = useState(false);
@@ -479,6 +480,7 @@ export default function AddLoanScreen() {
             value={startDate}
             mode="date"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            themeVariant={resolvedTheme}
             onChange={(event, selectedDate) => {
               setShowDatePicker(Platform.OS === 'ios');
               if (selectedDate) {
@@ -513,6 +515,7 @@ export default function AddLoanScreen() {
             value={nextEmiDate}
             mode="date"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            themeVariant={resolvedTheme}
             minimumDate={new Date()}
             onChange={(event, selectedDate) => {
               setShowNextEmiDatePicker(Platform.OS === 'ios');
@@ -526,45 +529,58 @@ export default function AddLoanScreen() {
         {accounts.length > 0 && (
           <View style={styles.field}>
             <Text style={[styles.label, { color: colors.textMuted }]}>Link to Account (optional)</Text>
-            <View style={[styles.accountList, isEditMode && { opacity: 0.5 }]}>
-              <TouchableOpacity
-                style={[
-                  styles.accountOption,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                  !formData.accountId && { borderColor: colors.primary, backgroundColor: colors.primary + '20' }
-                ]}
-                onPress={() => setFormData({ ...formData, accountId: '' })}
-                disabled={isEditMode}
-              >
-                <Text style={[
-                  styles.accountOptionText,
-                  { color: colors.text },
-                  !formData.accountId && { color: colors.primary, fontWeight: '600' }
-                ]}>
-                  None
-                </Text>
-              </TouchableOpacity>
-              {accounts.map(account => (
+            <TouchableOpacity
+              style={[styles.dropdownButton, { backgroundColor: colors.card, borderColor: colors.border }, isEditMode && { opacity: 0.5 }]}
+              onPress={() => !isEditMode && setShowAccountPicker(!showAccountPicker)}
+              disabled={isEditMode}
+            >
+              <Ionicons name="wallet-outline" size={20} color={colors.textMuted} />
+              <Text style={[styles.dropdownText, { color: formData.accountId ? colors.text : colors.textMuted }]}>
+                {formData.accountId ? accounts.find(a => a.id.toString() === formData.accountId)?.name : 'Select Account (Optional)'}
+              </Text>
+              {!isEditMode && (
+                <Ionicons name={showAccountPicker ? "chevron-up" : "chevron-down"} size={20} color={colors.textMuted} />
+              )}
+            </TouchableOpacity>
+            {showAccountPicker && !isEditMode && (
+              <View style={[styles.accountDropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <TouchableOpacity
-                  key={account.id}
-                  style={[
-                    styles.accountOption,
-                    { backgroundColor: colors.card, borderColor: colors.border },
-                    formData.accountId === account.id.toString() && { borderColor: colors.primary, backgroundColor: colors.primary + '20' }
-                  ]}
-                  onPress={() => setFormData({ ...formData, accountId: account.id.toString() })}
-                  disabled={isEditMode}
+                  style={[styles.accountDropdownItem, { borderBottomColor: colors.border }]}
+                  onPress={() => { 
+                    setFormData({ ...formData, accountId: '' }); 
+                    setShowAccountPicker(false); 
+                  }}
                 >
-                  <Text style={[
-                    styles.accountOptionText,
-                    { color: colors.text },
-                    formData.accountId === account.id.toString() && { color: colors.primary, fontWeight: '600' }
-                  ]}>
-                    {account.name}
+                  <Text style={[styles.accountDropdownText, { color: colors.textMuted }]}>
+                    None
                   </Text>
+                  {!formData.accountId && (
+                    <Ionicons name="checkmark" size={20} color={colors.primary} />
+                  )}
                 </TouchableOpacity>
-              ))}
-            </View>
+                {accounts.map(account => (
+                  <TouchableOpacity
+                    key={account.id}
+                    style={[styles.accountDropdownItem, { borderBottomColor: colors.border }]}
+                    onPress={() => { 
+                      setFormData({ ...formData, accountId: account.id.toString() }); 
+                      setShowAccountPicker(false); 
+                    }}
+                  >
+                    <Text style={[
+                      styles.accountDropdownText,
+                      { color: colors.text },
+                      formData.accountId === account.id.toString() && { fontWeight: '600', color: colors.primary }
+                    ]}>
+                      {account.name}
+                    </Text>
+                    {formData.accountId === account.id.toString() && (
+                      <Ionicons name="checkmark" size={20} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         )}
 
@@ -728,6 +744,36 @@ const styles = StyleSheet.create({
   },
   accountOptionText: {
     fontSize: 14,
+  },
+  dropdownButton: {
+    height: 48,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  dropdownText: {
+    flex: 1,
+    fontSize: 15,
+  },
+  accountDropdownList: {
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+    maxHeight: 300,
+  },
+  accountDropdownItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: 0.5,
+  },
+  accountDropdownText: {
+    fontSize: 15,
   },
   submitButton: {
     flexDirection: 'row',

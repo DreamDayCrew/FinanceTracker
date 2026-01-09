@@ -9,10 +9,12 @@ export interface Account {
   creditLimit: string | null;
   monthlySpendingLimit: string | null;
   billingDate: number | null;
+  linkedAccountId: number | null;
   icon: string | null;
   color: string | null;
   isActive: boolean;
   isDefault: boolean;
+  cardDetails?: CardDetails | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -271,10 +273,12 @@ export interface CardDetails {
   id: number;
   accountId: number;
   cardNumber: string;
-  cardHolderName: string;
+  lastFourDigits: string;
+  cardholderName: string | null;
   expiryMonth: number;
   expiryYear: number;
-  cardType: 'visa' | 'mastercard' | 'rupay' | 'amex' | 'other';
+  cardType: 'visa' | 'mastercard' | 'rupay' | 'amex' | 'other' | null;
+  isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -656,7 +656,7 @@ export default function SalaryScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalContent}>
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
               <View style={styles.field}>
                 <Text style={[styles.label, { color: colors.textMuted }]}>Actual Pay Date</Text>
                 <TouchableOpacity
@@ -742,7 +742,7 @@ export default function SalaryScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            </View>
+            </ScrollView>
           </View>
         </View>
       )}

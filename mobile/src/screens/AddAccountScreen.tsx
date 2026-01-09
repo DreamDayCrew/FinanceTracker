@@ -183,7 +183,7 @@ export default function AddAccountScreen() {
       accountData.accountNumber = accountNumber.trim();
     }
 
-    if (type === 'debit_card' && linkedAccountId) {
+    if ((type === 'debit_card' || type === 'credit_card') && linkedAccountId) {
       accountData.linkedAccountId = linkedAccountId;
     }
 
@@ -348,7 +348,7 @@ export default function AddAccountScreen() {
         />
       </View>
 
-      {type === 'debit_card' && bankAccounts.length > 0 && (
+      {(type === 'debit_card' || type === 'credit_card') && bankAccounts.length > 0 && (
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textMuted }]}>Linked Bank Account</Text>
           <TouchableOpacity

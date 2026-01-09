@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { api } from '../lib/api';
 import { getThemedColors } from '../lib/utils';
@@ -22,6 +23,7 @@ export default function AddBudgetScreen() {
   
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
 
   const now = new Date();
   const month = now.getMonth() + 1;
@@ -128,9 +130,9 @@ export default function AddBudgetScreen() {
     }
   };
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
-
   const expenseCategories = categories?.filter(c => c.type === 'expense') || [];
+  const selectedCategory = expenseCategories.find(c => c.id === selectedCategoryId);
+  const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
@@ -151,27 +153,44 @@ export default function AddBudgetScreen() {
 
       <View style={styles.field}>
         <Text style={[styles.label, { color: colors.textMuted }]}>Category</Text>
-        <View style={styles.categoryGrid}>
-          {expenseCategories.map((category) => (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categoryCard,
-                { backgroundColor: colors.card },
-                selectedCategoryId === category.id && { backgroundColor: colors.primary }
-              ]}
-              onPress={() => setSelectedCategoryId(category.id)}
-            >
-              <Text style={[
-                styles.categoryName,
-                { color: colors.text },
-                selectedCategoryId === category.id && { color: '#fff' }
-              ]}>
-                {category.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <TouchableOpacity
+          style={[styles.dropdownButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setShowCategoryPicker(!showCategoryPicker)}
+        >
+          <Ionicons name="pricetag-outline" size={20} color={colors.textMuted} />
+          <Text style={[styles.dropdownText, { color: selectedCategory ? colors.text : colors.textMuted }]}>
+            {selectedCategory ? selectedCategory.name : 'Select Category'}
+          </Text>
+          <Ionicons name={showCategoryPicker ? "chevron-up" : "chevron-down"} size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+        {showCategoryPicker && expenseCategories.length > 0 && (
+          <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {expenseCategories.map((category) => (
+              <TouchableOpacity
+                key={category.id}
+                style={[
+                  styles.dropdownItem,
+                  { borderBottomColor: colors.border }
+                ]}
+                onPress={() => { 
+                  setSelectedCategoryId(category.id); 
+                  setShowCategoryPicker(false); 
+                }}
+              >
+                <Text style={[
+                  styles.dropdownItemText, 
+                  { color: colors.text },
+                  selectedCategoryId === category.id && { fontWeight: '600', color: colors.primary }
+                ]}>
+                  {category.name}
+                </Text>
+                {selectedCategoryId === category.id && (
+                  <Ionicons name="checkmark" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       <TouchableOpacity 
@@ -240,6 +259,36 @@ const styles = StyleSheet.create({
   },
   categoryNameActive: {
     color: '#ffffff',
+  },
+  dropdownButton: {
+    height: 48,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  dropdownText: {
+    flex: 1,
+    fontSize: 15,
+  },
+  dropdownList: {
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+    maxHeight: 300,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: 0.5,
+  },
+  dropdownItemText: {
+    fontSize: 15,
   },
   submitButton: {
     padding: 16,
