@@ -374,7 +374,7 @@ export default function DashboardScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle="light-content" backgroundColor="#16a34a" />
       
-      {/* Gradient Header */}
+      {/* Gradient Header 
       <LinearGradient
         colors={['#16a34a', '#15803d', '#166534']}
         start={{ x: 0, y: 0 }}
@@ -383,18 +383,8 @@ export default function DashboardScreen() {
       >
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>My Tracker</Text>
-          <View style={styles.headerSummaryCards}>
-            <View style={styles.headerSummaryCard}>
-              <Text style={styles.headerSummaryLabel}>Today's Expense</Text>
-              <Text style={styles.headerSummaryValue}>{formatCurrency(data?.totalSpentToday || 0)}</Text>
-            </View>
-            <View style={styles.headerSummaryCard}>
-              <Text style={styles.headerSummaryLabel}>This Month's Expense</Text>
-              <Text style={styles.headerSummaryValue}>{formatCurrency(data?.totalSpentMonth || 0)}</Text>
-            </View>
-          </View>
         </View>
-      </LinearGradient>
+      </LinearGradient>*/}
 
       <ScrollView 
         style={styles.scrollView} 
@@ -403,6 +393,17 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
         }
       >
+        {/* Summary Cards */}
+        <View style={styles.summaryCards}>
+          <View style={[styles.summaryCard, { backgroundColor: colors.card }]}>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Today's Expense</Text>
+            <Text style={[styles.summaryValue, { color: colors.danger }]}>{formatCurrency(data?.totalSpentToday || 0)}</Text>
+          </View>
+          <View style={[styles.summaryCard, { backgroundColor: colors.card }]}>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>This Month's Expense</Text>
+            <Text style={[styles.summaryValue, { color: colors.danger }]}>{formatCurrency(data?.totalSpentMonth || 0)}</Text>
+          </View>
+        </View>
 
         {/* Monthly Cycle Checklist */}
         {(monthlyChecklist.scheduledPayments.total > 0 || monthlyChecklist.creditCardBills.total > 0 || monthlyChecklist.loans.total > 0) && (
@@ -1122,36 +1123,14 @@ const styles = StyleSheet.create({
   },
   gradientHeader: {
     paddingTop: 16,
-    paddingBottom: 20,
+    paddingBottom: 16,
     paddingHorizontal: 16,
   },
   headerContent: {
-    gap: 16,
+    gap: 8,
   },
   headerTitle: {
     fontSize: 22,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  headerSummaryCards: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  headerSummaryCard: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  headerSummaryLabel: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: 4,
-  },
-  headerSummaryValue: {
-    fontSize: 20,
     fontWeight: '700',
     color: '#ffffff',
   },

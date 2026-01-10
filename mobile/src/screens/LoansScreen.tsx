@@ -133,6 +133,36 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, onEdit,
     return Math.max(0, principal - outstanding);
   };
 
+  const calculateInterestPaid = (): number => {
+    // Calculate interest paid based on time elapsed and EMI payments
+    const principal = parseFloat(loan.principalAmount) || 0;
+    const outstanding = parseFloat(loan.outstandingAmount) || 0;
+    const emiAmount = parseFloat(loan.emiAmount || '0');
+    
+    if (!loan.startDate || emiAmount <= 0 || principal <= 0) {
+      return 0;
+    }
+    
+    // Calculate months elapsed since start
+    const startDate = new Date(loan.startDate);
+    const today = new Date();
+    const monthsElapsed = Math.max(0, 
+      (today.getFullYear() - startDate.getFullYear()) * 12 + 
+      (today.getMonth() - startDate.getMonth())
+    );
+    
+    // Total paid = EMI × months elapsed
+    const totalPaid = emiAmount * monthsElapsed;
+    
+    // Principal paid
+    const principalPaid = Math.max(0, principal - outstanding);
+    
+    // Interest paid = Total paid - Principal paid
+    const interestPaid = Math.max(0, totalPaid - principalPaid);
+    
+    return interestPaid;
+  };
+
   const getNextDueDate = (): string | null => {
     if (nextInstallment?.dueDate) {
       return nextInstallment.dueDate;
@@ -150,6 +180,7 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, onEdit,
 
   const displayPrincipal = getDisplayPrincipal();
   const principalPaid = getPrincipalPaid();
+  const interestPaid = calculateInterestPaid();
   const progress = calculateProgress();
   const endDate = calculateEndDate();  const isWeb = Platform.OS === 'web';
   return (
@@ -239,7 +270,7 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, onEdit,
               <View style={styles.overviewItemRight}>
                 <Text style={[styles.overviewLabel, { color: colors.textMuted }]}>Due On</Text>
                 <Text style={[styles.overviewValue, { color: colors.primary }]}>
-                  {formatDate(getNextDueDate())}
+                  {getNextDueDate() ? formatShortDate(getNextDueDate()) : 'N/A'}
                 </Text>
               </View>
             </View>
@@ -256,6 +287,12 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, onEdit,
               <Text style={[styles.overviewLabel, { color: colors.textMuted }]}>Principal Paid</Text>
               <Text style={styles.paidAmount}>
                 {hideBalances ? '****' : `${formatCurrency(principalPaid)}/${formatCurrency(displayPrincipal)}`}
+              </Text>
+            </View>
+            <View style={styles.outstandingRow}>
+              <Text style={[styles.overviewLabel, { color: colors.textMuted }]}>Interest Paid (approx.)</Text>
+              <Text style={[styles.interestAmount, { color: '#f59e0b' }]}>
+                {hideBalances ? '****' : formatCurrency(interestPaid)}
               </Text>
             </View>
             <View style={styles.progressContainer}>
@@ -795,6 +832,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#10b981',
+  },
+  interestAmount: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   progressContainer: {
     marginTop: 8,

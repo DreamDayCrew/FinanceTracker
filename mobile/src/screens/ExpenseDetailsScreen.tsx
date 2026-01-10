@@ -74,13 +74,15 @@ export default function ExpenseDetailsScreen() {
   const pieChartData = useMemo(() => {
     if (!data?.breakdown || data.breakdown.length === 0) return [];
     
-    return data.breakdown.map((item, index) => ({
-      name: item.categoryName.length > 12 ? item.categoryName.substring(0, 12) + '...' : item.categoryName,
-      amount: item.total,
-      color: item.color,
-      legendFontColor: colors.text,
-      legendFontSize: 13,
-    }));
+    return data.breakdown
+      .filter(item => parseFloat(item.total) > 0) // Filter out zero amounts
+      .map((item, index) => ({
+        name: item.categoryName.length > 12 ? item.categoryName.substring(0, 12) + '...' : item.categoryName,
+        amount: parseFloat(item.total),
+        color: item.color,
+        legendFontColor: colors.text,
+        legendFontSize: 13,
+      }));
   }, [data, colors]);
 
   return (
@@ -136,7 +138,10 @@ export default function ExpenseDetailsScreen() {
               width={screenWidth - 32}
               height={220}
               chartConfig={{
-                color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+                backgroundGradientFrom: colors.card,
+                backgroundGradientTo: colors.card,
+                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                labelColor: (opacity = 1) => colors.text,
               }}
               accessor="amount"
               backgroundColor="transparent"
