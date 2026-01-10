@@ -6,11 +6,12 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { Swipeable } from 'react-native-gesture-handler';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { api } from '../lib/api';
 import { formatCurrency, formatDate, getThemedColors } from '../lib/utils';
 import { RootStackParamList } from '../../App';
 import { FABButton } from '../components/FABButton';
-import type { Transaction } from '../lib/types';
+import type { Transaction, Category, Account } from '../lib/types';
 import { useTheme } from '../contexts/ThemeContext';
 import { useSwipeSettings } from '../hooks/useSwipeSettings';
 
@@ -20,7 +21,19 @@ export default function TransactionsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'credit' | 'debit'>('all');
+  const [filter, setFilter] = useState<'all' | 'credit' | 'debit' | 'transfer'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [selectedFromAccount, setSelectedFromAccount] = useState<number | null>(null);
+  const [selectedToAccount, setSelectedToAccount] = useState<number | null>(null);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showTransactionTypePicker, setShowTransactionTypePicker] = useState(false);
+  const [showFromAccountPicker, setShowFromAccountPicker] = useState(false);
+  const [showToAccountPicker, setShowToAccountPicker] = useState(false);
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const { resolvedTheme } = useTheme();
@@ -60,6 +73,16 @@ export default function TransactionsScreen() {
   const { data: transactions, isLoading } = useQuery({
     queryKey: ['transactions'],
     queryFn: api.getTransactions,
+  });
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: api.getCategories,
+  });
+
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: api.getAccounts,
   });
   
   const deleteMutation = useMutation({
@@ -132,7 +155,17 @@ export default function TransactionsScreen() {
     
     const matchesFilter = filter === 'all' || t.type === filter;
     
-    return matchesSearch && matchesFilter;
+    const matchesCategory = selectedCategory === null || t.categoryId === selectedCategory;
+    
+    const matchesFromAccount = selectedFromAccount === null || t.accountId === selectedFromAccount;
+    
+    const matchesToAccount = selectedToAccount === null || t.toAccountId === selectedToAccount;
+    
+    const transactionDate = new Date(t.transactionDate);
+    const matchesStartDate = !startDate || transactionDate >= startDate;
+    const matchesEndDate = !endDate || transactionDate <= endDate;
+    
+    return matchesSearch && matchesFilter && matchesCategory && matchesFromAccount && matchesToAccount && matchesStartDate && matchesEndDate;
   }) || []).sort((a, b) => 
     new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime()
   );
@@ -275,28 +308,114 @@ export default function TransactionsScreen() {
             value={search}
             onChangeText={setSearch}
           />
+          <TouchableOpacity 
+            onPress={() => setShowFilters(!showFilters)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons 
+              name={showFilters ? "chevron-up" : "chevron-down"} 
+              size={20} 
+              color={colors.textMuted} 
+            />
+          </TouchableOpacity>
         </View>
       </View>
 
-      <View style={styles.filterContainer}>
-        {(['all', 'credit', 'debit'] as const).map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[
-              styles.filterButton, 
-              { backgroundColor: filter === f ? colors.primary : colors.card }
-            ]}
-            onPress={() => setFilter(f)}
-          >
-            <Text style={[
-              styles.filterText, 
-              { color: filter === f ? '#ffffff' : colors.textMuted }
-            ]}>
-              {f === 'all' ? 'All' : f === 'credit' ? 'Income' : 'Expense'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Collapsible Filter Section */}
+      {showFilters && (
+        <View style={styles.filtersSection}>
+          {/* Transaction Type and Category Dropdowns */}
+          <View style={styles.dateFilterContainer}>
+            <TouchableOpacity
+              style={[styles.dateFilterButton, { backgroundColor: colors.card, borderColor: filter !== 'all' ? colors.primary : colors.border }]}
+              onPress={() => setShowTransactionTypePicker(true)}
+            >
+              <Ionicons name="swap-horizontal-outline" size={18} color={colors.textMuted} />
+              <Text style={[styles.dateFilterText, { color: filter !== 'all' ? colors.text : colors.textMuted }]}>
+                {filter === 'all' ? 'All Types' : filter === 'credit' ? 'Income' : filter === 'debit' ? 'Expense' : 'Transfer'}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dateFilterButton, { backgroundColor: colors.card, borderColor: selectedCategory ? colors.primary : colors.border }]}
+              onPress={() => setShowCategoryPicker(true)}
+            >
+              <Ionicons name="pricetag-outline" size={18} color={colors.textMuted} />
+              <Text style={[styles.dateFilterText, { color: selectedCategory ? colors.text : colors.textMuted }]}>
+                {selectedCategory ? categories.find(c => c.id === selectedCategory)?.name : 'All Categories'}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Date Range Filter */}
+          <View style={styles.dateFilterContainer}>
+            <TouchableOpacity
+              style={[styles.dateFilterButton, { backgroundColor: colors.card, borderColor: startDate ? colors.primary : colors.border }]}
+              onPress={() => setShowStartDatePicker(true)}
+            >
+              <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
+              <Text style={[styles.dateFilterText, { color: startDate ? colors.text : colors.textMuted }]}>
+                {startDate ? formatDate(startDate.toISOString()) : 'From Date'}
+              </Text>
+              {startDate && (
+                <TouchableOpacity onPress={() => setStartDate(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dateFilterButton, { backgroundColor: colors.card, borderColor: endDate ? colors.primary : colors.border }]}
+              onPress={() => setShowEndDatePicker(true)}
+            >
+              <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
+              <Text style={[styles.dateFilterText, { color: endDate ? colors.text : colors.textMuted }]}>
+                {endDate ? formatDate(endDate.toISOString()) : 'To Date'}
+              </Text>
+              {endDate && (
+                <TouchableOpacity onPress={() => setEndDate(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Account Filters */}
+          <View style={styles.dateFilterContainer}>
+            <TouchableOpacity
+              style={[styles.dateFilterButton, { backgroundColor: colors.card, borderColor: selectedFromAccount ? colors.primary : colors.border }]}
+              onPress={() => setShowFromAccountPicker(true)}
+            >
+              <Ionicons name="wallet-outline" size={18} color={colors.textMuted} />
+              <Text style={[styles.dateFilterText, { color: selectedFromAccount ? colors.text : colors.textMuted }]}>
+                {selectedFromAccount ? accounts.find(a => a.id === selectedFromAccount)?.name : 'From Account'}
+              </Text>
+              {selectedFromAccount && (
+                <TouchableOpacity onPress={() => setSelectedFromAccount(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dateFilterButton, { backgroundColor: colors.card, borderColor: selectedToAccount ? colors.primary : colors.border }]}
+              onPress={() => setShowToAccountPicker(true)}
+            >
+              <Ionicons name="wallet-outline" size={18} color={colors.textMuted} />
+              <Text style={[styles.dateFilterText, { color: selectedToAccount ? colors.text : colors.textMuted }]}>
+                {selectedToAccount ? accounts.find(a => a.id === selectedToAccount)?.name : 'To Account'}
+              </Text>
+              {selectedToAccount && (
+                <TouchableOpacity onPress={() => setSelectedToAccount(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {filteredTransactions.length > 0 ? (
@@ -311,6 +430,229 @@ export default function TransactionsScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Transaction Type Picker Modal */}
+      <Modal
+        visible={showTransactionTypePicker}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowTransactionTypePicker(false)}
+      >
+        <View style={styles.pickerModalOverlay}>
+          <View style={[styles.pickerModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.pickerHeader}>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>Select Transaction Type</Text>
+              <TouchableOpacity onPress={() => setShowTransactionTypePicker(false)}>
+                <Ionicons name="close" size={24} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.pickerScrollView}>
+              {(['all', 'credit', 'debit', 'transfer'] as const).map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.pickerOption, filter === type && { backgroundColor: colors.primary + '20' }]}
+                  onPress={() => {
+                    setFilter(type);
+                    setShowTransactionTypePicker(false);
+                  }}
+                >
+                  <Text style={[styles.pickerOptionText, { color: filter === type ? colors.primary : colors.text }]}>
+                    {type === 'all' ? 'All Types' : type === 'credit' ? 'Income' : type === 'debit' ? 'Expense' : 'Transfer'}
+                  </Text>
+                  {filter === type && (
+                    <Ionicons name="checkmark" size={20} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Category Picker Modal */}
+      <Modal
+        visible={showCategoryPicker}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowCategoryPicker(false)}
+      >
+        <View style={styles.pickerModalOverlay}>
+          <View style={[styles.pickerModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.pickerHeader}>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>Select Category</Text>
+              <TouchableOpacity onPress={() => setShowCategoryPicker(false)}>
+                <Ionicons name="close" size={24} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.pickerScrollView}>
+              <TouchableOpacity
+                style={[styles.pickerOption, selectedCategory === null && { backgroundColor: colors.primary + '20' }]}
+                onPress={() => {
+                  setSelectedCategory(null);
+                  setShowCategoryPicker(false);
+                }}
+              >
+                <Text style={[styles.pickerOptionText, { color: selectedCategory === null ? colors.primary : colors.text }]}>
+                  All Categories
+                </Text>
+                {selectedCategory === null && (
+                  <Ionicons name="checkmark" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+              {categories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[styles.pickerOption, selectedCategory === category.id && { backgroundColor: colors.primary + '20' }]}
+                  onPress={() => {
+                    setSelectedCategory(category.id);
+                    setShowCategoryPicker(false);
+                  }}
+                >
+                  <Text style={[styles.pickerOptionText, { color: selectedCategory === category.id ? colors.primary : colors.text }]}>
+                    {category.name}
+                  </Text>
+                  {selectedCategory === category.id && (
+                    <Ionicons name="checkmark" size={20} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* From Account Picker Modal */}
+      <Modal
+        visible={showFromAccountPicker}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowFromAccountPicker(false)}
+      >
+        <View style={styles.pickerModalOverlay}>
+          <View style={[styles.pickerModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.pickerHeader}>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>Select From Account</Text>
+              <TouchableOpacity onPress={() => setShowFromAccountPicker(false)}>
+                <Ionicons name="close" size={24} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.pickerScrollView}>
+              <TouchableOpacity
+                style={[styles.pickerOption, selectedFromAccount === null && { backgroundColor: colors.primary + '20' }]}
+                onPress={() => {
+                  setSelectedFromAccount(null);
+                  setShowFromAccountPicker(false);
+                }}
+              >
+                <Text style={[styles.pickerOptionText, { color: selectedFromAccount === null ? colors.primary : colors.text }]}>
+                  All Accounts
+                </Text>
+                {selectedFromAccount === null && (
+                  <Ionicons name="checkmark" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+              {accounts.map((account) => (
+                <TouchableOpacity
+                  key={account.id}
+                  style={[styles.pickerOption, selectedFromAccount === account.id && { backgroundColor: colors.primary + '20' }]}
+                  onPress={() => {
+                    setSelectedFromAccount(account.id);
+                    setShowFromAccountPicker(false);
+                  }}
+                >
+                  <Text style={[styles.pickerOptionText, { color: selectedFromAccount === account.id ? colors.primary : colors.text }]}>
+                    {account.name}
+                  </Text>
+                  {selectedFromAccount === account.id && (
+                    <Ionicons name="checkmark" size={20} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* To Account Picker Modal */}
+      <Modal
+        visible={showToAccountPicker}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowToAccountPicker(false)}
+      >
+        <View style={styles.pickerModalOverlay}>
+          <View style={[styles.pickerModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.pickerHeader}>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>Select To Account</Text>
+              <TouchableOpacity onPress={() => setShowToAccountPicker(false)}>
+                <Ionicons name="close" size={24} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.pickerScrollView}>
+              <TouchableOpacity
+                style={[styles.pickerOption, selectedToAccount === null && { backgroundColor: colors.primary + '20' }]}
+                onPress={() => {
+                  setSelectedToAccount(null);
+                  setShowToAccountPicker(false);
+                }}
+              >
+                <Text style={[styles.pickerOptionText, { color: selectedToAccount === null ? colors.primary : colors.text }]}>
+                  All Accounts
+                </Text>
+                {selectedToAccount === null && (
+                  <Ionicons name="checkmark" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+              {accounts.map((account) => (
+                <TouchableOpacity
+                  key={account.id}
+                  style={[styles.pickerOption, selectedToAccount === account.id && { backgroundColor: colors.primary + '20' }]}
+                  onPress={() => {
+                    setSelectedToAccount(account.id);
+                    setShowToAccountPicker(false);
+                  }}
+                >
+                  <Text style={[styles.pickerOptionText, { color: selectedToAccount === account.id ? colors.primary : colors.text }]}>
+                    {account.name}
+                  </Text>
+                  {selectedToAccount === account.id && (
+                    <Ionicons name="checkmark" size={20} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Date Pickers */}
+      {showStartDatePicker && (
+        <DateTimePicker
+          value={startDate || new Date()}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event, selectedDate) => {
+            setShowStartDatePicker(Platform.OS === 'ios');
+            if (selectedDate) {
+              setStartDate(selectedDate);
+            }
+          }}
+        />
+      )}
+
+      {showEndDatePicker && (
+        <DateTimePicker
+          value={endDate || new Date()}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event, selectedDate) => {
+            setShowEndDatePicker(Platform.OS === 'ios');
+            if (selectedDate) {
+              setEndDate(selectedDate);
+            }
+          }}
+        />
+      )}
 
       {/* Delete Confirmation Modal */}
       <Modal
@@ -395,6 +737,9 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 16,
   },
+  filtersSection: {
+    backgroundColor: 'transparent',
+  },
   filterContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
@@ -408,6 +753,96 @@ const styles = StyleSheet.create({
   },
   filterText: {
     fontSize: 14,
+    fontWeight: '500',
+  },
+  dateFilterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  dateFilterButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 6,
+  },
+  dateFilterText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  dropdownContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 6,
+  },
+  dropdownText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  pickerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  pickerModalContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  pickerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  pickerScrollView: {
+    maxHeight: 400,
+  },
+  pickerOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  pickerOptionText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  categoryFilterContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+  },
+  categoryChipText: {
+    fontSize: 13,
     fontWeight: '500',
   },
   scrollView: {

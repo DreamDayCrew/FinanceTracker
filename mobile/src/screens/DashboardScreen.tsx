@@ -373,18 +373,6 @@ export default function DashboardScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle="light-content" backgroundColor="#16a34a" />
-      
-      {/* Gradient Header 
-      <LinearGradient
-        colors={['#16a34a', '#15803d', '#166534']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradientHeader}
-      >
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>My Tracker</Text>
-        </View>
-      </LinearGradient>*/}
 
       <ScrollView 
         style={styles.scrollView} 
@@ -1130,7 +1118,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: '700',
     color: '#ffffff',
   },
