@@ -48,7 +48,7 @@ export async function suggestCategory(description: string): Promise<string> {
   }
 }
 
-function fallbackCategorization(description: string): string {
+export function fallbackCategorization(description: string): string {
   const lowerDesc = description.toLowerCase();
   
   if (lowerDesc.includes("food") || lowerDesc.includes("grocery") || lowerDesc.includes("supermarket") || lowerDesc.includes("vegetables")) {
@@ -84,7 +84,13 @@ function fallbackCategorization(description: string): string {
   if (lowerDesc.includes("mutual fund") || lowerDesc.includes("stock") || lowerDesc.includes("investment") || lowerDesc.includes("zerodha") || lowerDesc.includes("groww")) {
     return "Investment";
   }
-  if (lowerDesc.includes("transfer") || lowerDesc.includes("upi") || lowerDesc.includes("neft") || lowerDesc.includes("imps")) {
+  // Check for person-to-person transfers or UPI payments
+  if (lowerDesc.includes("transfer") || lowerDesc.includes("upi") || lowerDesc.includes("neft") || 
+      lowerDesc.includes("imps") || lowerDesc.includes("sent money") || lowerDesc.includes("sent rs")) {
+    return "Transfer";
+  }
+  // If description is just a person's name (likely P2P transfer), categorize as Transfer
+  if (description.match(/^[A-Z\s]+$/)) {
     return "Transfer";
   }
   
@@ -159,8 +165,11 @@ function fallbackSmsParser(message: string): ParsedSmsData | null {
   }
   
   // Determine transaction type
-  const isDebit = lowerMsg.includes("debited") || lowerMsg.includes("spent") || lowerMsg.includes("paid") || lowerMsg.includes("withdrawn");
-  const isCredit = lowerMsg.includes("credited") || lowerMsg.includes("received") || lowerMsg.includes("refund");
+  const isDebit = lowerMsg.includes("debited") || lowerMsg.includes("spent") || lowerMsg.includes("paid") || 
+                  lowerMsg.includes("withdrawn") || lowerMsg.includes("sent rs") || lowerMsg.includes("sent inr") ||
+                  lowerMsg.includes("transferred") || lowerMsg.includes("purchase");
+  const isCredit = lowerMsg.includes("credited") || lowerMsg.includes("received") || lowerMsg.includes("refund") ||
+                   lowerMsg.includes("deposited");
   
   if (!isDebit && !isCredit) {
     return null;
@@ -202,6 +211,21 @@ function fallbackSmsParser(message: string): ParsedSmsData | null {
     }
   }
   
+  // Extract merchant/payee name
+  let merchant: string | undefined;
+  const merchantPatterns = [
+    /(?:to|at)\s+([A-Z][A-Z\s]+?)(?:\n|on|ref)/i,  // "To D PRINCE" or "at MERCHANT NAME"
+    /(?:paid to|sent to)\s+([^\n]+)/i,
+  ];
+  
+  for (const pattern of merchantPatterns) {
+    const match = message.match(pattern);
+    if (match) {
+      merchant = match[1].trim();
+      break;
+    }
+  }
+  
   // Extract account last digits
   const accountMatch = message.match(/(?:a\/c|account|card|xx)[\s*]*([\d]{4})/i);
   const accountLastDigits = accountMatch ? accountMatch[1] : undefined;
@@ -209,8 +233,9 @@ function fallbackSmsParser(message: string): ParsedSmsData | null {
   return {
     amount,
     type: isCredit ? "credit" : "debit",
+    merchant,
     referenceNumber,
     accountLastDigits,
-    description: isCredit ? "Amount credited" : "Amount debited",
+    description: merchant ? `Payment to ${merchant}` : (isCredit ? "Amount credited" : "Amount debited"),
   };
 }

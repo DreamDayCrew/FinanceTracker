@@ -117,10 +117,10 @@ export default function AddBudgetScreen() {
     }
 
     const budgetData = {
-      categoryId: selectedCategoryId,
-      amount,
-      month,
-      year,
+      categoryId: selectedCategoryId!,  // Use non-null assertion since we validated above
+      amount: amount,
+      month: month,
+      year: year,
     };
 
     if (isEditMode && budgetId) {
@@ -165,30 +165,32 @@ export default function AddBudgetScreen() {
         </TouchableOpacity>
         {showCategoryPicker && expenseCategories.length > 0 && (
           <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {expenseCategories.map((category) => (
-              <TouchableOpacity
-                key={category.id}
-                style={[
-                  styles.dropdownItem,
-                  { borderBottomColor: colors.border }
-                ]}
-                onPress={() => { 
-                  setSelectedCategoryId(category.id); 
-                  setShowCategoryPicker(false); 
-                }}
-              >
-                <Text style={[
-                  styles.dropdownItemText, 
-                  { color: colors.text },
-                  selectedCategoryId === category.id && { fontWeight: '600', color: colors.primary }
-                ]}>
-                  {category.name}
-                </Text>
-                {selectedCategoryId === category.id && (
-                  <Ionicons name="checkmark" size={20} color={colors.primary} />
-                )}
-              </TouchableOpacity>
-            ))}
+            <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={false}>
+              {expenseCategories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.dropdownItem,
+                    { borderBottomColor: colors.border }
+                  ]}
+                  onPress={() => { 
+                    setSelectedCategoryId(category.id); 
+                    setShowCategoryPicker(false); 
+                  }}
+                >
+                  <Text style={[
+                    styles.dropdownItemText, 
+                    { color: colors.text },
+                    selectedCategoryId === category.id && { fontWeight: '600', color: colors.primary }
+                  ]}>
+                    {category.name}
+                  </Text>
+                  {selectedCategoryId === category.id && (
+                    <Ionicons name="checkmark" size={20} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         )}
       </View>

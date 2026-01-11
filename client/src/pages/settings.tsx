@@ -15,9 +15,11 @@ import {
   Lock, 
   Fingerprint,
   KeyRound,
-  AlertTriangle
+  AlertTriangle,
+  LogOut
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { clearTokens } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import type { User } from "@shared/schema";
 
@@ -129,6 +131,13 @@ export default function Settings() {
   };
 
   const hasPinSet = !!user?.pinHash;
+
+  const handleLogout = () => {
+    clearTokens();
+    queryClient.clear();
+    setLocation('/login');
+    toast({ title: 'Logged out successfully' });
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -262,13 +271,30 @@ export default function Settings() {
             <AlertTriangle className="w-4 h-4" />
             Danger Zone
           </h2>
-          <Card className="border-destructive/50">
+          <Card className="border-destructive/50 space-y-0 divide-y">
             <CardContent className="py-4">
               <p className="text-sm text-muted-foreground mb-3">
                 Clearing data will remove all transactions, accounts, and budgets. This cannot be undone.
               </p>
               <Button variant="destructive" className="w-full" data-testid="button-clear-data">
                 Clear All Data
+              </Button>
+            </CardContent>
+            <CardContent className="py-4">
+              <div className="flex items-center gap-3 mb-3">
+                <LogOut className="w-5 h-5" />
+                <div>
+                  <p className="font-medium">Logout</p>
+                  <p className="text-xs text-muted-foreground">Sign out of your account</p>
+                </div>
+              </div>
+              <Button 
+                variant="outline" 
+                className="w-full" 
+                onClick={handleLogout}
+                data-testid="button-logout"
+              >
+                Logout
               </Button>
             </CardContent>
           </Card>

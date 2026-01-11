@@ -25,6 +25,20 @@ export default function ExpenseDetailsScreen() {
     queryFn: () => api.getCategoryBreakdown(selectedMonth, selectedYear),
   });
 
+  const pieChartData = useMemo(() => {
+    if (!data?.breakdown || data.breakdown.length === 0) return [];
+    
+    return data.breakdown
+      .filter(item => parseFloat(item.total) > 0) // Filter out zero amounts
+      .map((item, index) => ({
+        name: item.categoryName.length > 12 ? item.categoryName.substring(0, 12) + '...' : item.categoryName,
+        amount: parseFloat(item.total),
+        color: item.color || `hsl(${index * 137.5}, 70%, 60%)`,
+        legendFontColor: colors.text,
+        legendFontSize: 12,
+      }));
+  }, [data, colors.text]);
+
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   const handlePreviousMonth = () => {
@@ -70,20 +84,6 @@ export default function ExpenseDetailsScreen() {
       </View>
     );
   }
-
-  const pieChartData = useMemo(() => {
-    if (!data?.breakdown || data.breakdown.length === 0) return [];
-    
-    return data.breakdown
-      .filter(item => parseFloat(item.total) > 0) // Filter out zero amounts
-      .map((item, index) => ({
-        name: item.categoryName.length > 12 ? item.categoryName.substring(0, 12) + '...' : item.categoryName,
-        amount: parseFloat(item.total),
-        color: item.color,
-        legendFontColor: colors.text,
-        legendFontSize: 13,
-      }));
-  }, [data, colors]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

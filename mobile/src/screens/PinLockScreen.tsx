@@ -1,17 +1,64 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Vibration, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { getThemedColors, COLORS } from '../lib/utils';
+import { api, storeTokens } from '../lib/api';
+import { checkBiometricAvailability, authenticateWithBiometrics, getBiometricName, BiometricInfo } from '../lib/biometric';
 
 export default function PinLockScreen() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
-  const { verifyPin } = useAuth();
+  const [biometricInfo, setBiometricInfo] = useState<BiometricInfo | null>(null);
+  const [showBiometric, setShowBiometric] = useState(true);
+  const { user, unlock } = useAuth();
   const { resolvedTheme } = useTheme();
   const colors = getThemedColors(resolvedTheme);
+
+  useEffect(() => {
+    checkBiometrics();
+  }, []);
+
+  const checkBiometrics = async () => {
+    const info = await checkBiometricAvailability();
+    setBiometricInfo(info);
+    
+    // Auto-prompt biometric if available and enrolled
+    if (info.isAvailable && info.isEnrolled && user?.biometricEnabled) {
+      handleBiometricAuth();
+    }
+  };
+
+  const handleBiometricAuth = async () => {
+    if (!biometricInfo?.isAvailable || !biometricInfo?.isEnrolled || !user) return;
+
+    setIsVerifying(true);
+    const result = await authenticateWithBiometrics('Unlock Finance Tracker');
+    
+    if (result.success) {
+      // Biometric success - verify with server
+      try {
+        const verifyResult = await api.verifyBiometric(user.id);
+        if (verifyResult.success && verifyResult.accessToken && verifyResult.refreshToken) {
+          await storeTokens(verifyResult.accessToken, verifyResult.refreshToken);
+          unlock();
+        } else {
+          setError('Authentication failed');
+          setShowBiometric(false);
+        }
+      } catch (error) {
+        setError('Authentication failed');
+        setShowBiometric(false);
+      }
+    } else if (result.error !== 'Cancelled') {
+      setError(result.error || 'Biometric authentication failed');
+      setShowBiometric(false);
+    }
+    
+    setIsVerifying(false);
+  };
 
   const handleNumberPress = async (num: string) => {
     if (pin.length >= 4) return;
@@ -20,15 +67,25 @@ export default function PinLockScreen() {
     setPin(newPin);
     setError('');
 
-    if (newPin.length === 4) {
+    if (newPin.length === 4 && user) {
       setIsVerifying(true);
-      const isValid = await verifyPin(newPin);
-      setIsVerifying(false);
-      
-      if (!isValid) {
+      try {
+        const result = await api.verifyPin(user.id, newPin);
+        if (result.success && result.accessToken && result.refreshToken) {
+          // Store new tokens
+          await storeTokens(result.accessToken, result.refreshToken);
+          unlock();
+        } else {
+          Vibration.vibrate(200);
+          setError('Incorrect PIN');
+          setPin('');
+        }
+      } catch (error) {
         Vibration.vibrate(200);
         setError('Incorrect PIN');
         setPin('');
+      } finally {
+        setIsVerifying(false);
       }
     }
   };
@@ -115,6 +172,23 @@ export default function PinLockScreen() {
         <>
           {renderDots()}
           {error ? <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text> : null}
+          
+          {/* Biometric Button */}
+          {biometricInfo?.isAvailable && biometricInfo?.isEnrolled && user?.biometricEnabled && showBiometric && (
+            <TouchableOpacity
+              style={[styles.biometricButton, { backgroundColor: colors.card }]}
+              onPress={handleBiometricAuth}
+            >
+              <Ionicons 
+                name={biometricInfo.biometricType === 'facial' ? 'scan' : 'finger-print'} 
+                size={32} 
+                color={colors.primary} 
+              />
+              <Text style={[styles.biometricText, { color: colors.text }]}>
+                Use {getBiometricName(biometricInfo.biometricType)}
+              </Text>
+            </TouchableOpacity>
+          )}
         </>
       )}
 
@@ -192,5 +266,20 @@ const styles = StyleSheet.create({
   numberText: {
     fontSize: 28,
     fontWeight: '500',
+  },
+  biometricButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 20,
+    alignSelf: 'center',
+  },
+  biometricText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

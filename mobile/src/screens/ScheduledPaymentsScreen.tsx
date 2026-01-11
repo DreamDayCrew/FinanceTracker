@@ -354,6 +354,7 @@ export default function ScheduledPaymentsScreen() {
     const category = categories.find(c => c.id === payment.categoryId);
     const isActive = payment.status === 'active';
     const isWeb = Platform.OS === 'web';
+    const showActionButtons = isWeb || !swipeSettings.enabled;
 
     const content = (
       <View
@@ -409,7 +410,7 @@ export default function ScheduledPaymentsScreen() {
             thumbColor={isActive ? colors.primary : colors.textMuted}
           />
         </View>
-        {isWeb && (
+        {showActionButtons && (
           <View style={styles.webActions}>
             <TouchableOpacity
               style={[styles.webActionButton, { backgroundColor: colors.primary }]}

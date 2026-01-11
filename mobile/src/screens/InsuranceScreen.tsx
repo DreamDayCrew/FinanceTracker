@@ -178,6 +178,7 @@ export default function InsuranceScreen() {
     const paidCount = item.premiums?.filter(p => p.status === 'paid').length || 0;
     const totalCount = item.premiums?.length || 0;
     const isWeb = Platform.OS === 'web';
+    const showActionButtons = isWeb || !swipeSettings.enabled;
 
     const content = (
       <View style={[styles.insuranceCard, { backgroundColor: colors.card }]}>
@@ -262,7 +263,7 @@ export default function InsuranceScreen() {
           )}
         </View>
         </TouchableOpacity>
-        {isWeb && (
+        {showActionButtons && (
           <View style={styles.webActions}>
             <TouchableOpacity
               style={[styles.webActionButton, { backgroundColor: colors.primary }]}

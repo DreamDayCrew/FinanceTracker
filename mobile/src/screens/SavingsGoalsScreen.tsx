@@ -520,6 +520,7 @@ export default function SavingsGoalsScreen() {
                 const progress = calculateProgress(goal.currentAmount, goal.targetAmount);
 
                 const isWeb = Platform.OS === 'web';
+                const showActionButtons = isWeb || !swipeSettings.enabled;
                 const content = (
                   <View
                     style={[
@@ -562,7 +563,7 @@ export default function SavingsGoalsScreen() {
                         />
                       </View>
                     </View>
-                    {isWeb && (
+                    {showActionButtons && (
                       <View style={styles.webActions}>
                         <TouchableOpacity
                           style={[styles.webActionButton, { backgroundColor: colors.primary }]}

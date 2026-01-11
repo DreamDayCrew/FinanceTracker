@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "expo-local-authentication": "^17.0.8"
+  }
+}

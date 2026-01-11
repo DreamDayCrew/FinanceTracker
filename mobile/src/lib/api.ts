@@ -9,22 +9,175 @@ import type {
   LoanTerm, LoanPayment, InsertLoanTerm, InsertLoanPayment, LoanWithDetails,
   Insurance, InsurancePremium, InsertInsurance, InsertInsurancePremium
 } from './types';
+import NetInfo from '@react-native-community/netinfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
 console.log('API_BASE_URL', API_BASE_URL);
+
+const STORAGE_KEYS = {
+  ACCESS_TOKEN: '@finance_tracker_access_token',
+  REFRESH_TOKEN: '@finance_tracker_refresh_token',
+};
+
+/**
+ * Get stored access token
+ */
+async function getAccessToken(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+  } catch (error) {
+    console.error('Failed to get access token:', error);
+    return null;
+  }
+}
+
+/**
+ * Get stored refresh token
+ */
+async function getRefreshToken(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+  } catch (error) {
+    console.error('Failed to get refresh token:', error);
+    return null;
+  }
+}
+
+/**
+ * Store JWT tokens
+ */
+export async function storeTokens(accessToken: string, refreshToken: string): Promise<void> {
+  try {
+    await AsyncStorage.multiSet([
+      [STORAGE_KEYS.ACCESS_TOKEN, accessToken],
+      [STORAGE_KEYS.REFRESH_TOKEN, refreshToken],
+    ]);
+  } catch (error) {
+    console.error('Failed to store tokens:', error);
+  }
+}
+
+/**
+ * Legacy function for backward compatibility
+ */
+export async function storeToken(token: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, token);
+  } catch (error) {
+    console.error('Failed to store token:', error);
+  }
+}
+
+/**
+ * Clear stored tokens
+ */
+export async function clearTokens(): Promise<void> {
+  try {
+    await AsyncStorage.multiRemove([STORAGE_KEYS.ACCESS_TOKEN, STORAGE_KEYS.REFRESH_TOKEN]);
+  } catch (error) {
+    console.error('Failed to clear tokens:', error);
+  }
+}
+
+/**
+ * Refresh access token using refresh token
+ */
+async function refreshAccessToken(): Promise<string | null> {
+  try {
+    const refreshToken = await getRefreshToken();
+    if (!refreshToken) return null;
+
+    const response = await fetch(`${API_BASE_URL}/api/auth/refresh-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (data.accessToken) {
+      await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, data.accessToken);
+      return data.accessToken;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Failed to refresh token:', error);
+    return null;
+  }
+}
+
 async function apiRequest<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
+  // Check network connectivity before making request
+  const netState = await NetInfo.fetch();
+  if (!netState.isConnected) {
+    throw new Error('No internet connection. Please check your network settings.');
+  }
+
+  // Get token and add to headers
+  let token = await getAccessToken();
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const url = `${API_BASE_URL}${endpoint}`;
   
   try {
     const response = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       ...options,
     });
+
+    // If 401 or 403, try refreshing the token and retry once
+    if ((response.status === 401 || response.status === 403) && token) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        // Retry request with new token
+        headers['Authorization'] = `Bearer ${newToken}`;
+        const retryResponse = await fetch(url, {
+          headers,
+          ...options,
+        });
+        
+        if (!retryResponse.ok) {
+          const errorText = await retryResponse.text();
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { error: errorText };
+          }
+          
+          const error: any = new Error(errorData.message || errorData.error || `API error ${retryResponse.status}`);
+          if (errorData.isSavingsContribution) {
+            error.isSavingsContribution = true;
+            error.savingsGoalName = errorData.savingsGoalName;
+            error.savingsContributionId = errorData.savingsContributionId;
+          }
+          throw error;
+        }
+
+        // Handle 204 No Content
+        if (retryResponse.status === 204) {
+          return undefined as T;
+        }
+
+        return retryResponse.json();
+      } else {
+        // Refresh failed, clear tokens and throw auth error
+        await clearTokens();
+        throw new Error('Session expired. Please login again.');
+      }
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -146,6 +299,22 @@ export const api = {
       body: JSON.stringify({ message, sender, receivedAt: new Date().toISOString() }) 
     }),
 
+  parseSmsBatch: (messages: string[]) =>
+    apiRequest<{
+      total: number;
+      successful: number;
+      failed: number;
+      results: Array<{
+        success: boolean;
+        transaction?: Transaction;
+        message: string;
+        error?: string;
+      }>;
+    }>('/api/parse-sms-batch', {
+      method: 'POST',
+      body: JSON.stringify({ messages })
+    }),
+
   getSavingsGoals: () => apiRequest<SavingsGoal[]>('/api/savings-goals'),
   createSavingsGoal: (data: InsertSavingsGoal) => 
     apiRequest<SavingsGoal>('/api/savings-goals', { method: 'POST', body: JSON.stringify(data) }),
@@ -162,17 +331,19 @@ export const api = {
   deleteContribution: (id: number) => 
     apiRequest<void>(`/api/savings-contributions/${id}`, { method: 'DELETE' }),
 
-  getSalaryProfiles: () => apiRequest<SalaryProfile[]>('/api/salary-profiles'),
+  getSalaryProfile: () => apiRequest<SalaryProfile | null>('/api/salary-profile'),
   createSalaryProfile: (data: InsertSalaryProfile) => 
-    apiRequest<SalaryProfile>('/api/salary-profiles', { method: 'POST', body: JSON.stringify(data) }),
+    apiRequest<SalaryProfile>('/api/salary-profile', { method: 'POST', body: JSON.stringify(data) }),
   updateSalaryProfile: (id: number, data: Partial<InsertSalaryProfile>) => 
-    apiRequest<SalaryProfile>(`/api/salary-profiles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  deleteSalaryProfile: (id: number) => 
-    apiRequest<void>(`/api/salary-profiles/${id}`, { method: 'DELETE' }),
-  getSalaryCycles: (profileId: number) => 
-    apiRequest<SalaryCycle[]>(`/api/salary-profiles/${profileId}/cycles`),
-  getNextPaydays: (profileId: number, count?: number) => 
-    apiRequest<string[]>(`/api/salary-profiles/${profileId}/next-paydays${count ? `?count=${count}` : ''}`),
+    apiRequest<SalaryProfile>(`/api/salary-profile/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getNextPaydays: (count?: number) => 
+    apiRequest<string[]>(`/api/salary-profile/next-paydays${count ? `?count=${count}` : ''}`),
+  getSalaryCycles: () => 
+    apiRequest<SalaryCycle[]>('/api/salary-cycles'),
+  createSalaryCycle: (data: any) => 
+    apiRequest<SalaryCycle>('/api/salary-cycles', { method: 'POST', body: JSON.stringify(data) }),
+  updateSalaryCycle: (id: number, data: any) => 
+    apiRequest<SalaryCycle>(`/api/salary-cycles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   getLoans: () => apiRequest<Loan[]>('/api/loans'),
   getLoan: (id: number) => apiRequest<Loan>(`/api/loans/${id}`),
@@ -341,6 +512,55 @@ export const api = {
     apiRequest<void>(`/api/insurances/${insuranceId}/premiums/${id}`, { method: 'DELETE' }),
   regenerateInsurancePremiums: (insuranceId: number) => 
     apiRequest<InsurancePremium[]>(`/api/insurances/${insuranceId}/regenerate-premiums`, { method: 'POST' }),
+
+  // Authentication
+  requestOTP: (email: string, username: string) => 
+    apiRequest<{ success: boolean }>('/api/auth/request-otp', { 
+      method: 'POST', 
+      body: JSON.stringify({ email, username }) 
+    }),
+  verifyOTP: (email: string, otp: string) => 
+    apiRequest<{ success: boolean; accessToken: string; refreshToken: string; user: User & { hasPassword: boolean; hasPin: boolean; biometricEnabled: boolean } }>('/api/auth/verify-otp', { 
+      method: 'POST', 
+      body: JSON.stringify({ email, otp }) 
+    }),
+  loginWithPassword: async (email: string, password: string) => {
+    const response = await apiRequest<{ success: boolean; accessToken: string; refreshToken: string; user: User & { hasPassword: boolean; hasPin: boolean; biometricEnabled: boolean } }>('/api/auth/login-password', { 
+      method: 'POST', 
+      body: JSON.stringify({ email, password }) 
+    });
+    
+    if (response.accessToken && response.refreshToken) {
+      await storeTokens(response.accessToken, response.refreshToken);
+    }
+    
+    return response;
+  },
+  setPassword: (password: string) => 
+    apiRequest<{ success: boolean; user: User & { hasPassword: boolean } }>('/api/auth/set-password', { 
+      method: 'POST', 
+      body: JSON.stringify({ password }) 
+    }),
+  setupPin: (userId: number, pin: string) => 
+    apiRequest<{ success: boolean }>('/api/auth/setup-pin', { 
+      method: 'POST', 
+      body: JSON.stringify({ userId, pin }) 
+    }),
+  verifyPin: (userId: number, pin: string) => 
+    apiRequest<{ success: boolean; accessToken: string; refreshToken: string; user: User }>('/api/auth/verify-pin', { 
+      method: 'POST', 
+      body: JSON.stringify({ userId, pin }) 
+    }),
+  verifyBiometric: (userId: number) => 
+    apiRequest<{ success: boolean; accessToken: string; refreshToken: string; user: User }>('/api/auth/verify-biometric', { 
+      method: 'POST', 
+      body: JSON.stringify({ userId }) 
+    }),
+  toggleBiometric: (userId: number, enabled: boolean) => 
+    apiRequest<{ success: boolean }>('/api/auth/toggle-biometric', { 
+      method: 'POST', 
+      body: JSON.stringify({ userId, enabled }) 
+    }),
 };
 
 export { API_BASE_URL };

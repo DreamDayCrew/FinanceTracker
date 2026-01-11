@@ -156,6 +156,8 @@ export default function BudgetsScreen() {
     const budgetAmount = parseFloat(budget.amount);
     const percentage = budgetAmount > 0 ? Math.min((spent / budgetAmount) * 100, 100) : 0;
     const isOverBudget = spent > budgetAmount;
+    const isWeb = Platform.OS === 'web';
+    const showActionButtons = isWeb || !swipeSettings.enabled;
 
     const handleCardPress = () => {
       // Close any open swipeable first
@@ -188,7 +190,7 @@ export default function BudgetsScreen() {
             </View>
             <View style={styles.budgetHeaderRight}>
               {/* Show action buttons on web when swipe is not available */}
-              {Platform.OS === 'web' && (
+              {showActionButtons && (
                 <View style={styles.webActionButtons}>
                   <TouchableOpacity
                     onPress={() => handleEdit(budget)}

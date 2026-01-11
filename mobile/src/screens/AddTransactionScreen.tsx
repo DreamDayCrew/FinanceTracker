@@ -144,28 +144,54 @@ export default function AddTransactionScreen() {
 
     setIsParsing(true);
     try {
-      const result = await api.parseSms(smsText);
+      // Check if multiple SMS (separated by blank lines or "---")
+      const messages = smsText
+        .split(/\n\n+|---+/)
+        .map(msg => msg.trim())
+        .filter(msg => msg.length > 0);
       
-      if (result.success && result.transaction) {
+      if (messages.length > 1) {
+        // Bulk parse
+        const result = await api.parseSmsBatch(messages);
+        
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
         queryClient.invalidateQueries({ queryKey: ['dashboard'] });
         queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
         queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
+        
         setShowSmsModal(false);
         setSmsText('');
-        Alert.alert('Success', 'Transaction added from SMS!', [
-          { text: 'OK', onPress: () => navigation.goBack() }
-        ]);
-      } else if (result.parsed) {
-        setAmount(result.parsed.amount.toString());
-        setType(result.parsed.type);
-        if (result.parsed.merchant) setMerchant(result.parsed.merchant);
-        if (result.parsed.description) setDescription(result.parsed.description);
-        setShowSmsModal(false);
-        setSmsText('');
-        Alert.alert('Parsed!', 'SMS data extracted. Please review and save.');
+        
+        Alert.alert(
+          'Bulk Parse Complete',
+          `Successfully parsed: ${result.successful} of ${result.total}\nFailed: ${result.failed}`,
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
       } else {
-        Alert.alert('Could Not Parse', result.message || 'Unable to extract transaction from this SMS. Please enter manually.');
+        // Single SMS parse
+        const result = await api.parseSms(smsText);
+        
+        if (result.success && result.transaction) {
+          queryClient.invalidateQueries({ queryKey: ['transactions'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+          queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+          queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
+          setShowSmsModal(false);
+          setSmsText('');
+          Alert.alert('Success', 'Transaction added from SMS!', [
+            { text: 'OK', onPress: () => navigation.goBack() }
+          ]);
+        } else if (result.parsed) {
+          setAmount(result.parsed.amount.toString());
+          setType(result.parsed.type);
+          if (result.parsed.merchant) setMerchant(result.parsed.merchant);
+          if (result.parsed.description) setDescription(result.parsed.description);
+          setShowSmsModal(false);
+          setSmsText('');
+          Alert.alert('Parsed!', 'SMS data extracted. Please review and save.');
+        } else {
+          Alert.alert('Could Not Parse', result.message || 'Unable to extract transaction from this SMS. Please enter manually.');
+        }
       }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to parse SMS';
@@ -317,7 +343,7 @@ export default function AddTransactionScreen() {
             }
           }}
           maximumDate={new Date()}
-          themeVariant={resolvedTheme}
+          themeVariant={resolvedTheme === 'dark' ? 'dark' : 'light'}
           textColor={colors.text}
         />
       )}
@@ -348,15 +374,17 @@ export default function AddTransactionScreen() {
         </TouchableOpacity>
         {showCategoryPicker && (
           <View style={[styles.pickerList, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {filteredCategories.map((category) => (
-              <TouchableOpacity
-                key={category.id}
-                style={styles.pickerOption}
-                onPress={() => { setSelectedCategoryId(category.id); setShowCategoryPicker(false); }}
-              >
-                <Text style={[styles.pickerOptionText, { color: colors.text }]}>{category.name}</Text>
-              </TouchableOpacity>
-            ))}
+            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
+              {filteredCategories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={styles.pickerOption}
+                  onPress={() => { setSelectedCategoryId(category.id); setShowCategoryPicker(false); }}
+                >
+                  <Text style={[styles.pickerOptionText, { color: colors.text }]}>{category.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         )}
       </View>
@@ -379,21 +407,23 @@ export default function AddTransactionScreen() {
           </TouchableOpacity>
           {showAccountPicker && (
             <View style={[styles.pickerList, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {accounts.map((account) => (
-                <TouchableOpacity
-                  key={account.id}
-                  style={styles.pickerOption}
-                  onPress={() => { setSelectedAccountId(account.id); setShowAccountPicker(false); }}
-                >
-                  <Ionicons 
-                    name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
-                    size={16} 
-                    color={colors.textMuted}
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text style={[styles.pickerOptionText, { color: colors.text }]}>{account.name}</Text>
-                </TouchableOpacity>
-              ))}
+              <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                {accounts.map((account) => (
+                  <TouchableOpacity
+                    key={account.id}
+                    style={styles.pickerOption}
+                    onPress={() => { setSelectedAccountId(account.id); setShowAccountPicker(false); }}
+                  >
+                    <Ionicons 
+                      name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
+                      size={16} 
+                      color={colors.textMuted}
+                      style={{ marginRight: 8 }}
+                    />
+                    <Text style={[styles.pickerOptionText, { color: colors.text }]}>{account.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
           )}
         </View>
@@ -415,21 +445,23 @@ export default function AddTransactionScreen() {
           </TouchableOpacity>
           {showToAccountPicker && (
             <View style={[styles.pickerList, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {accounts.filter(acc => acc.id !== selectedAccountId).map((account) => (
-                <TouchableOpacity
-                  key={account.id}
-                  style={styles.pickerOption}
-                  onPress={() => { setSelectedToAccountId(account.id); setShowToAccountPicker(false); }}
-                >
-                  <Ionicons 
-                    name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
-                    size={16} 
-                    color={colors.textMuted}
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text style={[styles.pickerOptionText, { color: colors.text }]}>{account.name}</Text>
-                </TouchableOpacity>
-              ))}
+              <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                {accounts.filter(acc => acc.id !== selectedAccountId).map((account) => (
+                  <TouchableOpacity
+                    key={account.id}
+                    style={styles.pickerOption}
+                    onPress={() => { setSelectedToAccountId(account.id); setShowToAccountPicker(false); }}
+                  >
+                    <Ionicons 
+                      name={account.type === 'bank' ? 'business-outline' : 'card-outline'} 
+                      size={16} 
+                      color={colors.textMuted}
+                      style={{ marginRight: 8 }}
+                    />
+                    <Text style={[styles.pickerOptionText, { color: colors.text }]}>{account.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
           )}
         </View>
@@ -467,12 +499,13 @@ export default function AddTransactionScreen() {
             </View>
 
             <Text style={[styles.modalDescription, { color: colors.textMuted }]}>
-              Copy a transaction SMS from your bank and paste it below. We'll automatically extract the transaction details.
+              Copy transaction SMS from your bank and paste below. We'll automatically extract the details.{'\n\n'}
+              💡 Tip: Paste multiple SMS separated by blank lines or "---" for bulk parsing!
             </Text>
 
             <TextInput
               style={[styles.smsInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              placeholder="Paste your bank SMS here...&#10;&#10;Example:&#10;Rs.500.00 debited from A/c XX1234 on 06-Dec-24. UPI/123456789. If not done by u, call 1800-XXX-XXXX"
+              placeholder="Paste your bank SMS here...&#10;&#10;Example:&#10;Rs.500.00 debited from A/c XX1234 on 06-Dec-24.&#10;&#10;---&#10;&#10;Rs.200.00 credited to A/c XX1234..."
               placeholderTextColor={colors.textMuted}
               multiline
               numberOfLines={6}

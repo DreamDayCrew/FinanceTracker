@@ -51,6 +51,12 @@ npx expo start --web
 ```
 Opens at `http://localhost:8082`
 
+**For Emulator:**
+```bash
+npx expo run:android
+```
+
+
 ---
 
 ## 2. Building APK for Testing

@@ -23,12 +23,338 @@ import {
   insertInsuranceSchema,
   insertInsurancePremiumSchema
 } from "@shared/schema";
-import { suggestCategory, parseSmsMessage } from "./openai";
+import { suggestCategory, parseSmsMessage, fallbackCategorization } from "./openai";
 import { getPaydayForMonth, getNextPaydays, getPastPaydays } from "./salaryUtils";
+import { generateOTP, storeOTP, verifyOTP, sendOTP } from "./emailService";
+import { generateTokenPair, generateAccessToken } from "./jwtService";
+import { authenticateToken } from "./authMiddleware";
+import { verifyToken } from "./jwtService";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Seed default categories on startup
   await storage.seedDefaultCategories();
+
+  // ========== Authentication ==========
+  app.post("/api/auth/request-otp", async (req, res) => {
+    try {
+      const { email, username } = req.body;
+      
+      if (!email || !username) {
+        return res.status(400).json({ error: "Email and username are required" });
+      }
+
+      // Check if user exists, if not create
+      let user = await storage.getUserByEmail(email);
+      if (!user) {
+        user = await storage.createUser({
+          name: username,
+          email: email,
+        });
+      }
+
+      // Generate and store OTP
+      const otp = generateOTP();
+      storeOTP(email, otp);
+
+      // Send OTP via email
+      const sent = await sendOTP(email, username, otp);
+      
+      if (sent) {
+        res.json({ success: true, message: "OTP sent to your email" });
+      } else {
+        res.status(500).json({ error: "Failed to send OTP" });
+      }
+    } catch (error: any) {
+      console.error("Request OTP error:", error);
+      res.status(500).json({ error: error.message || "Failed to request OTP" });
+    }
+  });
+
+  app.post("/api/auth/verify-otp", async (req, res) => {
+    try {
+      const { email, otp } = req.body;
+      
+      if (!email || !otp) {
+        return res.status(400).json({ error: "Email and OTP are required" });
+      }
+
+      const isValid = verifyOTP(email, otp);
+      
+      if (isValid) {
+        const user = await storage.getUserByEmail(email);
+        if (user) {
+          // Generate JWT token pair
+          const { accessToken, refreshToken } = generateTokenPair(user.id, user.email!);
+          
+          res.json({ 
+            success: true,
+            accessToken,
+            refreshToken,
+            user: {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              hasPassword: !!user.passwordHash,
+              hasPin: !!user.pinHash,
+              biometricEnabled: user.biometricEnabled
+            }
+          });
+        } else {
+          res.status(404).json({ error: "User not found" });
+        }
+      } else {
+        res.status(401).json({ error: "Invalid or expired OTP" });
+      }
+    } catch (error: any) {
+      console.error("Verify OTP error:", error);
+      res.status(500).json({ error: error.message || "Failed to verify OTP" });
+    }
+  });
+
+  // Password-based login
+  app.post("/api/auth/login-password", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user || !user.passwordHash) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+      
+      if (isValidPassword) {
+        const { accessToken, refreshToken } = generateTokenPair(user.id, user.email!);
+        
+        res.json({ 
+          success: true,
+          accessToken,
+          refreshToken,
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            hasPassword: !!user.passwordHash,
+            hasPin: !!user.pinHash,
+            biometricEnabled: user.biometricEnabled
+          }
+        });
+      } else {
+        res.status(401).json({ error: "Invalid email or password" });
+      }
+    } catch (error: any) {
+      console.error("Password login error:", error);
+      res.status(500).json({ error: error.message || "Login failed" });
+    }
+  });
+
+  // Set password (after first OTP login)
+  app.post("/api/auth/set-password", authenticateToken, async (req, res) => {
+    try {
+      const userId = req.user!.userId;
+      const { password } = req.body;
+      
+      if (!password || password.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+      }
+
+      // First check if user exists
+      const existingUser = await storage.getUser(userId);
+      
+      if (!existingUser) {
+        console.error(`❌ [set-password] User not found with ID: ${userId}`);
+        console.error(`   Token payload:`, req.user);
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      console.log(`✅ [set-password] Setting password for user: ${existingUser.email} (ID: ${userId})`);
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const user = await storage.updateUser(userId, { passwordHash });
+      
+      if (user) {
+        console.log(`✅ [set-password] Password set successfully for user: ${user.email}`);
+        res.json({ 
+          success: true, 
+          message: "Password set successfully",
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            hasPassword: !!user.passwordHash,
+            hasPin: !!user.pinHash,
+            biometricEnabled: user.biometricEnabled
+          }
+        });
+      } else {
+        console.error(`❌ [set-password] Failed to update password for user ID: ${userId}`);
+        res.status(500).json({ error: "Failed to update password" });
+      }
+    } catch (error: any) {
+      console.error("❌ [set-password] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to set password" });
+    }
+  });
+
+  app.post("/api/auth/setup-pin", async (req, res) => {
+    try {
+      const { userId, pin } = req.body;
+      
+      if (!userId || !pin) {
+        return res.status(400).json({ error: "User ID and PIN are required" });
+      }
+
+      if (pin.length !== 4 || !/^\d+$/.test(pin)) {
+        return res.status(400).json({ error: "PIN must be 4 digits" });
+      }
+
+      const pinHash = await bcrypt.hash(pin, 10);
+      const user = await storage.updateUserPin(userId, pinHash);
+      
+      if (user) {
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "User not found" });
+      }
+    } catch (error: any) {
+      console.error("Setup PIN error:", error);
+      res.status(500).json({ error: error.message || "Failed to setup PIN" });
+    }
+  });
+
+  app.post("/api/auth/verify-pin", async (req, res) => {
+    try {
+      const { userId, pin } = req.body;
+      
+      if (!userId || !pin) {
+        return res.status(400).json({ error: "User ID and PIN are required" });
+      }
+
+      const user = await storage.getUser(userId);
+      
+      if (!user || !user.pinHash) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      const isValid = await bcrypt.compare(pin, user.pinHash);
+      
+      if (isValid) {
+        // Generate JWT token pair
+        const { accessToken, refreshToken } = generateTokenPair(user.id, user.email!);
+        
+        res.json({ 
+          success: true, 
+          accessToken,
+          refreshToken,
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            biometricEnabled: user.biometricEnabled
+          }
+        });
+      } else {
+        res.status(401).json({ error: "Invalid PIN" });
+      }
+    } catch (error: any) {
+      console.error("Verify PIN error:", error);
+      res.status(500).json({ error: error.message || "Failed to verify PIN" });
+    }
+  });
+
+  // Biometric verification endpoint - verifies user has biometric enabled and returns tokens
+  app.post("/api/auth/verify-biometric", async (req, res) => {
+    try {
+      const { userId } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({ error: "User ID is required" });
+      }
+
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      if (!user.biometricEnabled) {
+        return res.status(403).json({ error: "Biometric authentication not enabled" });
+      }
+
+      // Since the device already verified biometric (fingerprint/face), 
+      // we trust that and generate tokens
+      const { accessToken, refreshToken } = generateTokenPair(user.id, user.email!);
+      
+      res.json({ 
+        success: true, 
+        accessToken,
+        refreshToken,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          biometricEnabled: user.biometricEnabled
+        }
+      });
+    } catch (error: any) {
+      console.error("Verify biometric error:", error);
+      res.status(500).json({ error: error.message || "Failed to verify biometric" });
+    }
+  });
+
+  app.post("/api/auth/toggle-biometric", async (req, res) => {
+    try {
+      const { userId, enabled } = req.body;
+      
+      if (!userId || enabled === undefined) {
+        return res.status(400).json({ error: "User ID and enabled status are required" });
+      }
+
+      const user = await storage.updateUserBiometric(userId, enabled);
+      
+      if (user) {
+        res.json({ success: true, biometricEnabled: user.biometricEnabled });
+      } else {
+        res.status(404).json({ error: "User not found" });
+      }
+    } catch (error: any) {
+      console.error("Toggle biometric error:", error);
+      res.status(500).json({ error: error.message || "Failed to toggle biometric" });
+    }
+  });
+
+  // Refresh access token using refresh token
+  app.post("/api/auth/refresh-token", async (req, res) => {
+    try {
+      const { refreshToken } = req.body;
+      
+      if (!refreshToken) {
+        return res.status(400).json({ error: "Refresh token is required" });
+      }
+
+      // Verify refresh token
+      const payload = verifyToken(refreshToken);
+      
+      if (!payload || payload.type !== 'refresh') {
+        return res.status(403).json({ error: "Invalid refresh token" });
+      }
+
+      // Generate new access token
+      const newAccessToken = generateAccessToken(payload.userId, payload.email);
+      
+      res.json({ 
+        success: true,
+        accessToken: newAccessToken
+      });
+    } catch (error: any) {
+      console.error("Refresh token error:", error);
+      res.status(403).json({ error: "Invalid or expired refresh token" });
+    }
+  });
 
   // ========== Categories ==========
   app.get("/api/categories", async (_req, res) => {
@@ -52,9 +378,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Accounts ==========
-  app.get("/api/accounts", async (_req, res) => {
+  app.get("/api/accounts", authenticateToken, async (req, res) => {
     try {
-      const accounts = await storage.getAllAccounts();
+      const userId = req.user!.userId;
+      const accounts = await storage.getAllAccounts(userId);
       // Attach card details for credit_card and debit_card accounts
       const accountsWithCards = await Promise.all(
         accounts.map(async (account) => {
@@ -72,10 +399,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/accounts/:id", async (req, res) => {
+  app.get("/api/accounts/:id", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const account = await storage.getAccount(parseInt(req.params.id));
-      if (account) {
+      if (account && account.userId === userId) {
         res.json(account);
       } else {
         res.status(404).json({ error: "Account not found" });
@@ -86,10 +414,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/accounts", async (req, res) => {
+  app.post("/api/accounts", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const { cardDetails: cardData, ...accountData } = req.body;
-      const validatedData = insertAccountSchema.parse(accountData);
+      const validatedData = insertAccountSchema.parse({ ...accountData, userId });
       const account = await storage.createAccount(validatedData);
       
       // If card details provided, save them
@@ -112,7 +441,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/accounts/:id", async (req, res) => {
+  app.patch("/api/accounts/:id", authenticateToken, async (req, res) => {
     try {
       const { cardDetails: cardData, ...accountData } = req.body;
       const account = await storage.updateAccount(parseInt(req.params.id), accountData);
@@ -152,7 +481,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/accounts/:id", async (req, res) => {
+  app.delete("/api/accounts/:id", authenticateToken, async (req, res) => {
     try {
       const deleted = await storage.deleteAccount(parseInt(req.params.id));
       if (deleted) {
@@ -166,11 +495,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Transactions ==========
-  app.get("/api/transactions", async (req, res) => {
+  app.get("/api/transactions", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const { accountId, categoryId, startDate, endDate, search, limit } = req.query;
       
-      const filters: any = {};
+      const filters: any = { userId };
       if (accountId) filters.accountId = parseInt(accountId as string);
       if (categoryId) filters.categoryId = parseInt(categoryId as string);
       if (startDate) filters.startDate = new Date(startDate as string);
@@ -186,10 +516,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/transactions/:id", async (req, res) => {
+  app.get("/api/transactions/:id", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const transaction = await storage.getTransaction(parseInt(req.params.id));
-      if (transaction) {
+      if (transaction && transaction.userId === userId) {
         res.json(transaction);
       } else {
         res.status(404).json({ error: "Transaction not found" });
@@ -200,17 +531,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/transactions", async (req, res) => {
+  app.post("/api/transactions", authenticateToken, async (req, res) => {
     try {
-      const validatedData = insertTransactionSchema.parse(req.body);
+      const userId = req.user!.userId;
+      console.log("🔍 [transactions] POST Request Debug:");
+      console.log("  User ID:", userId);
+      console.log("  Raw request body:", JSON.stringify(req.body, null, 2));
+      
+      const transactionData = { ...req.body, userId };
+      console.log("  Transaction data with userId:", JSON.stringify(transactionData, null, 2));
+      
+      const validatedData = insertTransactionSchema.parse(transactionData);
+      console.log("  ✅ Validation passed, creating transaction...");
+      
       const transaction = await storage.createTransaction(validatedData);
+      console.log("  ✅ Transaction created successfully:", transaction.id);
+      
       res.status(201).json(transaction);
     } catch (error: any) {
+      console.error("❌ [transactions] POST Error:");
+      console.error("  Error type:", error.constructor.name);
+      console.error("  Error message:", error.message);
+      
+      if (error.name === 'ZodError') {
+        console.error("  🔴 Zod Validation Errors:");
+        error.issues?.forEach((issue: any, index: number) => {
+          console.error(`    ${index + 1}. Path: ${issue.path.join('.')}`);
+          console.error(`       Code: ${issue.code}`);
+          console.error(`       Message: ${issue.message}`);
+          if (issue.received !== undefined) {
+            console.error(`       Received: ${JSON.stringify(issue.received)}`);
+          }
+          if (issue.expected !== undefined) {
+            console.error(`       Expected: ${issue.expected}`);
+          }
+        });
+        
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: error.issues.map((issue: any) => ({
+            field: issue.path.join('.'),
+            code: issue.code,
+            message: issue.message,
+            received: issue.received,
+            expected: issue.expected
+          }))
+        });
+      }
+      
+      console.error("  Full error:", error);
       res.status(400).json({ error: error.message || "Invalid transaction data" });
     }
   });
 
-  app.patch("/api/transactions/:id", async (req, res) => {
+  app.patch("/api/transactions/:id", authenticateToken, async (req, res) => {
     try {
       const transactionId = parseInt(req.params.id);
       const transaction = await storage.getTransaction(transactionId);
@@ -236,7 +610,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/transactions/:id", async (req, res) => {
+  app.delete("/api/transactions/:id", authenticateToken, async (req, res) => {
     try {
       const transactionId = parseInt(req.params.id);
       const transaction = await storage.getTransaction(transactionId);
@@ -274,6 +648,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.updatePaymentOccurrence(transaction.paymentOccurrenceId, { status: 'pending' });
       }
       
+      // If this transaction was created from SMS, clear the transactionId reference in the SMS log
+      if (transaction.smsId) {
+        await storage.clearSmsLogTransaction(transaction.smsId);
+      }
+      
       // Delete the transaction (this will restore the account balance)
       const deleted = await storage.deleteTransaction(transactionId);
       if (deleted) {
@@ -287,10 +666,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Budgets ==========
-  app.get("/api/budgets", async (req, res) => {
+  app.get("/api/budgets", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const { month, year } = req.query;
-      const filters: any = {};
+      const filters: any = { userId };
       if (month) filters.month = parseInt(month as string);
       if (year) filters.year = parseInt(year as string);
 
@@ -301,19 +681,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/budgets", async (req, res) => {
+  app.post("/api/budgets", authenticateToken, async (req, res) => {
     try {
-      const validatedData = insertBudgetSchema.parse(req.body);
+      const userId = req.user!.userId;
+      console.log("🔍 [budgets] POST Request Debug:");
+      console.log("  User ID:", userId);
+      console.log("  Raw request body:", JSON.stringify(req.body, null, 2));
+      
+      const budgetData = { ...req.body, userId };
+      console.log("  Budget data with userId:", JSON.stringify(budgetData, null, 2));
+      
+      const validatedData = insertBudgetSchema.parse(budgetData);
+      console.log("  ✅ Validation passed, creating budget...");
+      
       const budget = await storage.createBudget(validatedData);
+      console.log("  ✅ Budget created successfully:", budget.id);
+      
       res.status(201).json(budget);
     } catch (error: any) {
+      console.error("❌ [budgets] POST Error:");
+      console.error("  Error type:", error.constructor.name);
+      console.error("  Error message:", error.message);
+      
+      if (error.name === 'ZodError') {
+        console.error("  🔴 Zod Validation Errors:");
+        error.issues?.forEach((issue: any, index: number) => {
+          console.error(`    ${index + 1}. Path: ${issue.path.join('.')}`);
+          console.error(`       Code: ${issue.code}`);
+          console.error(`       Message: ${issue.message}`);
+          if (issue.received !== undefined) {
+            console.error(`       Received: ${JSON.stringify(issue.received)}`);
+          }
+          if (issue.expected !== undefined) {
+            console.error(`       Expected: ${issue.expected}`);
+          }
+        });
+        
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: error.issues.map((issue: any) => ({
+            field: issue.path.join('.'),
+            code: issue.code,
+            message: issue.message,
+            received: issue.received,
+            expected: issue.expected
+          }))
+        });
+      }
+      
+      console.error("  Full error:", error);
       res.status(400).json({ error: error.message || "Invalid budget data" });
     }
   });
 
-  app.patch("/api/budgets/:id", async (req, res) => {
+  app.patch("/api/budgets/:id", authenticateToken, async (req, res) => {
     try {
-      const budget = await storage.updateBudget(parseInt(req.params.id), req.body);
+      const userId = req.user!.userId;
+      const budgetId = parseInt(req.params.id);
+      
+      // First verify the budget belongs to the user
+      const existingBudget = await storage.getBudget(budgetId);
+      if (!existingBudget || existingBudget.userId !== userId) {
+        return res.status(404).json({ error: "Budget not found" });
+      }
+      
+      const budget = await storage.updateBudget(budgetId, req.body);
       if (budget) {
         res.json(budget);
       } else {
@@ -324,9 +756,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/budgets/:id", async (req, res) => {
+  app.delete("/api/budgets/:id", authenticateToken, async (req, res) => {
     try {
-      const deleted = await storage.deleteBudget(parseInt(req.params.id));
+      const userId = req.user!.userId;
+      const budgetId = parseInt(req.params.id);
+      
+      // First verify the budget belongs to the user
+      const existingBudget = await storage.getBudget(budgetId);
+      if (!existingBudget || existingBudget.userId !== userId) {
+        return res.status(404).json({ error: "Budget not found" });
+      }
+      
+      const deleted = await storage.deleteBudget(budgetId);
       if (deleted) {
         res.status(204).send();
       } else {
@@ -338,19 +779,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Scheduled Payments ==========
-  app.get("/api/scheduled-payments", async (_req, res) => {
+  app.get("/api/scheduled-payments", authenticateToken, async (req, res) => {
     try {
-      const payments = await storage.getAllScheduledPayments();
+      const userId = req.user!.userId;
+      const payments = await storage.getAllScheduledPayments(userId);
       res.json(payments);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch scheduled payments" });
     }
   });
 
-  app.get("/api/scheduled-payments/:id", async (req, res) => {
+  app.get("/api/scheduled-payments/:id", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const payment = await storage.getScheduledPayment(parseInt(req.params.id));
-      if (payment) {
+      if (payment && payment.userId === userId) {
         res.json(payment);
       } else {
         res.status(404).json({ error: "Scheduled payment not found" });
@@ -360,19 +803,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/scheduled-payments", async (req, res) => {
+  app.post("/api/scheduled-payments", authenticateToken, async (req, res) => {
     try {
-      const validatedData = insertScheduledPaymentSchema.parse(req.body);
+      const userId = req.user!.userId;
+      console.log("🔍 [scheduled-payments] POST Request Debug:");
+      console.log("  User ID:", userId);
+      console.log("  Raw request body:", JSON.stringify(req.body, null, 2));
+      
+      const paymentData = { ...req.body, userId };
+      console.log("  Payment data with userId:", JSON.stringify(paymentData, null, 2));
+      
+      const validatedData = insertScheduledPaymentSchema.parse(paymentData);
+      console.log("  ✅ Validation passed, creating scheduled payment...");
+      
       const payment = await storage.createScheduledPayment(validatedData);
+      console.log("  ✅ Scheduled payment created successfully:", payment.id);
+      
       res.status(201).json(payment);
     } catch (error: any) {
+      console.error("❌ [scheduled-payments] POST Error:");
+      console.error("  Error type:", error.constructor.name);
+      console.error("  Error message:", error.message);
+      
+      if (error.name === 'ZodError') {
+        console.error("  🔴 Zod Validation Errors:");
+        error.issues?.forEach((issue: any, index: number) => {
+          console.error(`    ${index + 1}. Path: ${issue.path.join('.')}`);
+          console.error(`       Code: ${issue.code}`);
+          console.error(`       Message: ${issue.message}`);
+          if (issue.received !== undefined) {
+            console.error(`       Received: ${JSON.stringify(issue.received)}`);
+          }
+          if (issue.expected !== undefined) {
+            console.error(`       Expected: ${issue.expected}`);
+          }
+        });
+        
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: error.issues.map((issue: any) => ({
+            field: issue.path.join('.'),
+            code: issue.code,
+            message: issue.message,
+            received: issue.received,
+            expected: issue.expected
+          }))
+        });
+      }
+      
+      console.error("  Full error:", error);
       res.status(400).json({ error: error.message || "Invalid payment data" });
     }
   });
 
-  app.patch("/api/scheduled-payments/:id", async (req, res) => {
+  app.patch("/api/scheduled-payments/:id", authenticateToken, async (req, res) => {
     try {
-      const payment = await storage.updateScheduledPayment(parseInt(req.params.id), req.body);
+      const userId = req.user!.userId;
+      const paymentId = parseInt(req.params.id);
+      
+      // First verify the payment belongs to the user
+      const existingPayment = await storage.getScheduledPayment(paymentId);
+      if (!existingPayment || existingPayment.userId !== userId) {
+        return res.status(404).json({ error: "Scheduled payment not found" });
+      }
+      
+      const payment = await storage.updateScheduledPayment(paymentId, req.body);
       if (payment) {
         res.json(payment);
       } else {
@@ -383,9 +878,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/scheduled-payments/:id", async (req, res) => {
+  app.delete("/api/scheduled-payments/:id", authenticateToken, async (req, res) => {
     try {
-      const deleted = await storage.deleteScheduledPayment(parseInt(req.params.id));
+      const userId = req.user!.userId;
+      const paymentId = parseInt(req.params.id);
+      
+      // First verify the payment belongs to the user
+      const existingPayment = await storage.getScheduledPayment(paymentId);
+      if (!existingPayment || existingPayment.userId !== userId) {
+        return res.status(404).json({ error: "Scheduled payment not found" });
+      }
+      
+      const deleted = await storage.deleteScheduledPayment(paymentId);
       if (deleted) {
         res.status(204).send();
       } else {
@@ -397,10 +901,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Payment Occurrences (Monthly Checklist) ==========
-  app.get("/api/payment-occurrences", async (req, res) => {
+  app.get("/api/payment-occurrences", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const { month, year } = req.query;
-      const filters: any = {};
+      const filters: any = { userId };
       if (month) filters.month = parseInt(month as string);
       if (year) filters.year = parseInt(year as string);
 
@@ -412,8 +917,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Credit Card Bills ==========
-  app.get("/api/credit-card-bills", async (_req, res) => {
+  app.get("/api/credit-card-bills", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const bills = await storage.getCreditCardBills();
       res.json(bills);
     } catch (error) {
@@ -421,34 +927,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/payment-occurrences/generate", async (req, res) => {
+  app.post("/api/payment-occurrences/generate", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const { month, year } = req.body;
       if (!month || !year) {
         res.status(400).json({ error: "Month and year are required" });
         return;
       }
-      const occurrences = await storage.generatePaymentOccurrencesForMonth(month, year);
+      const occurrences = await storage.generatePaymentOccurrencesForMonth(month, year, userId);
       res.json(occurrences);
     } catch (error) {
       res.status(500).json({ error: "Failed to generate payment occurrences" });
     }
   });
 
-  app.patch("/api/payment-occurrences/:id", async (req, res) => {
+  app.patch("/api/payment-occurrences/:id", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const occurrenceId = parseInt(req.params.id);
       const { affectTransaction, affectAccountBalance, ...otherData } = req.body;
       
-      // Get current occurrence
+      // Get current occurrence and verify user ownership
       const currentOccurrence = await storage.getPaymentOccurrence(occurrenceId);
       if (!currentOccurrence) {
         return res.status(404).json({ error: "Payment occurrence not found" });
       }
 
-      // Get scheduled payment details
+      // Get scheduled payment details and verify user ownership
       const payment = await storage.getScheduledPayment(currentOccurrence.scheduledPaymentId);
-      if (!payment) {
+      if (!payment || payment.userId !== userId) {
         return res.status(404).json({ error: "Scheduled payment not found" });
       }
 
@@ -457,8 +965,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (affectTransaction && currentOccurrence.status === 'paid') {
           // Create transaction when toggle is enabled
           const account = await storage.getDefaultAccount();
-          if (account) {
+          if (account && payment.amount) {
             await storage.createTransaction({
+              userId: userId,
               type: 'debit',
               amount: payment.amount,
               merchant: payment.name,
@@ -488,7 +997,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           t.paymentOccurrenceId === occurrenceId
         );
         
-        if (matchingTransaction && matchingTransaction.accountId) {
+        if (matchingTransaction && matchingTransaction.accountId && payment.amount) {
           const account = await storage.getAccount(matchingTransaction.accountId);
           if (account) {
             const amount = parseFloat(payment.amount);
@@ -525,19 +1034,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Savings Goals ==========
-  app.get("/api/savings-goals", async (_req, res) => {
+  app.get("/api/savings-goals", authenticateToken, async (req, res) => {
     try {
-      const goals = await storage.getAllSavingsGoals();
+      const userId = req.user!.userId;
+      const goals = await storage.getAllSavingsGoals(userId);
       res.json(goals);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch savings goals" });
     }
   });
 
-  app.get("/api/savings-goals/:id", async (req, res) => {
+  app.get("/api/savings-goals/:id", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const goal = await storage.getSavingsGoal(parseInt(req.params.id));
-      if (goal) {
+      if (goal && goal.userId === userId) {
         res.json(goal);
       } else {
         res.status(404).json({ error: "Savings goal not found" });
@@ -547,17 +1058,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/savings-goals", async (req, res) => {
+  app.post("/api/savings-goals", authenticateToken, async (req, res) => {
     try {
-      const validatedData = insertSavingsGoalSchema.parse(req.body);
+      const userId = req.user!.userId;
+      console.log("🔍 [savings-goals] POST Request Debug:");
+      console.log("  User ID:", userId);
+      console.log("  Raw request body:", JSON.stringify(req.body, null, 2));
+      
+      const goalData = { ...req.body, userId };
+      console.log("  Goal data with userId:", JSON.stringify(goalData, null, 2));
+      
+      const validatedData = insertSavingsGoalSchema.parse(goalData);
+      console.log("  ✅ Validation passed, creating savings goal...");
+      
       const goal = await storage.createSavingsGoal(validatedData);
+      console.log("  ✅ Savings goal created successfully:", goal.id);
+      
       res.status(201).json(goal);
     } catch (error: any) {
+      console.error("❌ [savings-goals] POST Error:");
+      console.error("  Error type:", error.constructor.name);
+      console.error("  Error message:", error.message);
+      
+      if (error.name === 'ZodError') {
+        console.error("  🔴 Zod Validation Errors:");
+        error.issues?.forEach((issue: any, index: number) => {
+          console.error(`    ${index + 1}. Path: ${issue.path.join('.')}`);
+          console.error(`       Code: ${issue.code}`);
+          console.error(`       Message: ${issue.message}`);
+          if (issue.received !== undefined) {
+            console.error(`       Received: ${JSON.stringify(issue.received)}`);
+          }
+          if (issue.expected !== undefined) {
+            console.error(`       Expected: ${issue.expected}`);
+          }
+        });
+        
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: error.issues.map((issue: any) => ({
+            field: issue.path.join('.'),
+            code: issue.code,
+            message: issue.message,
+            received: issue.received,
+            expected: issue.expected
+          }))
+        });
+      }
+      
+      console.error("  Full error:", error);
       res.status(400).json({ error: error.message || "Invalid savings goal data" });
     }
   });
 
-  app.patch("/api/savings-goals/:id", async (req, res) => {
+  app.patch("/api/savings-goals/:id", authenticateToken, async (req, res) => {
     try {
       const goal = await storage.updateSavingsGoal(parseInt(req.params.id), req.body);
       if (goal) {
@@ -570,9 +1124,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/savings-goals/:id", async (req, res) => {
+  app.delete("/api/savings-goals/:id", authenticateToken, async (req, res) => {
     try {
-      const deleted = await storage.deleteSavingsGoal(parseInt(req.params.id));
+      const userId = req.user!.userId;
+      const goalId = parseInt(req.params.id);
+      
+      // First verify the goal belongs to the user
+      const existingGoal = await storage.getSavingsGoal(goalId);
+      if (!existingGoal || existingGoal.userId !== userId) {
+        return res.status(404).json({ error: "Savings goal not found" });
+      }
+      
+      const deleted = await storage.deleteSavingsGoal(goalId);
       if (deleted) {
         res.status(204).send();
       } else {
@@ -584,16 +1147,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Savings Contributions ==========
-  app.get("/api/savings-goals/:goalId/contributions", async (req, res) => {
+  app.get("/api/savings-goals/:goalId/contributions", authenticateToken, async (req, res) => {
     try {
-      const contributions = await storage.getSavingsContributions(parseInt(req.params.goalId));
+      const userId = req.user!.userId;
+      const goalId = parseInt(req.params.goalId);
+      
+      // First verify the goal belongs to the user
+      const goal = await storage.getSavingsGoal(goalId);
+      if (!goal || goal.userId !== userId) {
+        return res.status(404).json({ error: "Savings goal not found" });
+      }
+      
+      const contributions = await storage.getSavingsContributions(goalId);
       res.json(contributions);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch contributions" });
     }
   });
 
-  app.post("/api/savings-goals/:goalId/contributions", async (req, res) => {
+  app.post("/api/savings-goals/:goalId/contributions", authenticateToken, async (req, res) => {
     try {
       const goalId = parseInt(req.params.goalId);
       
@@ -625,6 +1197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (affectTransaction && goal.accountId && goal.toAccountId) {
         // When both from and to accounts are specified, create a single transfer transaction
         await storage.createTransaction({
+          userId: goal.userId,
           accountId: goal.accountId,
           toAccountId: goal.toAccountId,
           categoryId: null,
@@ -674,6 +1247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         await storage.createTransaction({
+          userId: goal.userId,
           accountId: goal.accountId,
           categoryId: savingsCategory.id,
           amount: validatedData.amount,
@@ -710,6 +1284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         await storage.createTransaction({
+          userId: goal.userId,
           accountId: goal.toAccountId,
           categoryId: savingsCategory.id,
           amount: validatedData.amount,
@@ -764,8 +1339,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/savings-contributions/:id", async (req, res) => {
+  app.delete("/api/savings-contributions/:id", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const contributionId = parseInt(req.params.id);
       
       // Get contribution details before deleting
@@ -775,9 +1351,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Contribution not found" });
       }
       
-      // Get the goal to access account configuration
+      // Get the goal to access account configuration and verify user ownership
       const goal = await storage.getSavingsGoal(contribution.savingsGoalId);
-      if (!goal) {
+      if (!goal || goal.userId !== userId) {
         return res.status(404).json({ error: "Savings goal not found" });
       }
       
@@ -855,24 +1431,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Salary Profile ==========
-  app.get("/api/salary-profile", async (_req, res) => {
+  app.get("/api/salary-profile", authenticateToken, async (req, res) => {
     try {
-      const profile = await storage.getSalaryProfile();
+      const userId = req.user!.userId;
+      const profile = await storage.getSalaryProfile(userId);
       res.json(profile || null);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch salary profile" });
     }
   });
 
-  app.post("/api/salary-profile", async (req, res) => {
+  app.post("/api/salary-profile", authenticateToken, async (req, res) => {
     try {
-      const validatedData = insertSalaryProfileSchema.parse(req.body);
-      // Add userId (set to null since no auth)
-      const profileData = {
-        ...validatedData,
-        userId: null,
-      };
-      const profile = await storage.createSalaryProfile(profileData);
+      const userId = req.user!.userId;
+      const profileData = { ...req.body, userId };
+      const validatedData = insertSalaryProfileSchema.parse(profileData);
+      const profile = await storage.createSalaryProfile(validatedData);
       
       // Auto-generate past 3 months salary cycles
       const pastPaydays = getPastPaydays(
@@ -911,7 +1485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/salary-profile/:id", async (req, res) => {
+  app.patch("/api/salary-profile/:id", authenticateToken, async (req, res) => {
     try {
       const profile = await storage.updateSalaryProfile(parseInt(req.params.id), req.body);
       if (profile) {
@@ -953,9 +1527,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/salary-profile/next-paydays", async (req, res) => {
+  app.get("/api/salary-profile/next-paydays", authenticateToken, async (req, res) => {
     try {
-      const profile = await storage.getSalaryProfile();
+      const userId = req.user!.userId;
+      const profile = await storage.getSalaryProfile(userId);
       if (!profile) {
         res.json([]);
         return;
@@ -974,9 +1549,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Salary Cycles ==========
-  app.get("/api/salary-cycles", async (req, res) => {
+  app.get("/api/salary-cycles", authenticateToken, async (req, res) => {
     try {
-      const profile = await storage.getSalaryProfile();
+      const userId = req.user!.userId;
+      const profile = await storage.getSalaryProfile(userId);
       if (!profile) {
         res.json([]);
         return;
@@ -989,9 +1565,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/salary-cycles", async (req, res) => {
+  app.post("/api/salary-cycles", authenticateToken, async (req, res) => {
     try {
-      const profile = await storage.getSalaryProfile();
+      const userId = req.user!.userId;
+      const profile = await storage.getSalaryProfile(userId);
       if (!profile) {
         res.status(400).json({ error: "Please create a salary profile first" });
         return;
@@ -1017,7 +1594,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/salary-cycles/:id", async (req, res) => {
+  app.patch("/api/salary-cycles/:id", authenticateToken, async (req, res) => {
     try {
       const cycleId = parseInt(req.params.id);
       const { markAsCredited, ...updateData } = req.body;
@@ -1030,7 +1607,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get salary profile to get account info
-      const profile = await storage.getSalaryProfile();
+      const userId = req.user!.userId;
+      const profile = await storage.getSalaryProfile(userId);
       if (!profile || !profile.accountId) {
         res.status(400).json({ error: "Salary profile or account not configured" });
         return;
@@ -1058,6 +1636,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Create transaction
           const transaction = await storage.createTransaction({
+            userId: userId,
             accountId: profile.accountId,
             categoryId: salaryCategory.id,
             type: 'credit',
@@ -1091,18 +1670,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Budget Summary ==========
-  app.get("/api/budget-summary", async (req, res) => {
+  app.get("/api/budget-summary", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const { month, year } = req.query;
       const currentMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
       const currentYear = year ? parseInt(year as string) : new Date().getFullYear();
 
-      const budgets = await storage.getAllBudgets({ month: currentMonth, year: currentYear });
+      const budgets = await storage.getAllBudgets({ userId, month: currentMonth, year: currentYear });
       const categories = await storage.getAllCategories();
       
       const startOfMonth = new Date(currentYear, currentMonth - 1, 1);
       const endOfMonth = new Date(currentYear, currentMonth, 0, 23, 59, 59);
       const transactions = await storage.getAllTransactions({
+        userId,
         startDate: startOfMonth,
         endDate: endOfMonth,
       });
@@ -1149,9 +1730,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Dashboard ==========
-  app.get("/api/dashboard", async (_req, res) => {
+  app.get("/api/dashboard", authenticateToken, async (req, res) => {
     try {
-      const stats = await storage.getDashboardStats();
+      const userId = req.user!.userId;
+      const stats = await storage.getDashboardStats(userId);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
@@ -1160,9 +1742,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get credit card billing cycle spending
-  app.get("/api/credit-card-spending", async (_req, res) => {
+  app.get("/api/credit-card-spending", authenticateToken, async (req, res) => {
     try {
-      const accounts = await storage.getAllAccounts();
+      const userId = req.user!.userId;
+      const accounts = await storage.getAllAccounts(userId);
       const creditCards = accounts.filter(acc => acc.type === 'credit_card' && acc.isActive && acc.billingDate);
       
       const cardSpending = [];
@@ -1224,8 +1807,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Expense Analytics ==========
-  app.get("/api/expenses/monthly", async (_req, res) => {
+  app.get("/api/expenses/monthly", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const now = new Date();
       const monthlyData = [];
       
@@ -1266,9 +1850,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get credit card spending trend
-  app.get("/api/credit-card-spending/monthly", async (_req, res) => {
+  app.get("/api/credit-card-spending/monthly", authenticateToken, async (req, res) => {
     try {
-      const accounts = await storage.getAllAccounts();
+      const userId = req.user!.userId;
+      const accounts = await storage.getAllAccounts(userId);
       const creditCards = accounts.filter(acc => acc.type === 'credit_card' && acc.isActive);
       
       if (creditCards.length === 0) {
@@ -1321,8 +1906,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/expenses/category-breakdown", async (req, res) => {
+  app.get("/api/expenses/category-breakdown", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const { month, year } = req.query;
       
       if (!month || !year) {
@@ -1399,33 +1985,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { sender, message, receivedAt } = req.body;
       
-      // Create SMS log
-      const smsLog = await storage.createSmsLog({
-        sender,
+      // Build SMS log data
+      const smsLogData: any = {
         message,
         receivedAt: receivedAt || new Date().toISOString(),
         isParsed: false,
-      });
+      };
+      
+      // Only add sender if it's provided and not empty
+      if (sender && typeof sender === 'string') {
+        smsLogData.sender = sender;
+      }
+      
+      // Create SMS log
+      const smsLog = await storage.createSmsLog(smsLogData);
 
       // Parse SMS for transaction data
       const parsedData = await parseSmsMessage(message, sender);
       
       if (parsedData && parsedData.amount) {
-        // Find or suggest category
-        const categoryName = await suggestCategory(parsedData.merchant || parsedData.description || "");
-        const category = await storage.getCategoryByName(categoryName);
+        // Use OpenAI to suggest category based on merchant/description (with fallback)
+        let category;
+        try {
+          console.log(`Calling OpenAI to categorize: "${parsedData.merchant || parsedData.description}"`);
+          const categoryName = await suggestCategory(parsedData.merchant || parsedData.description || "");
+          console.log(`OpenAI suggested category: ${categoryName}`);
+          category = await storage.getCategoryByName(categoryName);
+        } catch (error: any) {
+          console.error(`OpenAI failed (${error.message}), using fallback categorization`);
+          // Fallback uses keyword matching based on merchant/description
+          const fallbackCategoryName = fallbackCategorization(parsedData.merchant || parsedData.description || "");
+          console.log(`Fallback suggested category: ${fallbackCategoryName}`);
+          category = await storage.getCategoryByName(fallbackCategoryName);
+        }
         
-        // Create transaction
-        const transaction = await storage.createTransaction({
+        // Get default account or first active account
+        const accounts = await storage.getAllAccounts();
+        const defaultAccount = accounts.find(acc => acc.isDefault) || accounts.find(acc => acc.isActive) || accounts[0];
+        
+        // Build transaction data object
+        const transactionData: any = {
           amount: parsedData.amount.toString(),
           type: parsedData.type || "debit",
-          description: parsedData.description,
-          merchant: parsedData.merchant,
-          referenceNumber: parsedData.referenceNumber,
           transactionDate: parsedData.date || new Date().toISOString(),
-          categoryId: category?.id,
-          smsId: smsLog.id,
-        });
+        };
+        
+        // Only add optional fields if they have values
+        if (parsedData.description) transactionData.description = parsedData.description;
+        if (parsedData.merchant) transactionData.merchant = parsedData.merchant;
+        if (parsedData.referenceNumber) transactionData.referenceNumber = parsedData.referenceNumber;
+        if (category?.id) transactionData.categoryId = category.id;
+        if (defaultAccount?.id) transactionData.accountId = defaultAccount.id;
+        if (smsLog?.id) transactionData.smsId = smsLog.id;
+        
+        // Create transaction
+        const transaction = await storage.createTransaction(transactionData);
 
         // Update SMS log
         await storage.updateSmsLogTransaction(smsLog.id, transaction.id);
@@ -1443,12 +2057,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
     } catch (error: any) {
+      console.error("SMS parsing error:", error.message);
       res.status(500).json({ error: error.message || "Failed to parse SMS" });
     }
   });
 
+  // ========== Batch SMS Parsing ==========
+  app.post("/api/parse-sms-batch", async (req, res) => {
+    try {
+      const { messages } = req.body; // Array of SMS message strings or objects
+      
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: "Messages array is required" });
+      }
+
+      const results = [];
+      const accounts = await storage.getAllAccounts();
+      const defaultAccount = accounts.find(acc => acc.isDefault) || accounts.find(acc => acc.isActive) || accounts[0];
+      
+      for (const msg of messages) {
+        const messageText = typeof msg === 'string' ? msg : msg.message;
+        const sender = typeof msg === 'string' ? undefined : msg.sender;
+        
+        try {
+          // Create SMS log
+          const smsLogData: any = {
+            message: messageText,
+            receivedAt: new Date().toISOString(),
+            isParsed: false,
+          };
+          if (sender) smsLogData.sender = sender;
+          
+          const smsLog = await storage.createSmsLog(smsLogData);
+
+          // Parse SMS
+          const parsedData = await parseSmsMessage(messageText, sender);
+          
+          if (parsedData && parsedData.amount) {
+            // Get category
+            let category;
+            try {
+              const categoryName = await suggestCategory(parsedData.merchant || parsedData.description || "");
+              category = await storage.getCategoryByName(categoryName);
+            } catch (error: any) {
+              const fallbackCategoryName = fallbackCategorization(parsedData.merchant || parsedData.description || "");
+              category = await storage.getCategoryByName(fallbackCategoryName);
+            }
+            
+            // Build transaction data
+            const transactionData: any = {
+              amount: parsedData.amount.toString(),
+              type: parsedData.type || "debit",
+              transactionDate: parsedData.date || new Date().toISOString(),
+            };
+            
+            if (parsedData.description) transactionData.description = parsedData.description;
+            if (parsedData.merchant) transactionData.merchant = parsedData.merchant;
+            if (parsedData.referenceNumber) transactionData.referenceNumber = parsedData.referenceNumber;
+            if (category?.id) transactionData.categoryId = category.id;
+            if (defaultAccount?.id) transactionData.accountId = defaultAccount.id;
+            if (smsLog?.id) transactionData.smsId = smsLog.id;
+            
+            // Create transaction
+            const transaction = await storage.createTransaction(transactionData);
+            await storage.updateSmsLogTransaction(smsLog.id, transaction.id);
+            
+            results.push({ 
+              success: true, 
+              transaction,
+              message: messageText.substring(0, 50) + '...'
+            });
+          } else {
+            results.push({ 
+              success: false, 
+              message: messageText.substring(0, 50) + '...',
+              error: "Could not parse transaction data"
+            });
+          }
+        } catch (error: any) {
+          results.push({ 
+            success: false, 
+            message: messageText.substring(0, 50) + '...',
+            error: error.message 
+          });
+        }
+      }
+      
+      const successful = results.filter(r => r.success).length;
+      res.json({ 
+        total: messages.length,
+        successful,
+        failed: messages.length - successful,
+        results 
+      });
+    } catch (error: any) {
+      console.error("Batch SMS parsing error:", error.message);
+      res.status(500).json({ error: error.message || "Failed to parse batch SMS" });
+    }
+  });
+
   // ========== Export Data ==========
-  app.post("/api/export", async (req, res) => {
+  app.post("/api/export", authenticateToken, async (req, res) => {
     try {
       const { format, startDate, endDate } = req.body;
       
@@ -1495,12 +2204,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== User Settings ==========
-  app.get("/api/user", async (_req, res) => {
+  app.get("/api/user", authenticateToken, async (req, res) => {
     try {
-      // For single-user app, get or create default user
-      let user = await storage.getUser(1);
+      const userId = req.user!.userId;
+      let user = await storage.getUser(userId);
       if (!user) {
-        user = await storage.createUser({ name: "User" });
+        return res.status(404).json({ error: "User not found" });
       }
       res.json(user);
     } catch (error) {
@@ -1508,9 +2217,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/user", async (req, res) => {
+  app.patch("/api/user", authenticateToken, async (req, res) => {
     try {
-      const user = await storage.updateUser(1, req.body);
+      const userId = req.user!.userId;
+      const user = await storage.updateUser(userId, req.body);
       if (user) {
         res.json(user);
       } else {
@@ -1521,29 +2231,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/user/set-pin", async (req, res) => {
+  app.post("/api/user/set-pin", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const { pin } = req.body;
       if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
         res.status(400).json({ error: "PIN must be 4 digits" });
         return;
       }
       const pinHash = await bcrypt.hash(pin, 10);
-      await storage.updateUser(1, { pinHash });
+      await storage.updateUser(userId, { pinHash });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to set PIN" });
     }
   });
 
-  app.post("/api/user/verify-pin", async (req, res) => {
+  app.post("/api/user/verify-pin", authenticateToken, async (req, res) => {
     try {
+      const userId = req.user!.userId;
       const { pin } = req.body;
       if (!pin) {
         res.json({ valid: false, message: "PIN required" });
         return;
       }
-      const user = await storage.getUser(1);
+      const user = await storage.getUser(userId);
       if (!user || !user.pinHash) {
         res.json({ valid: false, message: "No PIN set" });
         return;
@@ -1555,7 +2267,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/user/reset-pin", async (_req, res) => {
+  app.post("/api/user/reset-pin", authenticateToken, async (req, res) => {
     try {
       await storage.updateUser(1, { pinHash: null });
       res.json({ success: true });
@@ -1565,9 +2277,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Loans ==========
-  app.get("/api/loans", async (_req, res) => {
+  app.get("/api/loans", authenticateToken, async (req, res) => {
     try {
-      const loans = await storage.getAllLoans();
+      const userId = req.user!.userId;
+      const loans = await storage.getAllLoans(userId);
       res.json(loans);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch loans" });
@@ -1587,9 +2300,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/loans", async (req, res) => {
+  app.post("/api/loans", authenticateToken, async (req, res) => {
     try {
-      const validatedData = insertLoanSchema.parse(req.body);
+      const userId = req.user!.userId;
+      const loanData = { ...req.body, userId };
+      const validatedData = insertLoanSchema.parse(loanData);
       const loan = await storage.createLoan(validatedData);
       
       // Auto-generate installments if EMI info is provided
@@ -1629,7 +2344,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/loans/:id/regenerate-installments", async (req, res) => {
+  app.post("/api/loans/:id/regenerate-installments", authenticateToken, async (req, res) => {
     try {
       const loanId = parseInt(req.params.id);
       console.log('API: Regenerate installments requested for loan:', loanId);
@@ -1645,7 +2360,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Pre-close a loan
-  app.post("/api/loans/:id/preclose", async (req, res) => {
+  app.post("/api/loans/:id/preclose", authenticateToken, async (req, res) => {
     try {
       const loanId = parseInt(req.params.id);
       const { closureAmount, closureDate, accountId, createTransaction } = req.body;
@@ -1733,7 +2448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Top-up a loan (add additional principal)
-  app.post("/api/loans/:id/topup", async (req, res) => {
+  app.post("/api/loans/:id/topup", authenticateToken, async (req, res) => {
     try {
       const loanId = parseInt(req.params.id);
       const { 
@@ -1838,7 +2553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/loans/:id/generate-schedule", async (req, res) => {
+  app.post("/api/loans/:id/generate-schedule", authenticateToken, async (req, res) => {
     try {
       const installments = await storage.generateLoanInstallments(parseInt(req.params.id));
       res.json(installments);
@@ -1847,7 +2562,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/loans/:id/generate-installments", async (req, res) => {
+  app.post("/api/loans/:id/generate-installments", authenticateToken, async (req, res) => {
     try {
       const installments = await storage.generateLoanInstallments(parseInt(req.params.id));
       res.json(installments);
@@ -1895,7 +2610,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/loans/:loanId/installments/:id/pay", async (req, res) => {
+  app.post("/api/loans/:loanId/installments/:id/pay", authenticateToken, async (req, res) => {
     try {
       const { paidDate, paidAmount, accountId, notes, createTransaction, affectBalance } = req.body;
       const loanId = parseInt(req.params.loanId);
@@ -1962,7 +2677,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/loans/:loanId/terms", async (req, res) => {
+  app.post("/api/loans/:loanId/terms", authenticateToken, async (req, res) => {
     try {
       const validatedData = insertLoanTermSchema.parse({
         ...req.body,
@@ -1986,7 +2701,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/loans/:loanId/payments", async (req, res) => {
+  app.post("/api/loans/:loanId/payments", authenticateToken, async (req, res) => {
     try {
       const validatedData = insertLoanPaymentSchema.parse({
         ...req.body,
@@ -2040,7 +2755,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/loans/:loanId/components", async (req, res) => {
+  app.post("/api/loans/:loanId/components", authenticateToken, async (req, res) => {
     try {
       const validatedData = insertLoanComponentSchema.parse({
         ...req.body,
@@ -2268,9 +2983,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== Insurance ==========
-  app.get("/api/insurances", async (_req, res) => {
+  app.get("/api/insurances", authenticateToken, async (req, res) => {
     try {
-      const insurances = await storage.getAllInsurances();
+      const userId = req.user!.userId;
+      const insurances = await storage.getAllInsurances(userId);
       res.json(insurances);
     } catch (error) {
       console.error("Error fetching insurances:", error);
@@ -2292,9 +3008,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/insurances", async (req, res) => {
+  app.post("/api/insurances", authenticateToken, async (req, res) => {
     try {
-      const validatedData = insertInsuranceSchema.parse(req.body);
+      const userId = req.user!.userId;
+      const insuranceData = { ...req.body, userId };
+      const validatedData = insertInsuranceSchema.parse(insuranceData);
       const insurance = await storage.createInsurance(validatedData);
       
       // Auto-generate premium terms
@@ -2354,7 +3072,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/insurances/:insuranceId/premiums", async (req, res) => {
+  app.post("/api/insurances/:insuranceId/premiums", authenticateToken, async (req, res) => {
     try {
       const validatedData = insertInsurancePremiumSchema.parse({
         ...req.body,
@@ -2380,7 +3098,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/insurances/:insuranceId/premiums/:id/pay", async (req, res) => {
+  app.post("/api/insurances/:insuranceId/premiums/:id/pay", authenticateToken, async (req, res) => {
     try {
       const { amount, accountId, createTransaction: shouldCreateTransaction, affectAccountBalance } = req.body;
       const premiumId = parseInt(req.params.id);
@@ -2405,6 +3123,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           const transaction = await storage.createTransaction({
+            userId: insurance.userId,
             accountId: targetAccountId || insurance.accountId,
             categoryId: category.id,
             amount,
@@ -2454,7 +3173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Regenerate premiums for an insurance
-  app.post("/api/insurances/:id/regenerate-premiums", async (req, res) => {
+  app.post("/api/insurances/:id/regenerate-premiums", authenticateToken, async (req, res) => {
     try {
       const premiums = await storage.generateInsurancePremiums(parseInt(req.params.id));
       res.json(premiums);

@@ -74,28 +74,18 @@ export default function SalaryScreen() {
 
   const { data: profile, isLoading } = useQuery<SalaryProfile | null>({
     queryKey: ['salary-profile'],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE_URL}/api/salary-profile`);
-      if (!res.ok) return null;
-      return res.json();
-    },
+    queryFn: () => api.getSalaryProfile(),
   });
 
   const { data: nextPaydays = [] } = useQuery<Payday[]>({
     queryKey: ['salary-profile-paydays'],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE_URL}/api/salary-profile/next-paydays?count=3`);
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryFn: () => api.getNextPaydays(3),
   });
 
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['accounts'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE_URL}/api/accounts`);
-      if (!res.ok) return [];
-      const allAccounts = await res.json();
+      const allAccounts = await api.getAccounts();
       return allAccounts.filter((acc: Account) => acc.type === 'bank');
     },
   });
@@ -114,22 +104,12 @@ export default function SalaryScreen() {
 
   const { data: salaryCycles = [] } = useQuery<SalaryCycle[]>({
     queryKey: ['salary-cycles'],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE_URL}/api/salary-cycles?limit=3`);
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryFn: () => api.getSalaryCycles(),
   });
 
   const updateCycleMutation = useMutation({
     mutationFn: async ({ id, actualPayDate, actualAmount, markAsCredited }: { id: number; actualPayDate: string; actualAmount: string; markAsCredited: boolean }) => {
-      const res = await fetch(`${API_BASE_URL}/api/salary-cycles/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actualPayDate, actualAmount, markAsCredited }),
-      });
-      if (!res.ok) throw new Error('Failed to update');
-      return res.json();
+      return api.updateSalaryCycle(id, { actualPayDate, actualAmount, markAsCredited });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['salary-cycles'] });
@@ -175,21 +155,15 @@ export default function SalaryScreen() {
   const handleSaveNextPayday = useCallback(() => {
     // Create or update a salary cycle for this month
     const mutation = async () => {
-      const res = await fetch(`${API_BASE_URL}/api/salary-cycles`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          salaryProfileId: profile?.id,
-          month: editingNextPayday?.month,
-          year: editingNextPayday?.year,
-          expectedPayDate: editNextPaydayDate,
-          expectedAmount: editNextPaydayAmount,
-          actualPayDate: null,
-          actualAmount: null,
-        }),
+      return api.createSalaryCycle({
+        salaryProfileId: profile?.id,
+        month: editingNextPayday?.month,
+        year: editingNextPayday?.year,
+        expectedPayDate: editNextPaydayDate,
+        expectedAmount: editNextPaydayAmount,
+        actualPayDate: null,
+        actualAmount: null,
       });
-      if (!res.ok) throw new Error('Failed to save');
-      return res.json();
     };
 
     mutation()
@@ -238,21 +212,11 @@ export default function SalaryScreen() {
         isActive: true,
       };
 
-      const url = profile 
-        ? `${API_BASE_URL}/api/salary-profile/${profile.id}`
-        : `${API_BASE_URL}/api/salary-profile`;
-
-      const res = await fetch(url, {
-        method: profile ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to save');
+      if (profile) {
+        return api.updateSalaryProfile(profile.id, data);
+      } else {
+        return api.createSalaryProfile(data);
       }
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['salary-profile'] });
@@ -758,7 +722,11 @@ export default function SalaryScreen() {
               </TouchableOpacity>
             </View>
             <View style={styles.datePickerContent}>
-              <ScrollView style={styles.datePickerScroll}>
+              <ScrollView 
+                style={styles.datePickerScroll}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
                 {/* Generate date options for the month */}
                 {(() => {
                   const year = editingCycle.year;
@@ -883,7 +851,11 @@ export default function SalaryScreen() {
               </TouchableOpacity>
             </View>
             <View style={styles.datePickerContent}>
-              <ScrollView style={styles.datePickerScroll}>
+              <ScrollView 
+                style={styles.datePickerScroll}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
                 {/* Generate date options for the month */}
                 {(() => {
                   const year = editingNextPayday.year;

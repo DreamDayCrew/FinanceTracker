@@ -207,6 +207,8 @@ export default function TransactionsScreen() {
 
   const renderTransaction = (transaction: Transaction) => {
     const isWeb = Platform.OS === 'web';
+    // Show action buttons when swipe is disabled on mobile or on web
+    const showActionButtons = isWeb || !swipeSettings.enabled;
     
     const content = (
       <View style={[styles.transactionCard, { backgroundColor: colors.card }]}>
@@ -235,7 +237,7 @@ export default function TransactionsScreen() {
         ]}>
           {transaction.type === 'credit' ? '+' : '-'}{formatCurrency(transaction.amount)}
         </Text>
-        {isWeb && (
+        {showActionButtons && (
           <View style={styles.webActions}>
             <TouchableOpacity 
               style={[styles.webActionButton, { backgroundColor: colors.primary }]}
@@ -631,6 +633,8 @@ export default function TransactionsScreen() {
           value={startDate || new Date()}
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          themeVariant={resolvedTheme === 'dark' ? 'dark' : 'light'}
+          textColor={colors.text}
           onChange={(event, selectedDate) => {
             setShowStartDatePicker(Platform.OS === 'ios');
             if (selectedDate) {
@@ -645,6 +649,8 @@ export default function TransactionsScreen() {
           value={endDate || new Date()}
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          themeVariant={resolvedTheme === 'dark' ? 'dark' : 'light'}
+          textColor={colors.text}
           onChange={(event, selectedDate) => {
             setShowEndDatePicker(Platform.OS === 'ios');
             if (selectedDate) {

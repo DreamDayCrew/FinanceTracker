@@ -33,8 +33,11 @@ import { alias } from "drizzle-orm/pg-core";
 export interface IStorage {
   // Users
   getUser(id: number): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
+  updateUserPin(id: number, pinHash: string): Promise<User | undefined>;
+  updateUserBiometric(id: number, biometricEnabled: boolean): Promise<User | undefined>;
 
   // Accounts
   getAllAccounts(userId?: number): Promise<Account[]>;
@@ -85,13 +88,14 @@ export interface IStorage {
   // SMS Logs
   createSmsLog(smsLog: InsertSmsLog): Promise<SmsLog>;
   updateSmsLogTransaction(id: number, transactionId: number): Promise<SmsLog | undefined>;
+  clearSmsLogTransaction(id: number): Promise<void>;
 
   // Payment Occurrences
-  getPaymentOccurrences(filters?: { month?: number; year?: number; scheduledPaymentId?: number }): Promise<(PaymentOccurrence & { scheduledPayment?: ScheduledPayment })[]>;
+  getPaymentOccurrences(filters?: { userId?: number; month?: number; year?: number; scheduledPaymentId?: number }): Promise<(PaymentOccurrence & { scheduledPayment?: ScheduledPayment })[]>;
   getPaymentOccurrence(id: number): Promise<PaymentOccurrence | undefined>;
   createPaymentOccurrence(occurrence: InsertPaymentOccurrence): Promise<PaymentOccurrence>;
   updatePaymentOccurrence(id: number, data: Partial<InsertPaymentOccurrence>): Promise<PaymentOccurrence | undefined>;
-  generatePaymentOccurrencesForMonth(month: number, year: number): Promise<PaymentOccurrence[]>;
+  generatePaymentOccurrencesForMonth(month: number, year: number, userId?: number): Promise<PaymentOccurrence[]>;
 
   // Savings Goals
   getAllSavingsGoals(userId?: number): Promise<SavingsGoal[]>;
@@ -184,6 +188,11 @@ export class DatabaseStorage implements IStorage {
     return user || undefined;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
+  }
+
   async createUser(user: InsertUser): Promise<User> {
     const [newUser] = await db.insert(users).values(user).returning();
     return newUser;
@@ -191,6 +200,16 @@ export class DatabaseStorage implements IStorage {
 
   async updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined> {
     const [updated] = await db.update(users).set({ ...user, updatedAt: new Date() }).where(eq(users.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async updateUserPin(id: number, pinHash: string): Promise<User | undefined> {
+    const [updated] = await db.update(users).set({ pinHash, updatedAt: new Date() }).where(eq(users.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async updateUserBiometric(id: number, biometricEnabled: boolean): Promise<User | undefined> {
+    const [updated] = await db.update(users).set({ biometricEnabled, updatedAt: new Date() }).where(eq(users.id, id)).returning();
     return updated || undefined;
   }
 
@@ -683,10 +702,25 @@ export class DatabaseStorage implements IStorage {
 
   // SMS Logs
   async createSmsLog(smsLog: InsertSmsLog): Promise<SmsLog> {
-    const [newLog] = await db.insert(smsLogs).values({
-      ...smsLog,
+    // Build insert data with only defined values
+    const insertData: any = {
+      message: smsLog.message,
       receivedAt: smsLog.receivedAt ? new Date(smsLog.receivedAt) : new Date(),
-    }).returning();
+      isParsed: smsLog.isParsed !== undefined ? smsLog.isParsed : false,
+    };
+    
+    // Only add optional fields if they have proper values
+    if (smsLog.sender && typeof smsLog.sender === 'string') {
+      insertData.sender = smsLog.sender;
+    }
+    if (smsLog.userId && typeof smsLog.userId === 'number') {
+      insertData.userId = smsLog.userId;
+    }
+    if (smsLog.transactionId && typeof smsLog.transactionId === 'number') {
+      insertData.transactionId = smsLog.transactionId;
+    }
+    
+    const [newLog] = await db.insert(smsLogs).values(insertData).returning();
     return newLog;
   }
 
@@ -696,6 +730,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(smsLogs.id, id))
       .returning();
     return updated || undefined;
+  }
+
+  async clearSmsLogTransaction(id: number): Promise<void> {
+    await db.update(smsLogs)
+      .set({ transactionId: null, isParsed: false })
+      .where(eq(smsLogs.id, id));
   }
 
   // Dashboard Analytics
@@ -852,9 +892,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Payment Occurrences
-  async getPaymentOccurrences(filters?: { month?: number; year?: number; scheduledPaymentId?: number }): Promise<(PaymentOccurrence & { scheduledPayment?: ScheduledPayment })[]> {
+  async getPaymentOccurrences(filters?: { userId?: number; month?: number; year?: number; scheduledPaymentId?: number }): Promise<(PaymentOccurrence & { scheduledPayment?: ScheduledPayment })[]> {
     const conditions = [];
     
+    if (filters?.userId) {
+      conditions.push(eq(scheduledPayments.userId, filters.userId));
+    }
     if (filters?.month) {
       conditions.push(eq(paymentOccurrences.month, filters.month));
     }
@@ -911,8 +954,8 @@ export class DatabaseStorage implements IStorage {
     return updated || undefined;
   }
 
-  async generatePaymentOccurrencesForMonth(month: number, year: number): Promise<PaymentOccurrence[]> {
-    const allPayments = await this.getAllScheduledPayments();
+  async generatePaymentOccurrencesForMonth(month: number, year: number, userId?: number): Promise<PaymentOccurrence[]> {
+    const allPayments = await this.getAllScheduledPayments(userId);
     const activePayments = allPayments.filter(p => p.status === 'active');
     const generatedOccurrences: PaymentOccurrence[] = [];
 
@@ -1422,6 +1465,19 @@ export class DatabaseStorage implements IStorage {
     console.log('Storage: Generating new installments from current date...');
     const newInstallments = await this.generateLoanInstallments(loanId, true);
     console.log('Storage: Generated', newInstallments.length, 'new installments');
+    
+    // Update loan's nextEmiDate with the first pending installment's due date
+    if (newInstallments.length > 0) {
+      const firstInstallmentDate = newInstallments[0].dueDate;
+      await db.update(loans)
+        .set({
+          nextEmiDate: firstInstallmentDate,
+          updatedAt: new Date(),
+        })
+        .where(eq(loans.id, loanId));
+      console.log('Storage: Updated loan nextEmiDate to:', firstInstallmentDate);
+    }
+    
     return newInstallments;
   }
 
@@ -1497,7 +1553,20 @@ export class DatabaseStorage implements IStorage {
     
     let remainingPrincipal = principal;
 
-    for (let i = 1; i <= loan.tenure; i++) {
+    // Determine the starting index based on whether current month should be included
+    // If today's date < EMI date in current month, include current month (start from i=0)
+    // Otherwise, start from next month (i=1)
+    // This logic applies to both initial generation and regeneration
+    const today = new Date();
+    const currentDayOfMonth = today.getDate();
+    const shouldIncludeCurrentMonth = currentDayOfMonth < emiDay;
+    const startIndex = shouldIncludeCurrentMonth ? 0 : 1;
+    
+    console.log('Current day:', currentDayOfMonth, 'EMI day:', emiDay, 
+                'Should include current month:', shouldIncludeCurrentMonth, 
+                'Start index:', startIndex, 'Use current date:', useCurrentDate);
+
+    for (let i = startIndex; i <= loan.tenure + startIndex - 1; i++) {
       // Calculate interest for this installment
       const interestAmount = remainingPrincipal * interestRate;
       // Principal is the remaining amount after interest
@@ -1516,9 +1585,12 @@ export class DatabaseStorage implements IStorage {
       const lastDayOfMonth = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0).getDate();
       dueDate.setDate(Math.min(emiDay, lastDayOfMonth));
 
+      // Installment number should always start from 1
+      const installmentNumber = i - startIndex + 1;
+
       const [newInstallment] = await db.insert(loanInstallments).values({
         loanId,
-        installmentNumber: i,
+        installmentNumber,
         dueDate,
         emiAmount: emiAmount.toFixed(2),
         principalAmount: principalAmount.toFixed(2),

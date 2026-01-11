@@ -32,19 +32,39 @@ import InsuranceScreen from './src/screens/InsuranceScreen';
 import AddInsuranceScreen from './src/screens/AddInsuranceScreen';
 import InsuranceDetailsScreen from './src/screens/InsuranceDetailsScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
+import PinSetupScreen from './src/screens/PinSetupScreen';
+import LoginScreen from './src/screens/LoginScreen';
+import OTPVerificationScreen from './src/screens/OTPVerificationScreen';
+import SetPasswordScreen from './src/screens/SetPasswordScreen';
 import ExpenseDetailsScreen from './src/screens/ExpenseDetailsScreen';
 import CreditCardDetailsScreen from './src/screens/CreditCardDetailsScreen';
 
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import { NetworkProvider } from './src/contexts/NetworkContext';
 import { getThemedColors, COLORS } from './src/lib/utils';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60 * 2,
-      retry: 3,
+      retry: (failureCount, error) => {
+        // Don't retry on network errors
+        if (error instanceof Error && error.message.includes('No internet connection')) {
+          return false;
+        }
+        return failureCount < 3;
+      },
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    },
+    mutations: {
+      retry: (failureCount, error) => {
+        // Don't retry mutations on network errors
+        if (error instanceof Error && error.message.includes('No internet connection')) {
+          return false;
+        }
+        return false; // Generally don't retry mutations
+      },
     },
   },
 });
@@ -69,11 +89,16 @@ export type MoreStackParamList = {
 };
 
 export type RootStackParamList = {
+  Login: undefined;
+  OTPVerification: { email: string; username: string };
+  SetPassword: undefined;
+  PinSetup: undefined;
   Main: undefined;
   AddTransaction: { accountId?: number; transactionId?: number } | undefined;
   AddAccount: { accountId?: number } | undefined;
   ExpenseDetails: undefined;
   CreditCardDetails: undefined;
+  Settings: undefined;
 };
 
 export type TabParamList = {
@@ -260,7 +285,7 @@ function TabNavigator() {
 
 function MainApp() {
   const { resolvedTheme } = useTheme();
-  const { isLocked, isLoading } = useAuth();
+  const { isLocked, isLoading, isAuthenticated, hasPassword } = useAuth();
   const colors = getThemedColors(resolvedTheme);
   
   const navigationTheme = resolvedTheme === 'dark' ? {
@@ -293,22 +318,51 @@ function MainApp() {
     );
   }
 
+  // Show login if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <NavigationContainer theme={navigationTheme}>
+        <RootStack.Navigator
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          <RootStack.Screen name="Login" component={LoginScreen} />
+          <RootStack.Screen name="OTPVerification" component={OTPVerificationScreen} />
+          <RootStack.Screen name="SetPassword" component={SetPasswordScreen} />
+        </RootStack.Navigator>
+      </NavigationContainer>
+    );
+  }
+
+  // Show password setup if authenticated but no password set
+  if (isAuthenticated && !hasPassword) {
+    return (
+      <NavigationContainer theme={navigationTheme}>
+        <RootStack.Navigator
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          <RootStack.Screen name="SetPassword" component={SetPasswordScreen} />
+        </RootStack.Navigator>
+      </NavigationContainer>
+    );
+  }
+
+  // Show PIN lock if authenticated and locked
   if (isLocked) {
     return <PinLockScreen />;
   }
 
+  // Show main app if authenticated and unlocked
   return (
     <NavigationContainer theme={navigationTheme}>
       <RootStack.Navigator
         screenOptions={{
-          headerBackground: () => (
-            <LinearGradient
-              colors={[colors.gradientStart, colors.gradientEnd]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={{ flex: 1 }}
-            />
-          ),
+          headerStyle: {
+            backgroundColor: colors.primary,
+          },
           headerTintColor: '#fff',
           headerTitleStyle: {
             fontWeight: '600',
@@ -319,6 +373,14 @@ function MainApp() {
           name="Main" 
           component={TabNavigator} 
           options={{ headerShown: false }}
+        />
+        <RootStack.Screen 
+          name="PinSetup" 
+          component={PinSetupScreen}
+          options={{ 
+            title: 'Setup PIN',
+            headerShown: false
+          }}
         />
         <RootStack.Screen 
           name="AddTransaction" 
@@ -346,6 +408,17 @@ function MainApp() {
           component={CreditCardDetailsScreen}
           options={{ headerShown: false }}
         />
+        <RootStack.Screen 
+          name="Settings" 
+          component={SettingsScreen}
+          options={{ 
+            title: 'Settings',
+            headerStyle: {
+              backgroundColor: colors.primary,
+            },
+            headerTintColor: '#fff',
+          }}
+        />
       </RootStack.Navigator>
     </NavigationContainer>
   );
@@ -358,9 +431,11 @@ export default function App() {
         <SafeAreaProvider>
           <ThemeProvider>
             <AuthProvider>
-              <MainApp />
-              <StatusBar style="auto" />
-              <Toast />
+              <NetworkProvider>
+                <MainApp />
+                <StatusBar style="auto" />
+                <Toast />
+              </NetworkProvider>
             </AuthProvider>
           </ThemeProvider>
         </SafeAreaProvider>

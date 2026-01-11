@@ -7,13 +7,14 @@ import { api } from '../lib/api';
 import { getThemedColors } from '../lib/utils';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { checkBiometricAvailability, getBiometricName } from '../lib/biometric';
 
 export default function SettingsScreen() {
   const queryClient = useQueryClient();
   const [showPinModal, setShowPinModal] = useState(false);
   const [pin, setPin] = useState('');
   const { theme, setTheme, resolvedTheme } = useTheme();
-  const { checkPinRequired } = useAuth();
+  const { checkPinRequired, user: authUser, logout } = useAuth();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
 
   // Swipe gesture settings
@@ -147,8 +148,40 @@ export default function SettingsScreen() {
     return `Auto (${resolvedTheme})`;
   };
 
-  const toggleBiometric = () => {
-    updateUserMutation.mutate({ biometricEnabled: !user?.biometricEnabled });
+  const toggleBiometric = async () => {
+    if (!authUser) {
+      Alert.alert('Error', 'User not found');
+      return;
+    }
+    
+    const newValue = !authUser.biometricEnabled;
+    
+    // If enabling, check device capability first
+    if (newValue) {
+      const biometricInfo = await checkBiometricAvailability();
+      
+      if (!biometricInfo.isAvailable) {
+        Alert.alert('Not Available', 'Your device does not support biometric authentication.');
+        return;
+      }
+      
+      if (!biometricInfo.isEnrolled) {
+        Alert.alert(
+          'No Biometrics Enrolled', 
+          `Please enroll your ${getBiometricName(biometricInfo.biometricType).toLowerCase()} in your device settings first.`
+        );
+        return;
+      }
+    }
+    
+    try {
+      await api.toggleBiometric(authUser.id, newValue);
+      Alert.alert('Success', newValue ? 'Biometric authentication enabled' : 'Biometric authentication disabled');
+      // Update query cache
+      queryClient.invalidateQueries({ queryKey: ['user'] });
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update biometric setting');
+    }
   };
 
   const hasPin = !!user?.pinHash;
@@ -345,10 +378,10 @@ export default function SettingsScreen() {
             </View>
           </View>
           <Switch
-            value={user?.biometricEnabled || false}
+            value={authUser?.biometricEnabled || false}
             onValueChange={toggleBiometric}
             trackColor={{ false: colors.border, true: `${colors.primary}80` }}
-            thumbColor={user?.biometricEnabled ? colors.primary : colors.textMuted}
+            thumbColor={authUser?.biometricEnabled ? colors.primary : colors.textMuted}
           />
         </View>
       </View>
@@ -361,6 +394,36 @@ export default function SettingsScreen() {
             <View>
               <Text style={[styles.settingTitle, { color: colors.text }]}>Export Data</Text>
               <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Download your transactions</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+
+      <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Account</Text>
+      <View style={[styles.section, { backgroundColor: colors.card }]}>
+        <TouchableOpacity 
+          style={styles.settingRowButton}
+          onPress={() => {
+            Alert.alert(
+              'Logout',
+              'Are you sure you want to logout? You will need to verify via OTP next time.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'Logout', 
+                  style: 'destructive', 
+                  onPress: logout
+                },
+              ]
+            );
+          }}
+        >
+          <View style={styles.settingInfo}>
+            <Ionicons name="log-out-outline" size={22} color="#EF4444" />
+            <View>
+              <Text style={[styles.settingTitle, { color: '#EF4444' }]}>Logout</Text>
+              <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Sign out of your account</Text>
             </View>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />

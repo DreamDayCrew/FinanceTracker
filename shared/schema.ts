@@ -8,6 +8,8 @@ import { z } from "zod";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 100 }).notNull().default("User"),
+  email: varchar("email", { length: 255 }).unique(),
+  passwordHash: varchar("password_hash", { length: 255 }),
   pinHash: varchar("pin_hash", { length: 255 }),
   biometricEnabled: boolean("biometric_enabled").default(false),
   theme: varchar("theme", { length: 10 }).default("light"),
@@ -19,6 +21,8 @@ export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  email: z.string().email().optional(),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -27,7 +31,7 @@ export type User = typeof users.$inferSelect;
 // Accounts (bank accounts, credit cards, debit cards)
 export const accounts = pgTable("accounts", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id),
   name: varchar("name", { length: 100 }).notNull(),
   type: varchar("type", { length: 20 }).notNull(), // 'bank', 'credit_card', 'debit_card'
   bankName: varchar("bank_name", { length: 100 }),
@@ -107,7 +111,7 @@ export const DEFAULT_CATEGORIES = [
 // Transactions (from SMS parsing or manual entry)
 export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id),
   accountId: integer("account_id").references(() => accounts.id),
   toAccountId: integer("to_account_id").references(() => accounts.id), // For transfer transactions
   categoryId: integer("category_id").references(() => categories.id),
@@ -135,12 +139,21 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({
   id: true,
   createdAt: true,
 }).extend({
-  amount: z.string().min(1, "Amount is required"),
+  amount: z.string().min(1, "Amount is required")
+    .refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
+      message: "Amount must be a valid positive number"
+    }),
   type: z.enum(["debit", "credit", "transfer"]),
   transactionDate: z.string().optional(),
-  toAccountId: z.number().optional(),
-  savingsContributionId: z.number().optional(),
-  paymentOccurrenceId: z.number().optional(),
+  toAccountId: z.union([z.number(), z.null()]).optional(),
+  categoryId: z.union([z.number(), z.null()]).optional(),
+  accountId: z.union([z.number(), z.null()]).optional(),
+  description: z.union([z.string(), z.null()]).optional(),
+  merchant: z.union([z.string(), z.null()]).optional(),
+  referenceNumber: z.union([z.string(), z.null()]).optional(),
+  savingsContributionId: z.union([z.number(), z.null()]).optional(),
+  paymentOccurrenceId: z.union([z.number(), z.null()]).optional(),
+  smsId: z.union([z.number(), z.null()]).optional(),
 });
 
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
@@ -149,8 +162,8 @@ export type Transaction = typeof transactions.$inferSelect;
 // Budgets (monthly category budgets)
 export const budgets = pgTable("budgets", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
-  categoryId: integer("category_id").references(() => categories.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+  categoryId: integer("category_id").notNull().references(() => categories.id),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   month: integer("month").notNull(),
   year: integer("year").notNull(),
@@ -166,9 +179,13 @@ export const insertBudgetSchema = createInsertSchema(budgets).omit({
   id: true,
   createdAt: true,
 }).extend({
-  amount: z.string().min(1, "Budget amount is required"),
+  amount: z.string().min(1, "Budget amount is required")
+    .refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
+      message: "Budget amount must be a valid positive number"
+    }),
   month: z.number().min(1).max(12),
   year: z.number().min(2020),
+  categoryId: z.number().min(1, "Category is required"),
 });
 
 export type InsertBudget = z.infer<typeof insertBudgetSchema>;
@@ -177,7 +194,7 @@ export type Budget = typeof budgets.$inferSelect;
 // Scheduled Payments (recurring payments with reminders)
 export const scheduledPayments = pgTable("scheduled_payments", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id),
   name: varchar("name", { length: 200 }).notNull(),
   paymentType: varchar("payment_type", { length: 20 }).default("regular"), // 'regular', 'credit_card_bill'
   amount: decimal("amount", { precision: 12, scale: 2 }), // nullable for auto-calculated credit card bills
@@ -212,20 +229,27 @@ export const insertScheduledPaymentSchema = createInsertSchema(scheduledPayments
   paymentType: z.enum(["regular", "credit_card_bill"]).optional(),
   amount: z.string().optional(), // optional for auto-calculated credit card bills
   dueDate: z.number().min(1).max(31),
-  creditCardAccountId: z.number().optional(),
+  creditCardAccountId: z.union([z.number(), z.null()]).optional(),
+  categoryId: z.union([z.number(), z.null()]).optional(),
+  accountId: z.union([z.number(), z.null()]).optional(),
   frequency: z.enum(["monthly", "quarterly", "half_yearly", "yearly", "one_time"]).optional(),
   startMonth: z.number().min(1).max(12).optional(),
   status: z.enum(["active", "inactive"]).optional(),
+  notes: z.union([z.string(), z.null()]).optional(),
 }).refine(
   (data) => {
     // Amount is required for regular payments, optional for credit card bills
     if (data.paymentType !== 'credit_card_bill' && !data.amount) {
       return false;
     }
+    // If amount is provided, it must be a valid positive number
+    if (data.amount && (isNaN(Number(data.amount)) || Number(data.amount) <= 0)) {
+      return false;
+    }
     return true;
   },
   {
-    message: "Amount is required for regular payments",
+    message: "Amount is required for regular payments and must be a valid positive number",
     path: ["amount"],
   }
 );
@@ -268,7 +292,7 @@ export type PaymentOccurrence = typeof paymentOccurrences.$inferSelect;
 // Savings Goals
 export const savingsGoals = pgTable("savings_goals", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id),
   name: varchar("name", { length: 200 }).notNull(),
   targetAmount: decimal("target_amount", { precision: 12, scale: 2 }).notNull(),
   currentAmount: decimal("current_amount", { precision: 12, scale: 2 }).default("0"),
@@ -297,13 +321,18 @@ export const insertSavingsGoalSchema = createInsertSchema(savingsGoals).omit({
   updatedAt: true,
 }).extend({
   name: z.string().min(1, "Goal name is required"),
-  targetAmount: z.string().min(1, "Target amount is required"),
-  currentAmount: z.string().optional(),
-  accountId: z.number().optional(),
-  toAccountId: z.number().optional().nullable(),
+  targetAmount: z.string().min(1, "Target amount is required")
+    .refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
+      message: "Target amount must be a valid positive number"
+    }),
+  currentAmount: z.union([z.string(), z.null()]).optional(),
+  accountId: z.union([z.number(), z.null()]).optional(),
+  toAccountId: z.union([z.number(), z.null()]).optional(),
   status: z.enum(["active", "completed", "paused"]).optional(),
-  affectTransaction: z.boolean().optional(),
-  affectAccountBalance: z.boolean().optional(),
+  affectTransaction: z.union([z.boolean(), z.null()]).optional(),
+  affectAccountBalance: z.union([z.boolean(), z.null()]).optional(),
+  description: z.union([z.string(), z.null()]).optional(),
+  targetDate: z.union([z.string(), z.null()]).optional(),
 });
 
 export type InsertSavingsGoal = z.infer<typeof insertSavingsGoalSchema>;
@@ -330,7 +359,10 @@ export const insertSavingsContributionSchema = createInsertSchema(savingsContrib
   createdAt: true,
   contributedAt: true,
 }).extend({
-  amount: z.string().min(1, "Amount is required"),
+  amount: z.string().min(1, "Amount is required")
+    .refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
+      message: "Amount must be a valid positive number"
+    }),
   accountId: z.number().optional(),
   contributedAt: z.string().optional(),
 });
@@ -341,7 +373,7 @@ export type SavingsContribution = typeof savingsContributions.$inferSelect;
 // Salary Profile (configuration for payday)
 export const salaryProfiles = pgTable("salary_profiles", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id),
   accountId: integer("account_id").references(() => accounts.id),
   paydayRule: varchar("payday_rule", { length: 30 }).default("last_working_day"), // 'fixed_day', 'last_working_day', 'nth_weekday'
   fixedDay: integer("fixed_day"), // day of month if payday_rule is 'fixed_day'
@@ -412,7 +444,7 @@ export type SalaryCycle = typeof salaryCycles.$inferSelect;
 // Loans (home loan, personal loan, credit card loan, item EMI)
 export const loans = pgTable("loans", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id),
   accountId: integer("account_id").references(() => accounts.id), // linked account for auto-tracking
   name: varchar("name", { length: 200 }).notNull(),
   type: varchar("type", { length: 30 }).notNull(), // 'home_loan', 'personal_loan', 'credit_card_loan', 'item_emi'
@@ -689,7 +721,7 @@ export type LoanPayment = typeof loanPayments.$inferSelect;
 // Insurance Policies
 export const insurances = pgTable("insurances", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id),
   accountId: integer("account_id").references(() => accounts.id), // linked account for payments
   name: varchar("name", { length: 200 }).notNull(),
   type: varchar("type", { length: 30 }).notNull(), // 'health', 'life', 'vehicle', 'home', 'term', 'travel'

@@ -136,6 +136,7 @@ export default function AccountsScreen() {
 
   const renderAccountCard = (account: Account) => {
     const isWeb = Platform.OS === 'web';
+    const showActionButtons = isWeb || !swipeSettings.enabled;
     const content = (
       <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
         <View style={[styles.accountIcon, { backgroundColor: colors.primary + '20' }]}>
@@ -156,7 +157,7 @@ export default function AccountsScreen() {
           )}
           <Text style={[styles.accountBalance, { color: colors.primary }]}>{formatCurrency(account.balance)}</Text>
         </View>
-        {isWeb && (
+        {showActionButtons && (
           <View style={styles.webActions}>
             <TouchableOpacity
               style={[styles.webActionButton, { backgroundColor: colors.primary }]}
@@ -227,6 +228,7 @@ export default function AccountsScreen() {
     const spentColor = hasMonthlyLimit && spent > (monthlyLimit || 0) ? '#ef4444' : colors.primary;
 
     const isWeb = Platform.OS === 'web';
+    const showActionButtons = isWeb || !swipeSettings.enabled;
     const content = (
       <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
         <View style={[styles.accountIcon, { backgroundColor: colors.danger + '20' }]}>
@@ -289,7 +291,7 @@ export default function AccountsScreen() {
             </Text>
           )}
         </View>
-        {isWeb && (
+        {showActionButtons && (
           <View style={styles.webActions}>
             <TouchableOpacity
               style={[styles.webActionButton, { backgroundColor: colors.primary }]}

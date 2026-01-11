@@ -340,7 +340,8 @@ export default function AddInsuranceScreen() {
                   setShowStartPicker(false);
                   if (date) setStartDate(date);
                 }}
-                themeVariant={resolvedTheme}
+                themeVariant={resolvedTheme === 'dark' ? 'dark' : 'light'}
+                textColor={colors.text}
               />
             )}
           </View>
@@ -362,7 +363,8 @@ export default function AddInsuranceScreen() {
                   setShowEndPicker(false);
                   if (date) setEndDate(date);
                 }}
-                themeVariant={resolvedTheme}
+                themeVariant={resolvedTheme === 'dark' ? 'dark' : 'light'}
+                textColor={colors.text}
               />
             )}
           </View>

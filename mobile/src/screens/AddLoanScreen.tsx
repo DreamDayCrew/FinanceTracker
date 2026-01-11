@@ -504,7 +504,8 @@ export default function AddLoanScreen() {
             value={startDate}
             mode="date"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            themeVariant={resolvedTheme}
+            themeVariant={resolvedTheme === 'dark' ? 'dark' : 'light'}
+            textColor={colors.text}
             onChange={(event, selectedDate) => {
               setShowDatePicker(Platform.OS === 'ios');
               if (selectedDate) {
@@ -541,7 +542,8 @@ export default function AddLoanScreen() {
             value={endDate || new Date()}
             mode="date"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            themeVariant={resolvedTheme}
+            themeVariant={resolvedTheme === 'dark' ? 'dark' : 'light'}
+            textColor={colors.text}
             minimumDate={startDate}
             onChange={(event, selectedDate) => {
               setShowEndDatePicker(Platform.OS === 'ios');

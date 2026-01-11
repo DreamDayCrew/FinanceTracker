@@ -25,7 +25,10 @@
       },
       "package": "com.mytracker.finance",
       "permissions": [
-        "android.permission.DETECT_SCREEN_CAPTURE"
+        "INTERNET",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "DETECT_SCREEN_CAPTURE"
       ]
     },
     "web": {

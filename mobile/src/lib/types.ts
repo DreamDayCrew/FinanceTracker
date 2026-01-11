@@ -84,7 +84,11 @@ export interface ScheduledPayment {
 export interface User {
   id: number;
   name: string;
+  email?: string;
+  passwordHash?: string | null;
   pinHash: string | null;
+  hasPassword?: boolean;
+  hasPin?: boolean;
   biometricEnabled: boolean;
   theme: string;
   createdAt: string;

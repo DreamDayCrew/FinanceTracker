@@ -41,6 +41,7 @@ interface LoanCardProps {
 function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, onEdit, onDelete, nextInstallment }: LoanCardProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'outstanding'>('overview');
   const [showAccountNumber, setShowAccountNumber] = useState(false);
+  const swipeSettings = useSwipeSettings();
 
   const getLoanIcon = (type: string): keyof typeof Ionicons.glyphMap => {
     switch (type) {
@@ -65,12 +66,16 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, onEdit,
   const formatDate = (dateString: string | Date | null | undefined) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
+    // Check if date is valid
+    if (isNaN(date.getTime())) return 'N/A';
     return `${String(date.getDate()).padStart(2, '0')} ${MONTH_NAMES[date.getMonth()]}, ${date.getFullYear()}`;
   };
 
   const formatShortDate = (dateString: string | Date | null | undefined) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
+    // Check if date is valid
+    if (isNaN(date.getTime())) return 'N/A';
     return `${String(date.getDate()).padStart(2, '0')} ${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
   };
 
@@ -183,6 +188,7 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, onEdit,
   const interestPaid = calculateInterestPaid();
   const progress = calculateProgress();
   const endDate = calculateEndDate();  const isWeb = Platform.OS === 'web';
+  const showActionButtons = isWeb || !swipeSettings.enabled;
   return (
     <TouchableOpacity 
       style={[styles.loanCard, { backgroundColor: colors.card }]}
@@ -192,11 +198,11 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, onEdit,
       <View style={styles.cardHeader}>
         <View style={styles.cardHeaderLeft}>
           <View style={[styles.loanIconCircle, { backgroundColor: 'rgba(59, 130, 246, 0.3)' }]}>
-            <Ionicons name={getLoanIcon(loan.loanType || '')} size={20} color="#60a5fa" />
+            <Ionicons name={getLoanIcon(loan.type || '')} size={20} color="#60a5fa" />
           </View>
           <View style={styles.loanTitleContainer}>
             <Text style={[styles.loanName, { color: colors.text }]}>{loan.name}</Text>
-            <Text style={[styles.loanTypeLabel, { color: colors.textMuted }]}>{getLoanTypeLabel(loan.loanType || '')}</Text>
+            <Text style={[styles.loanTypeLabel, { color: colors.textMuted }]}>{getLoanTypeLabel(loan.type || '')}</Text>
             <Text style={[styles.loanPrincipal, { color: colors.text }]}>
               {hideBalances ? '****' : formatCurrency(displayPrincipal)}
             </Text>
@@ -308,7 +314,7 @@ function LoanCard({ loan, colors, hideBalances, onPress, onDetailsPress, onEdit,
           Note: Outstanding Principal & Principal Paid is shown as on {getTodayFormatted()}
         </Text>
       </View>
-      {isWeb && (
+      {showActionButtons && (
         <View style={styles.webActions}>
           <TouchableOpacity
             style={[styles.webActionButton, { backgroundColor: colors.primary }]}
@@ -466,7 +472,7 @@ export default function LoansScreen() {
     if (!loans) return [];
     const types = new Map<string, number>();
     loans.forEach(loan => {
-      const type = loan.loanType && loan.loanType.trim() !== '' ? loan.loanType : 'other';
+      const type = loan.type && loan.type.trim() !== '' ? loan.type : 'other';
       types.set(type, (types.get(type) || 0) + 1);
     });
     return Array.from(types.entries()).map(([type, count]) => ({
@@ -479,7 +485,7 @@ export default function LoansScreen() {
   const filteredLoans = useMemo(() => {
     if (!loans) return [];
     if (selectedFilter === 'all') return loans;
-    return loans.filter(loan => loan.loanType === selectedFilter);
+    return loans.filter(loan => loan.type === selectedFilter);
   }, [loans, selectedFilter]);
 
   const activeLoansCount = loans?.filter(l => l.status === 'active').length || 0;

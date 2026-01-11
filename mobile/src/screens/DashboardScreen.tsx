@@ -5,7 +5,6 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
-import { LinearGradient } from 'expo-linear-gradient';
 import { api, API_BASE_URL } from '../lib/api';
 import { formatCurrency, formatDate, getThemedColors, getOrdinalSuffix } from '../lib/utils';
 import { RootStackParamList, TabParamList } from '../../App';
@@ -13,6 +12,7 @@ import { FABButton } from '../components/FABButton';
 import { useState, useCallback, useMemo } from 'react';
 import Toast from 'react-native-toast-message';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Payday {
   month: number;
@@ -41,6 +41,7 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 export default function DashboardScreen() {
   const navigation = useNavigation<NavigationProp>();
   const queryClient = useQueryClient();
+  const { username } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [editingCycle, setEditingCycle] = useState<SalaryCycle | null>(null);
   const [editActualDate, setEditActualDate] = useState('');
@@ -381,6 +382,13 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
         }
       >
+        {/* Welcome Message */}
+        {username && (
+          <View style={styles.welcomeSection}>
+            <Text style={[styles.welcomeText, { color: colors.text }]}>Hi {username}, Welcome!</Text>
+          </View>
+        )}
+
         {/* Summary Cards */}
         <View style={styles.summaryCards}>
           <View style={[styles.summaryCard, { backgroundColor: colors.card }]}>
@@ -989,9 +997,7 @@ export default function DashboardScreen() {
         
         <View style={{ height: 100 }} />
       </ScrollView>
-      
-      <FABButton onPress={() => navigation.navigate('AddTransaction')} />
-
+    
       {/* Edit Salary Cycle Modal */}
       {editingCycle && (
         <Modal
@@ -1125,6 +1131,15 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
     padding: 16,
+  },
+  welcomeSection: {
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  welcomeText: {
+    fontSize: 20,
+    fontWeight: '600',
+    textAlign: 'left',
   },
   centered: {
     flex: 1,

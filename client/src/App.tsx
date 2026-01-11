@@ -9,6 +9,7 @@ import { BottomNav } from "@/components/bottom-nav";
 import { FabButton } from "@/components/fab-button";
 import { AppHeader } from "@/components/app-header";
 import { LockScreen } from "@/components/lock-screen";
+import { getAccessToken } from "@/lib/auth";
 import Dashboard from "@/pages/dashboard";
 import Accounts from "@/pages/accounts";
 import Transactions from "@/pages/transactions";
@@ -20,6 +21,8 @@ import SavingsGoals from "@/pages/savings-goals";
 import Salary from "@/pages/salary";
 import Loans from "@/pages/loans";
 import Settings from "@/pages/settings";
+import Login from "@/pages/login";
+import SetPassword from "@/pages/set-password";
 import NotFound from "@/pages/not-found";
 import type { User } from "@shared/schema";
 
@@ -37,6 +40,8 @@ function useThemeInit() {
 function Router() {
   return (
     <Switch>
+      <Route path="/login" component={Login} />
+      <Route path="/set-password" component={SetPassword} />
       <Route path="/" component={Dashboard} />
       <Route path="/accounts" component={Accounts} />
       <Route path="/transactions" component={Transactions} />
@@ -54,16 +59,27 @@ function Router() {
 }
 
 function AppShell() {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [hadPinOnLoad, setHadPinOnLoad] = useState<boolean | null>(null);
   
   useThemeInit();
   
+  // Check if user is authenticated
+  const isAuthenticated = !!getAccessToken();
+  
+  // Redirect to login if not authenticated (except for auth pages)
+  useEffect(() => {
+    if (!isAuthenticated && location !== '/login' && location !== '/set-password') {
+      navigate('/login');
+    }
+  }, [isAuthenticated, location, navigate]);
+  
   const { data: user, isLoading: userLoading, isError, refetch } = useQuery<User>({
     queryKey: ["/api/user"],
     retry: 3,
     retryDelay: 1000,
+    enabled: isAuthenticated, // Only fetch user if authenticated
   });
   
   useEffect(() => {
@@ -77,8 +93,18 @@ function AppShell() {
                     location === "/budgets" || location === "/scheduled-payments" ||
                     location === "/savings-goals" || location === "/salary" ||
                     location === "/loans";
+  const isAuthPage = location === "/login" || location === "/set-password";
   const showFab = location === "/" || location === "/accounts" || location === "/transactions";
-  const showHeader = !isSubPage;
+  const showHeader = !isSubPage && !isAuthPage;
+
+  // Show auth pages without authentication check
+  if (isAuthPage) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Router />
+      </div>
+    );
+  }
 
   if (userLoading) {
     return (
