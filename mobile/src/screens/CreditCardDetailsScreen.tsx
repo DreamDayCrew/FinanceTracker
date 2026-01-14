@@ -1,9 +1,9 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions, Switch } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { PieChart } from 'react-native-chart-kit';
+import { LineChart } from 'react-native-chart-kit';
 import { api } from '../lib/api';
 import { formatCurrency, getThemedColors, getOrdinalSuffix } from '../lib/utils';
 import { useState, useMemo } from 'react';
@@ -19,14 +19,16 @@ export default function CreditCardDetailsScreen() {
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [showPayments, setShowPayments] = useState(false);
+  const [selectedCardId, setSelectedCardId] = useState<number | null>(null); // null = "All"
 
   const { data: accounts } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: api.getAccounts,
   });
 
   const { data: transactions, isLoading, error } = useQuery({
-    queryKey: ['transactions'],
+    queryKey: ['/api/transactions'],
     queryFn: api.getTransactions,
   });
 
@@ -75,6 +77,46 @@ export default function CreditCardDetailsScreen() {
     };
   }, [transactions, creditCards, selectedMonth, selectedYear, colors]);
 
+  // Category breakdown for "All" view
+  const categoryBreakdown = useMemo(() => {
+    if (!transactions || !creditCards.length) return [];
+
+    const startOfMonth = new Date(selectedYear, selectedMonth, 1);
+    const endOfMonth = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59);
+
+    const creditCardIds = creditCards.map(c => c.id);
+    const categoryMap = new Map<string, { total: number; count: number; color: string; categoryId: number }>();
+
+    transactions.forEach(t => {
+      const transactionDate = new Date(t.transactionDate);
+      if (
+        t.accountId && creditCardIds.includes(t.accountId) &&
+        t.type === 'debit' &&
+        transactionDate >= startOfMonth &&
+        transactionDate <= endOfMonth &&
+        t.category
+      ) {
+        const key = t.category.name;
+        const existing = categoryMap.get(key) || { total: 0, count: 0, color: t.category.color || colors.primary, categoryId: t.category.id };
+        categoryMap.set(key, {
+          ...existing,
+          total: existing.total + parseFloat(t.amount),
+          count: existing.count + 1,
+        });
+      }
+    });
+
+    return Array.from(categoryMap.entries())
+      .map(([name, data]) => ({
+        categoryName: name,
+        categoryId: data.categoryId,
+        total: data.total,
+        transactionCount: data.count,
+        color: data.color,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [transactions, creditCards, selectedMonth, selectedYear, colors]);
+
   const handlePreviousMonth = () => {
     if (selectedMonth === 0) {
       setSelectedMonth(11);
@@ -102,6 +144,51 @@ export default function CreditCardDetailsScreen() {
 
   const isCurrentMonth = selectedMonth === now.getMonth() && selectedYear === now.getFullYear();
 
+  // Get card icon based on bank/card name
+  const getCardIcon = (cardName: string): string => {
+    const iconMap: { [key: string]: string } = {
+      'HDFC': 'card',
+      'ICICI': 'card',
+      'SBI': 'card',
+      'Axis': 'card',
+      'Kotak': 'card',
+      'Amex': 'card',
+      'Citi': 'card',
+    };
+    const match = Object.keys(iconMap).find(key => cardName.toUpperCase().includes(key));
+    return match ? iconMap[match] : 'card-outline';
+  };
+
+  // Category icon mapping
+  const getCategoryIcon = (categoryName: string): string => {
+    const iconMap: { [key: string]: string } = {
+      'Groceries': 'cart',
+      'Transport': 'car',
+      'Dining': 'restaurant',
+      'Shopping': 'bag-handle',
+      'Entertainment': 'game-controller',
+      'Bills': 'receipt',
+      'Health': 'medical',
+      'Education': 'school',
+      'Travel': 'airplane',
+      'Salary': 'briefcase',
+      'Investment': 'trending-up',
+      'Transfer': 'repeat',
+      'Other': 'ellipsis-horizontal',
+      'Food': 'fast-food',
+      'Rent': 'home',
+      'Utilities': 'flash',
+      'Personal': 'person',
+      'Insurance': 'shield-checkmark',
+      'EMI': 'card',
+    };
+    return iconMap[categoryName] || 'pricetag';
+  };
+
+  const selectedCard = selectedCardId 
+    ? filteredData?.breakdown.find(c => c.accountId === selectedCardId)
+    : null;
+
   const pieChartData = useMemo(() => {
     if (!filteredData?.breakdown || filteredData.breakdown.length === 0) return [];
     
@@ -114,25 +201,10 @@ export default function CreditCardDetailsScreen() {
     }));
   }, [filteredData, colors]);
 
-  if (isLoading) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <Ionicons name="alert-circle-outline" size={48} color={colors.textMuted} />
-        <Text style={[styles.errorText, { color: colors.text }]}>Failed to load credit card details</Text>
-      </View>
-    );
-  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header with gradient */}
       <LinearGradient
         colors={[colors.gradientStart, colors.gradientEnd]}
         start={{ x: 0, y: 0 }}
@@ -142,178 +214,334 @@ export default function CreditCardDetailsScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Credit Card Details</Text>
-        <View style={{ width: 24 }} />
+        <Text style={styles.headerTitle}>Credit Cards</Text>
+        <TouchableOpacity style={styles.menuButton}>
+          <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
+        </TouchableOpacity>
       </LinearGradient>
 
-      <View style={[styles.monthNavigation, { backgroundColor: colors.card }]}>
-        <TouchableOpacity onPress={handlePreviousMonth} style={styles.navButton}>
-          <Ionicons name="chevron-back" size={24} color={colors.primary} />
-        </TouchableOpacity>
-        <Text style={[styles.monthText, { color: colors.text }]}>
-          {monthNames[selectedMonth]} {selectedYear}
-        </Text>
-        <TouchableOpacity 
-          onPress={handleNextMonth} 
-          style={styles.navButton}
-          disabled={isCurrentMonth}
-        >
-          <Ionicons 
-            name="chevron-forward" 
-            size={24} 
-            color={isCurrentMonth ? colors.textMuted : colors.primary} 
-          />
-        </TouchableOpacity>
-      </View>
-
-      <View style={[styles.totalCard, { backgroundColor: colors.card }]}>
-        <Ionicons name="card-outline" size={32} color="#ff9800" style={{ marginBottom: 8 }} />
-        <Text style={[styles.totalLabel, { color: colors.textMuted }]}>Total Credit Card Spending</Text>
-        <Text style={[styles.totalAmount, { color: '#ff9800' }]}>
-          {formatCurrency(filteredData?.totalSpending || 0)}
-        </Text>
-      </View>
-
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Pie Chart Section */}
-        {pieChartData.length > 0 && (
-          <View style={[styles.chartSection, { backgroundColor: colors.card }]}>
-            <Text style={[styles.chartTitle, { color: colors.text }]}>Spending Distribution</Text>
-            <PieChart
-              data={pieChartData}
-              width={screenWidth - 32}
-              height={220}
-              chartConfig={{
-                color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-              }}
-              accessor="amount"
-              backgroundColor="transparent"
-              paddingLeft="15"
-              absolute
-            />
-          </View>
-        )}
-
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Card Breakdown</Text>
-          
-          {filteredData?.breakdown && filteredData.breakdown.length > 0 ? (
-            filteredData.breakdown.map((card) => {
-              const percentage = filteredData.totalSpending > 0 
-                ? Math.round((card.totalSpent / filteredData.totalSpending) * 100)
-                : 0;
-              const utilizationPercent = card.creditLimit > 0
-                ? (card.totalSpent / card.creditLimit) * 100
-                : 0;
+        {/* FIRST HALF - Month selector and card list */}
+        <View style={styles.firstHalf}>
+          {/* Month Navigation with Total */}
+          <View style={[styles.monthCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+            <View style={styles.monthRow}>
+              <TouchableOpacity onPress={handlePreviousMonth} style={styles.navButton}>
+                <Ionicons name="chevron-back-outline" size={28} color={colors.primary} />
+              </TouchableOpacity>
               
-              return (
-                <View key={card.accountId} style={[styles.cardItem, { backgroundColor: colors.card }]}>
-                  <View style={styles.cardHeader}>
-                    <View style={styles.cardNameRow}>
-                      <View style={[styles.colorDot, { backgroundColor: card.color }]} />
-                      <View>
-                        <Text style={[styles.cardName, { color: colors.text }]}>
-                          {card.accountName}
-                        </Text>
-                        <Text style={[styles.billingInfo, { color: colors.textMuted }]}>
-                          Billing Date: {card.billingDate}{getOrdinalSuffix(card.billingDate)} of month
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.cardAmounts}>
-                      <Text style={[styles.cardAmount, { color: colors.text }]}>
-                        {formatCurrency(card.totalSpent)}
-                      </Text>
-                      {card.creditLimit > 0 && (
-                        <Text style={[styles.limitText, { color: colors.textMuted }]}>
-                          of {formatCurrency(card.creditLimit)}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                  
-                  <View style={styles.cardFooter}>
-                    <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-                      <View 
-                        style={[
-                          styles.progressFill, 
-                          { width: `${percentage}%`, backgroundColor: card.color }
-                        ]} 
-                      />
-                    </View>
-                    <Text style={[styles.percentageText, { color: colors.textMuted }]}>
-                      {percentage}%
-                    </Text>
-                  </View>
-                  
-                  {card.creditLimit > 0 && (
-                    <View style={styles.utilizationRow}>
-                      <Text style={[styles.utilizationLabel, { color: colors.textMuted }]}>
-                        Credit Utilization:
-                      </Text>
-                      <Text style={[
-                        styles.utilizationValue,
-                        { 
-                          color: utilizationPercent >= 90 ? '#f44336' : 
-                                 utilizationPercent >= 70 ? '#ff9800' : '#4CAF50'
-                        }
-                      ]}>
-                        {utilizationPercent.toFixed(1)}%
-                      </Text>
-                    </View>
-                  )}
-                  
-                  <Text style={[styles.transactionCount, { color: colors.textMuted }]}>
-                    {card.transactionCount} transaction{card.transactionCount !== 1 ? 's' : ''}
+              <View style={styles.monthInfo}>
+                <Text style={[styles.monthText, { color: colors.text }]}>
+                  {monthNames[selectedMonth].toUpperCase()} '{String(selectedYear).slice(-2)}
+                </Text>
+                <View style={styles.totalsRow}>
+                  <Text style={[styles.totalAmount, { color: '#ff9800' }]}>
+                    ₹{(filteredData?.totalSpending || 0).toFixed(0)}
                   </Text>
-
-                  {card.transactions.length > 0 && (
-                    <View style={styles.recentTransactions}>
-                      <Text style={[styles.transactionsHeader, { color: colors.textMuted }]}>
-                        Recent Transactions
-                      </Text>
-                      {card.transactions.slice(0, 3).map((transaction) => (
-                        <View 
-                          key={transaction.id} 
-                          style={[styles.transactionRow, { borderBottomColor: colors.border }]}
-                        >
-                          <View style={styles.transactionInfo}>
-                            <Text style={[styles.merchantName, { color: colors.text }]}>
-                              {transaction.merchant || transaction.category?.name || 'Transaction'}
-                            </Text>
-                            <Text style={[styles.transactionDate, { color: colors.textMuted }]}>
-                              {new Date(transaction.transactionDate).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric'
-                              })}
-                            </Text>
-                          </View>
-                          <Text style={[styles.transactionAmount, { color: '#f44336' }]}>
-                            {formatCurrency(transaction.amount)}
-                          </Text>
-                        </View>
-                      ))}
-                      {card.transactions.length > 3 && (
-                        <Text style={[styles.moreTransactions, { color: colors.primary }]}>
-                          +{card.transactions.length - 3} more transaction{card.transactions.length - 3 !== 1 ? 's' : ''}
-                        </Text>
-                      )}
-                    </View>
+                  {showPayments && (
+                    <Text style={[styles.totalAmount, { color: colors.success, marginLeft: 16 }]}>
+                      (₹0)
+                    </Text>
                   )}
                 </View>
-              );
-            })
-          ) : (
-            <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
-              <Ionicons name="card-outline" size={48} color={colors.textMuted} />
-              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                No credit card spending this month
+              </View>
+              
+              <TouchableOpacity 
+                onPress={handleNextMonth} 
+                style={styles.navButton}
+                disabled={isCurrentMonth}
+              >
+                <Ionicons 
+                  name="chevron-forward-outline" 
+                  size={28} 
+                  color={isCurrentMonth ? colors.textMuted : colors.primary} 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Card Filter Chips */}
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipContainer}
+            contentContainerStyle={styles.chipContent}
+          >
+            <TouchableOpacity
+              style={[
+                styles.chip,
+                { backgroundColor: selectedCardId === null ? colors.primary : colors.card },
+                selectedCardId === null && styles.chipSelected
+              ]}
+              onPress={() => setSelectedCardId(null)}
+            >
+              <Text style={[
+                styles.chipText,
+                { color: selectedCardId === null ? '#fff' : colors.text }
+              ]}>
+                All
               </Text>
+            </TouchableOpacity>
+            
+            {filteredData?.breakdown.map((card) => (
+              <TouchableOpacity
+                key={card.accountId}
+                style={[
+                  styles.chip,
+                  { backgroundColor: selectedCardId === card.accountId ? colors.primary : colors.card },
+                  selectedCardId === card.accountId && styles.chipSelected
+                ]}
+                onPress={() => setSelectedCardId(card.accountId)}
+              >
+                <View style={[styles.chipDot, { backgroundColor: card.color }]} />
+                <Text style={[
+                  styles.chipText,
+                  { color: selectedCardId === card.accountId ? '#fff' : colors.text }
+                ]}>
+                  {card.accountName}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Content based on selection */}
+          <View style={styles.cardSection}>
+            {isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading cards...</Text>
+              </View>
+            ) : error ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="alert-circle-outline" size={56} color={colors.textMuted} />
+                <Text style={[styles.emptyText, { color: colors.textMuted }]}>Failed to load credit card details</Text>
+              </View>
+            ) : selectedCardId === null ? (
+              // Show category breakdown for all cards
+              categoryBreakdown.length > 0 ? (
+                categoryBreakdown.map((category) => (
+                  <TouchableOpacity 
+                    key={category.categoryId} 
+                    style={[styles.categoryCard, { backgroundColor: colors.card }]}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.categoryRow}>
+                      <View style={styles.categoryLeft}>
+                        <LinearGradient
+                          colors={[category.color + 'CC', category.color]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.iconContainer}
+                        >
+                          <Ionicons name={getCategoryIcon(category.categoryName) as any} size={24} color="#fff" />
+                        </LinearGradient>
+                        <View>
+                          <Text style={[styles.cardName, { color: colors.text }]}>
+                            {category.categoryName}
+                          </Text>
+                          <Text style={[styles.billingInfo, { color: colors.textMuted }]}>
+                            {category.transactionCount} transaction{category.transactionCount !== 1 ? 's' : ''}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.cardAmount, { color: colors.text }]}>
+                        ₹{category.total.toFixed(0)}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={styles.emptyState}>
+                  <Ionicons name="pie-chart-outline" size={56} color={colors.textMuted} />
+                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                    No credit card spending this month
+                  </Text>
+                </View>
+              )
+            ) : selectedCard ? (
+              // Show selected card details
+              <View>
+                <TouchableOpacity 
+                  style={[styles.cardItem, { backgroundColor: colors.card }]}
+                  activeOpacity={1}
+                >
+                  <View style={styles.cardRow}>
+                    <View style={styles.cardLeft}>
+                      <LinearGradient
+                        colors={[selectedCard.color + 'CC', selectedCard.color]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.iconContainer}
+                      >
+                        <Ionicons name={getCardIcon(selectedCard.accountName) as any} size={24} color="#fff" />
+                      </LinearGradient>
+                      <View style={styles.cardDetails}>
+                        <Text style={[styles.cardName, { color: colors.text }]}>
+                          {selectedCard.accountName}
+                        </Text>
+                        <Text style={[styles.billingInfo, { color: colors.textMuted }]}>
+                          Bill: {selectedCard.billingDate}{getOrdinalSuffix(selectedCard.billingDate)} • {selectedCard.transactionCount} txns
+                        </Text>
+                        {selectedCard.creditLimit > 0 && (
+                          <View style={styles.utilizationRow}>
+                            <View style={[styles.utilizationBar, { backgroundColor: colors.border }]}>
+                              <View 
+                                style={[
+                                  styles.utilizationFill,
+                                  { 
+                                    width: `${Math.min((selectedCard.totalSpent / selectedCard.creditLimit) * 100, 100)}%`,
+                                    backgroundColor: (selectedCard.totalSpent / selectedCard.creditLimit) * 100 >= 90 ? '#f44336' : 
+                                                     (selectedCard.totalSpent / selectedCard.creditLimit) * 100 >= 70 ? '#ff9800' : colors.success
+                                  }
+                                ]} 
+                              />
+                            </View>
+                            <Text style={[styles.utilizationText, { color: colors.textMuted }]}>
+                              {((selectedCard.totalSpent / selectedCard.creditLimit) * 100).toFixed(0)}%
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.cardRight}>
+                      <Text style={[styles.cardAmount, { color: colors.text }]}>
+                        ₹{selectedCard.totalSpent.toFixed(0)}
+                      </Text>
+                      {selectedCard.creditLimit > 0 && (
+                        <Text style={[styles.limitText, { color: colors.textMuted }]}>
+                          of ₹{(selectedCard.creditLimit / 1000).toFixed(0)}k
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Category breakdown for selected card */}
+                <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>Category Breakdown</Text>
+                {(() => {
+                  const cardCategories = new Map<string, { total: number; count: number; color: string; categoryId: number }>();
+                  selectedCard.transactions.forEach(t => {
+                    if (t.category) {
+                      const key = t.category.name;
+                      const existing = cardCategories.get(key) || { total: 0, count: 0, color: t.category.color || colors.primary, categoryId: t.category.id };
+                      cardCategories.set(key, {
+                        ...existing,
+                        total: existing.total + parseFloat(t.amount),
+                        count: existing.count + 1,
+                      });
+                    }
+                  });
+
+                  return Array.from(cardCategories.entries())
+                    .map(([name, data]) => ({ categoryName: name, ...data }))
+                    .sort((a, b) => b.total - a.total)
+                    .map((category) => (
+                      <View 
+                        key={category.categoryId} 
+                        style={[styles.smallCategoryCard, { backgroundColor: colors.card }]}
+                      >
+                        <View style={styles.smallCategoryRow}>
+                          <View style={styles.smallCategoryLeft}>
+                            <View style={[styles.smallColorDot, { backgroundColor: category.color }]} />
+                            <Text style={[styles.smallCategoryName, { color: colors.text }]}>
+                              {category.categoryName}
+                            </Text>
+                          </View>
+                          <Text style={[styles.smallCategoryAmount, { color: colors.textMuted }]}>
+                            ₹{category.total.toFixed(0)}
+                          </Text>
+                        </View>
+                      </View>
+                    ));
+                })()}
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        {/* SECOND HALF - Toggle and Chart */}
+        <LinearGradient
+          colors={[colors.gradientStart, colors.gradientEnd]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.secondHalf}
+        >
+          {/* Toggle for showing payments */}
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleButton}>
+              <Ionicons name="wallet" size={20} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.toggleLabel}>Show Payments</Text>
+            </View>
+            <Switch
+              value={showPayments}
+              onValueChange={setShowPayments}
+              trackColor={{ false: 'rgba(255,255,255,0.3)', true: 'rgba(255,255,255,0.5)' }}
+              thumbColor={showPayments ? '#fff' : '#f4f3f4'}
+              ios_backgroundColor="rgba(255,255,255,0.3)"
+            />
+          </View>
+
+          {/* Chart Section */}
+          <Text style={styles.chartTitle}>MONTHLY SPENDING ( Rs )</Text>
+          
+          {!isLoading && filteredData?.breakdown && filteredData.breakdown.length > 0 ? (
+            <LineChart
+              data={{
+                labels: filteredData.breakdown.slice(0, 6).map((card, idx) => {
+                  return card.accountName.substring(0, 4).toUpperCase();
+                }),
+                datasets: [{
+                  data: filteredData.breakdown.slice(0, 6).map(card => card.totalSpent),
+                  color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+                  strokeWidth: 3
+                }]
+              }}
+              width={screenWidth}
+              height={260}
+              chartConfig={{
+                backgroundColor: 'transparent',
+                backgroundGradientFrom: 'transparent',
+                backgroundGradientTo: 'transparent',
+                decimalPlaces: 0,
+                color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity * 0.8})`,
+                style: {
+                  borderRadius: 0,
+                },
+                propsForDots: {
+                  r: '6',
+                  strokeWidth: '3',
+                  stroke: '#fff',
+                  fill: colors.primary
+                },
+                propsForBackgroundLines: {
+                  strokeDasharray: '',
+                  stroke: 'rgba(255,255,255,0.15)',
+                  strokeWidth: 1,
+                },
+              }}
+              bezier
+              style={{
+                marginVertical: 0,
+                marginLeft: -16,
+              }}
+              withInnerLines={true}
+              withOuterLines={false}
+              withVerticalLines={false}
+              withHorizontalLines={true}
+              withVerticalLabels={true}
+              withHorizontalLabels={true}
+              fromZero
+            />
+          ) : (
+            <View style={styles.emptyChart}>
+              <Ionicons name="bar-chart-outline" size={48} color="rgba(255,255,255,0.5)" />
+              <Text style={styles.emptyChartText}>No data available</Text>
             </View>
           )}
-        </View>
+        </LinearGradient>
         
-        <View style={{ height: 40 }} />
+        <View style={{ height: 20 }} />
       </ScrollView>
     </View>
   );
@@ -335,231 +563,305 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     paddingTop: 48,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
   },
   backButton: {
     padding: 4,
   },
+  menuButton: {
+    padding: 4,
+  },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  monthNavigation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  navButton: {
-    padding: 8,
-  },
-  monthText: {
     fontSize: 20,
     fontWeight: '700',
-  },
-  totalCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 8,
-    padding: 24,
-    borderRadius: 16,
-    alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-  },
-  totalLabel: {
-    fontSize: 13,
-    marginBottom: 8,
-    textTransform: 'uppercase',
+    color: '#fff',
     letterSpacing: 0.5,
-  },
-  totalAmount: {
-    fontSize: 36,
-    fontWeight: '800',
   },
   scrollView: {
     flex: 1,
+  },
+  firstHalf: {
     paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 16,
   },
-  chartSection: {
-    borderRadius: 16,
-    padding: 16,
-    marginVertical: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+  monthCard: {
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 2,
+    shadowColor: '#16a34a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  chartTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  cardItem: {
-    padding: 18,
-    borderRadius: 16,
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 14,
-  },
-  cardNameRow: {
+  monthRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+  },
+  navButton: {
+    padding: 4,
+  },
+  monthInfo: {
+    alignItems: 'center',
     flex: 1,
   },
-  colorDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  cardName: {
-    fontSize: 16,
+  monthText: {
+    fontSize: 15,
     fontWeight: '700',
-    marginBottom: 2,
-  },
-  billingInfo: {
-    fontSize: 11,
+    marginBottom: 10,
+    letterSpacing: 1.5,
     opacity: 0.7,
   },
-  cardAmounts: {
+  totalsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  totalAmount: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  chipContainer: {
+    marginBottom: 20,
+  },
+  chipContent: {
+    paddingRight: 16,
+    gap: 10,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  chipSelected: {
+    shadowColor: '#16a34a',
+    shadowOpacity: 0.2,
+    elevation: 4,
+  },
+  chipDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  cardSection: {
+    marginBottom: 8,
+  },
+  categoryCard: {
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  categoryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    flex: 1,
+  },
+  cardItem: {
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 8,
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  smallCategoryCard: {
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  smallCategoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  smallCategoryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  smallColorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  smallCategoryName: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  smallCategoryAmount: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  cardLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+    flex: 1,
+  },
+  iconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  cardDetails: {
+    flex: 1,
+  },
+  cardName: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 3,
+  },
+  billingInfo: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginBottom: 6,
+  },
+  utilizationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  utilizationBar: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  utilizationFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  utilizationText: {
+    fontSize: 11,
+    fontWeight: '600',
+    minWidth: 32,
+  },
+  cardRight: {
     alignItems: 'flex-end',
   },
   cardAmount: {
-    fontSize: 22,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   limitText: {
     fontSize: 11,
     marginTop: 2,
-    opacity: 0.7,
+    opacity: 0.6,
   },
-  cardFooter: {
-    flexDirection: 'row',
+  loadingContainer: {
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 10,
+    paddingVertical: 60,
   },
-  progressBar: {
-    flex: 1,
-    height: 10,
-    borderRadius: 5,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 5,
-  },
-  percentageText: {
-    fontSize: 13,
-    fontWeight: '700',
-    minWidth: 38,
-    textAlign: 'right',
-  },
-  utilizationRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  utilizationLabel: {
-    fontSize: 12,
-  },
-  utilizationValue: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  transactionCount: {
-    fontSize: 12,
-    marginBottom: 12,
-  },
-  recentTransactions: {
-    marginTop: 8,
-    paddingTop: 12,
-  },
-  transactionsHeader: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-  },
-  transactionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-  },
-  transactionInfo: {
-    flex: 1,
-  },
-  merchantName: {
+  loadingText: {
     fontSize: 14,
+    marginTop: 12,
     fontWeight: '500',
   },
-  transactionDate: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  transactionAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  moreTransactions: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  emptyCard: {
-    padding: 40,
-    borderRadius: 12,
+  emptyState: {
     alignItems: 'center',
+    paddingVertical: 80,
   },
   emptyText: {
+    fontSize: 16,
+    marginTop: 16,
+    fontWeight: '500',
+  },
+  secondHalf: {
+    paddingTop: 24,
+    paddingBottom: 40,
+    paddingHorizontal: 16,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    marginTop: 8,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    paddingHorizontal: 4,
+  },
+  toggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  toggleLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  chartTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.7)',
+    letterSpacing: 2,
+    marginBottom: 16,
+    marginLeft: 4,
+  },
+  emptyChart: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyChartText: {
+    color: 'rgba(255,255,255,0.7)',
     fontSize: 15,
     marginTop: 12,
+    fontWeight: '500',
   },
   errorText: {
     fontSize: 16,

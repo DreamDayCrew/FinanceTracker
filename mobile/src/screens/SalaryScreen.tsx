@@ -73,17 +73,17 @@ export default function SalaryScreen() {
   const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   const { data: profile, isLoading } = useQuery<SalaryProfile | null>({
-    queryKey: ['salary-profile'],
+    queryKey: ['/api/salary-profile'],
     queryFn: () => api.getSalaryProfile(),
   });
 
   const { data: nextPaydays = [] } = useQuery<Payday[]>({
-    queryKey: ['salary-profile-paydays'],
+    queryKey: ['/api/salary-profile/next-paydays'],
     queryFn: () => api.getNextPaydays(3),
   });
 
   const { data: accounts = [] } = useQuery<Account[]>({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: async () => {
       const allAccounts = await api.getAccounts();
       return allAccounts.filter((acc: Account) => acc.type === 'bank');
@@ -103,7 +103,7 @@ export default function SalaryScreen() {
   }, [accounts]);
 
   const { data: salaryCycles = [] } = useQuery<SalaryCycle[]>({
-    queryKey: ['salary-cycles'],
+    queryKey: ['/api/salary-cycles'],
     queryFn: () => api.getSalaryCycles(),
   });
 
@@ -112,10 +112,10 @@ export default function SalaryScreen() {
       return api.updateSalaryCycle(id, { actualPayDate, actualAmount, markAsCredited });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['salary-cycles'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/salary-cycles'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       setEditingCycle(null);
       Toast.show({
         type: 'success',
@@ -168,8 +168,8 @@ export default function SalaryScreen() {
 
     mutation()
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ['salary-profile-paydays'] });
-        queryClient.invalidateQueries({ queryKey: ['salary-cycles'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/salary-profile/next-paydays'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/salary-cycles'] });
         setEditingNextPayday(null);
         Toast.show({
           type: 'success',
@@ -219,10 +219,10 @@ export default function SalaryScreen() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['salary-profile'] });
-      queryClient.invalidateQueries({ queryKey: ['salary-profile-paydays'] });
-      queryClient.invalidateQueries({ queryKey: ['salary-cycles'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/salary-profile'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/salary-profile/next-paydays'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/salary-cycles'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       Toast.show({
         type: 'success',
         text1: 'Salary Settings Saved',

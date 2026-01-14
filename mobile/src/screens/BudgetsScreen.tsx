@@ -73,8 +73,8 @@ export default function BudgetsScreen() {
   const deleteMutation = useMutation({
     mutationFn: api.deleteBudget,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budgets'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/budgets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       setIsDeleteModalOpen(false);
       setBudgetToDelete(null);
       Toast.show({

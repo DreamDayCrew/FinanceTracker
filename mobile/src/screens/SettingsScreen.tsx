@@ -23,7 +23,7 @@ export default function SettingsScreen() {
   const [rightSwipeAction, setRightSwipeAction] = useState<'edit' | 'delete'>('edit');
 
   const { data: user } = useQuery({
-    queryKey: ['user'],
+    queryKey: ['/api/user'],
     queryFn: api.getUser,
   });
 
@@ -85,14 +85,14 @@ export default function SettingsScreen() {
   const updateUserMutation = useMutation({
     mutationFn: api.updateUser,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/user'] });
     },
   });
 
   const setPinMutation = useMutation({
     mutationFn: api.setPin,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/user'] });
       checkPinRequired();
       setShowPinModal(false);
       setPin('');
@@ -106,7 +106,7 @@ export default function SettingsScreen() {
   const resetPinMutation = useMutation({
     mutationFn: api.resetPin,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/user'] });
       checkPinRequired();
       Alert.alert('Success', 'PIN has been removed');
     },
@@ -178,7 +178,7 @@ export default function SettingsScreen() {
       await api.toggleBiometric(authUser.id, newValue);
       Alert.alert('Success', newValue ? 'Biometric authentication enabled' : 'Biometric authentication disabled');
       // Update query cache
-      queryClient.invalidateQueries({ queryKey: ['user'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/user'] });
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to update biometric setting');
     }

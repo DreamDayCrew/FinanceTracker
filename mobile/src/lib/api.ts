@@ -225,6 +225,21 @@ export const api = {
     apiRequest<void>(`/api/accounts/${id}`, { method: 'DELETE' }),
   
   getCategories: () => apiRequest<Category[]>('/api/categories'),
+  createCategory: (data: { name: string; color: string; icon?: string; type?: string }) =>
+    apiRequest<Category>('/api/categories', { method: 'POST', body: JSON.stringify(data) }),
+  updateCategory: (id: number, data: { name: string; color: string; icon?: string; type?: string }) =>
+    apiRequest<Category>(`/api/categories/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteCategory: (id: number) =>
+    apiRequest<void>(`/api/categories/${id}`, { method: 'DELETE' }),
+  getCategoryUsage: () =>
+    apiRequest<Array<{
+      categoryId: number;
+      transactionCount: number;
+      scheduledPaymentCount: number;
+      budgetCount: number;
+      insuranceCount: number;
+      loanCount: number;
+    }>>('/api/categories/usage'),
   
   getTransactions: () => apiRequest<Transaction[]>('/api/transactions'),
   createTransaction: (data: InsertTransaction) => 
@@ -447,7 +462,7 @@ export const api = {
       }>;
     }>(`/api/expenses/category-breakdown?month=${month}&year=${year}`),
 
-  getCreditCardSpending: () =>
+  getCreditCardSpending: (cycle: 'current' | 'previous' = 'current') =>
     apiRequest<Array<{
       accountId: number;
       accountName: string;
@@ -460,7 +475,7 @@ export const api = {
       availableCredit: number;
       usedCredit: number;
       utilizationPercent: number;
-    }>>('/api/credit-card-spending'),
+    }>>(`/api/credit-card-spending?cycle=${cycle}`),
 
   getMonthlyCreditCardSpending: () => 
     apiRequest<Array<{

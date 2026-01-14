@@ -58,13 +58,13 @@ export default function AddLoanScreen() {
   const [affectBalance, setAffectBalance] = useState(false);
 
   const { data: accounts = [] } = useQuery<Account[]>({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: () => api.getAccounts(),
   });
 
   // Fetch existing loan data if in edit mode
   const { data: existingLoan, isLoading: isLoadingLoan } = useQuery<Loan>({
-    queryKey: ['loan', loanId],
+    queryKey: ['/api/loans', loanId],
     queryFn: () => api.getLoan(loanId!),
     enabled: isEditMode,
   });
@@ -161,8 +161,8 @@ export default function AddLoanScreen() {
       return api.createLoan(payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
       Toast.show({
         type: 'success',
         text1: 'Loan Added',
@@ -210,9 +210,9 @@ export default function AddLoanScreen() {
       return api.updateLoan(loanId!, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
       Toast.show({
         type: 'success',
         text1: 'Loan Updated',

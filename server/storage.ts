@@ -53,6 +53,16 @@ export interface IStorage {
   getCategory(id: number): Promise<Category | undefined>;
   getCategoryByName(name: string): Promise<Category | undefined>;
   createCategory(category: InsertCategory): Promise<Category>;
+  updateCategory(id: number, category: Partial<InsertCategory>): Promise<Category | undefined>;
+  deleteCategory(id: number): Promise<boolean>;
+  getCategoryUsage(): Promise<Array<{
+    categoryId: number;
+    transactionCount: number;
+    scheduledPaymentCount: number;
+    budgetCount: number;
+    insuranceCount: number;
+    loanCount: number;
+  }>>;
   seedDefaultCategories(): Promise<void>;
 
   // Transactions
@@ -287,6 +297,73 @@ export class DatabaseStorage implements IStorage {
   async createCategory(category: InsertCategory): Promise<Category> {
     const [newCategory] = await db.insert(categories).values(category).returning();
     return newCategory;
+  }
+
+  async updateCategory(id: number, category: Partial<InsertCategory>): Promise<Category | undefined> {
+    const [updated] = await db.update(categories)
+      .set(category)
+      .where(eq(categories.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteCategory(id: number): Promise<boolean> {
+    const result = await db.delete(categories).where(eq(categories.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  async getCategoryUsage(): Promise<Array<{
+    categoryId: number;
+    transactionCount: number;
+    scheduledPaymentCount: number;
+    budgetCount: number;
+    insuranceCount: number;
+    loanCount: number;
+  }>> {
+    const allCategories = await this.getAllCategories();
+    
+    const usage = await Promise.all(allCategories.map(async (category) => {
+      // Count transactions
+      const transactionCountResult = await db.select({ count: sql<number>`count(*)` })
+        .from(transactions)
+        .where(eq(transactions.categoryId, category.id));
+      const transactionCount = Number(transactionCountResult[0]?.count || 0);
+
+      // Count scheduled payments
+      const scheduledPaymentCountResult = await db.select({ count: sql<number>`count(*)` })
+        .from(scheduledPayments)
+        .where(eq(scheduledPayments.categoryId, category.id));
+      const scheduledPaymentCount = Number(scheduledPaymentCountResult[0]?.count || 0);
+
+      // Count budgets
+      const budgetCountResult = await db.select({ count: sql<number>`count(*)` })
+        .from(budgets)
+        .where(eq(budgets.categoryId, category.id));
+      const budgetCount = Number(budgetCountResult[0]?.count || 0);
+
+      // Count insurances
+      const insuranceCountResult = await db.select({ count: sql<number>`count(*)` })
+        .from(insurances)
+        .where(eq(insurances.categoryId, category.id));
+      const insuranceCount = Number(insuranceCountResult[0]?.count || 0);
+
+      // Count loans (from loan_components)
+      const loanCountResult = await db.select({ count: sql<number>`count(distinct ${loanComponents.loanId})` })
+        .from(loanComponents)
+        .where(eq(loanComponents.categoryId, category.id));
+      const loanCount = Number(loanCountResult[0]?.count || 0);
+
+      return {
+        categoryId: category.id,
+        transactionCount,
+        scheduledPaymentCount,
+        budgetCount,
+        insuranceCount,
+        loanCount,
+      };
+    }));
+
+    return usage;
   }
 
   async seedDefaultCategories(): Promise<void> {
@@ -1005,8 +1082,28 @@ export class DatabaseStorage implements IStorage {
           ));
 
         if (existing.length === 0) {
-          const dueDay = Math.min(payment.dueDate, new Date(year, month, 0).getDate());
-          const dueDateObj = new Date(year, month - 1, dueDay);
+          let dueDateObj: Date;
+          
+          // Calculate due date based on due date type
+          if (payment.dueDateType === 'salary_day') {
+            // Get user's salary profile to use monthly cycle start date
+            const [salaryProfile] = await db.select()
+              .from(salaryProfiles)
+              .where(eq(salaryProfiles.userId, payment.userId));
+            
+            if (salaryProfile && salaryProfile.monthCycleStartDay) {
+              // Use the monthly cycle start date (when financial month begins)
+              const cycleDay = Math.min(salaryProfile.monthCycleStartDay, new Date(year, month, 0).getDate());
+              dueDateObj = new Date(year, month - 1, cycleDay);
+            } else {
+              // Fallback to 1st of month if no salary profile or no cycle start date
+              dueDateObj = new Date(year, month - 1, 1);
+            }
+          } else {
+            // Fixed day - use the dueDate from payment
+            const dueDay = Math.min(payment.dueDate || 1, new Date(year, month, 0).getDate());
+            dueDateObj = new Date(year, month - 1, dueDay);
+          }
           
           // Auto-calculate amount for credit card bills
           let occurrenceAmount: string | undefined;
@@ -1452,19 +1549,19 @@ export class DatabaseStorage implements IStorage {
 
   // Loan Installments
   async regenerateLoanInstallments(loanId: number): Promise<LoanInstallment[]> {
-    console.log('Storage: Regenerating installments for loan:', loanId);
+    // console.log('Storage: Regenerating installments for loan:', loanId);
     // Delete all pending installments
     const deleteResult = await db.delete(loanInstallments)
       .where(and(
         eq(loanInstallments.loanId, loanId),
         eq(loanInstallments.status, 'pending')
       ));
-    console.log('Storage: Deleted pending installments');
+    // console.log('Storage: Deleted pending installments');
     
     // Generate new installments using current date as base
-    console.log('Storage: Generating new installments from current date...');
+    // console.log('Storage: Generating new installments from current date...');
     const newInstallments = await this.generateLoanInstallments(loanId, true);
-    console.log('Storage: Generated', newInstallments.length, 'new installments');
+    // console.log('Storage: Generated', newInstallments.length, 'new installments');
     
     // Update loan's nextEmiDate with the first pending installment's due date
     if (newInstallments.length > 0) {
@@ -1475,7 +1572,7 @@ export class DatabaseStorage implements IStorage {
           updatedAt: new Date(),
         })
         .where(eq(loans.id, loanId));
-      console.log('Storage: Updated loan nextEmiDate to:', firstInstallmentDate);
+      // console.log('Storage: Updated loan nextEmiDate to:', firstInstallmentDate);
     }
     
     return newInstallments;
@@ -1532,18 +1629,18 @@ export class DatabaseStorage implements IStorage {
     if (useCurrentDate) {
       // For regeneration, always start from current month
       baseDate = new Date();
-      console.log('Using current date as base:', baseDate.toISOString());
+      // console.log('Using current date as base:', baseDate.toISOString());
     } else {
       // For initial generation, use existing logic
       const isExistingLoan = loan.isExistingLoan ?? false;
       baseDate = isExistingLoan && loan.nextEmiDate 
         ? new Date(loan.nextEmiDate) 
         : new Date(loan.startDate);
-      console.log('Using stored date as base:', baseDate.toISOString());
+      // console.log('Using stored date as base:', baseDate.toISOString());
     }
     
     const emiDay = loan.emiDay || baseDate.getDate();
-    console.log('EMI day:', emiDay, 'Base date:', baseDate.toISOString());
+    // console.log('EMI day:', emiDay, 'Base date:', baseDate.toISOString());
     
     // For existing loans, use outstanding amount as the starting principal
     const isExistingLoan = loan.isExistingLoan ?? false;
@@ -1562,9 +1659,9 @@ export class DatabaseStorage implements IStorage {
     const shouldIncludeCurrentMonth = currentDayOfMonth < emiDay;
     const startIndex = shouldIncludeCurrentMonth ? 0 : 1;
     
-    console.log('Current day:', currentDayOfMonth, 'EMI day:', emiDay, 
-                'Should include current month:', shouldIncludeCurrentMonth, 
-                'Start index:', startIndex, 'Use current date:', useCurrentDate);
+    // console.log('Current day:', currentDayOfMonth, 'EMI day:', emiDay, 
+    //             'Should include current month:', shouldIncludeCurrentMonth, 
+    //             'Start index:', startIndex, 'Use current date:', useCurrentDate);
 
     for (let i = startIndex; i <= loan.tenure + startIndex - 1; i++) {
       // Calculate interest for this installment

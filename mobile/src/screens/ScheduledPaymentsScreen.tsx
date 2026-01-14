@@ -60,17 +60,17 @@ export default function ScheduledPaymentsScreen() {
   const [paymentAffectBalance, setPaymentAffectBalance] = useState(true);
 
   const { data: payments, isLoading, refetch: refetchPayments } = useQuery({
-    queryKey: ['scheduled-payments'],
+    queryKey: ['/api/scheduled-payments'],
     queryFn: api.getScheduledPayments,
   });
 
   const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ['categories'],
+    queryKey: ['/api/categories'],
     queryFn: api.getCategories,
   });
 
   const { data: accounts = [] } = useQuery<Account[]>({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: api.getAccounts,
   });
 
@@ -144,10 +144,10 @@ export default function ScheduledPaymentsScreen() {
       return await api.updatePaymentOccurrence(id, updateData);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/monthlyExpenses'] });
       queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       refetchOccurrences();
       Toast.show({
@@ -222,10 +222,10 @@ export default function ScheduledPaymentsScreen() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/monthlyExpenses'] });
       queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       refetchOccurrences();
       setShowPaymentModal(false);
@@ -253,15 +253,15 @@ export default function ScheduledPaymentsScreen() {
     mutationFn: ({ id, status }: { id: number; status: 'active' | 'inactive' }) =>
       api.updateScheduledPayment(id, { status }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scheduled-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/scheduled-payments'] });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: api.deleteScheduledPayment,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scheduled-payments'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/scheduled-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       refetchPayments();
       refetchOccurrences();
       Toast.show({

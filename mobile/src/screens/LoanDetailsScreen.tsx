@@ -53,7 +53,7 @@ export default function LoanDetailsScreen() {
   });
 
   const { data: loan, isLoading } = useQuery<Loan>({
-    queryKey: ['loan', loanId],
+    queryKey: ['/api/loans', loanId],
     queryFn: () => api.getLoan(loanId),
   });
 
@@ -78,8 +78,8 @@ export default function LoanDetailsScreen() {
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteLoan(loanId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
       Toast.show({
         type: 'success',
         text1: 'Loan Deleted',
@@ -102,13 +102,13 @@ export default function LoanDetailsScreen() {
     mutationFn: (data: { closureAmount: string; closureDate: string; accountId?: number; createTransaction?: boolean }) => 
       api.precloseLoan(loanId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId] });
       queryClient.invalidateQueries({ queryKey: ['loan-installments', loanId] });
       queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
       setPreclosureModalVisible(false);
       setPreclosureAmount('');
       Toast.show({
@@ -132,14 +132,14 @@ export default function LoanDetailsScreen() {
     mutationFn: (data: { topupAmount: string; newEmiAmount?: string; additionalTenure?: number; accountId?: number; createTransaction?: boolean; notes?: string }) => 
       api.topupLoan(loanId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId] });
       queryClient.invalidateQueries({ queryKey: ['loan-installments', loanId] });
       queryClient.invalidateQueries({ queryKey: ['loan-terms', loanId] });
       queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
       setTopupModalVisible(false);
       setTopupData({ topupAmount: '', newEmiAmount: '', additionalTenure: '', notes: '' });
       Toast.show({
@@ -167,9 +167,9 @@ export default function LoanDetailsScreen() {
     onSuccess: (data) => {
       console.log('Regeneration successful:', data);
       queryClient.invalidateQueries({ queryKey: ['loan-installments', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
       Toast.show({
         type: 'success',
         text1: 'Installments Regenerated',
@@ -200,12 +200,12 @@ export default function LoanDetailsScreen() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId] });
       queryClient.invalidateQueries({ queryKey: ['loan-installments', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
       setProcessingInstallmentId(null);
       setPayEmiModalVisible(false);
       setSelectedInstallment(null);
@@ -241,7 +241,7 @@ export default function LoanDetailsScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['loan-terms', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId] });
       setAddTermModalVisible(false);
       setNewTerm({ interestRate: '', tenureMonths: '', emiAmount: '', reason: '' });
       Toast.show({
@@ -276,9 +276,9 @@ export default function LoanDetailsScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
       setAddPaymentModalVisible(false);
       setNewPayment({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi', notes: '' });
       Toast.show({
@@ -310,9 +310,9 @@ export default function LoanDetailsScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
       setEditPaymentModalVisible(false);
       setEditingPayment(null);
       Toast.show({
@@ -336,9 +336,9 @@ export default function LoanDetailsScreen() {
     mutationFn: (paymentId: number) => api.deleteLoanPayment(paymentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loan', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
       Toast.show({
         type: 'success',
         text1: 'Payment Deleted',

@@ -56,17 +56,17 @@ export default function SavingsGoalsScreen() {
   const [showToAccountPicker, setShowToAccountPicker] = useState(false);
 
   const { data: goals, isLoading, refetch: refetchGoals } = useQuery<SavingsGoal[]>({
-    queryKey: ['savings-goals'],
+    queryKey: ['/api/savings-goals'],
     queryFn: api.getSavingsGoals,
   });
 
   const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ['categories'],
+    queryKey: ['/api/categories'],
     queryFn: api.getCategories,
   });
 
   const { data: accounts = [] } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: api.getAccounts,
   });
 
@@ -96,8 +96,8 @@ export default function SavingsGoalsScreen() {
     mutationFn: (data: { name: string; targetAmount: string; icon: string; color: string; accountId?: number | null; toAccountId?: number | null; affectTransaction: boolean; affectAccountBalance: boolean }) =>
       api.createSavingsGoal(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       setIsAddModalOpen(false);
       setNewGoal({ name: '', targetAmount: '', icon: 'flag', color: '#4CAF50', accountId: null, toAccountId: null, affectTransaction: true, affectAccountBalance: true });
       Toast.show({
@@ -121,8 +121,8 @@ export default function SavingsGoalsScreen() {
     mutationFn: ({ id, data }: { id: number; data: Partial<{ name: string; targetAmount: string; icon: string; color: string; accountId?: number | null; toAccountId?: number | null; affectTransaction?: boolean; affectAccountBalance?: boolean }> }) =>
       api.updateSavingsGoal(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       setIsEditModalOpen(false);
       setGoalToEdit(null);
       Toast.show({
@@ -146,11 +146,11 @@ export default function SavingsGoalsScreen() {
     mutationFn: ({ goalId, amount, contributedAt, createTransaction, affectBalance }: { goalId: number; amount: string; contributedAt?: string; createTransaction: boolean; affectBalance: boolean }) =>
       api.addContribution(goalId, { amount, contributedAt, createTransaction, affectBalance }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/monthlyExpenses'] });
       queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       setIsContributeModalOpen(false);
       setContributionAmount('');
@@ -179,7 +179,7 @@ export default function SavingsGoalsScreen() {
     mutationFn: ({ id, status }: { id: number; status: 'active' | 'completed' | 'cancelled' }) =>
       api.updateSavingsGoal(id, { status }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
       Toast.show({
         type: 'success',
         text1: 'Goal Updated',
@@ -194,10 +194,10 @@ export default function SavingsGoalsScreen() {
       return await api.deleteSavingsGoal(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
       refetchGoals();
       Toast.show({
         type: 'success',
@@ -221,11 +221,11 @@ export default function SavingsGoalsScreen() {
       return await api.deleteContribution(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
       queryClient.invalidateQueries({ queryKey: ['contributions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
       refetchGoals();
       refetchContributions();
       Toast.show({

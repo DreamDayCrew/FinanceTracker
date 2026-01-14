@@ -71,27 +71,27 @@ export default function TransactionsScreen() {
   );
 
   const { data: transactions, isLoading } = useQuery({
-    queryKey: ['transactions'],
+    queryKey: ['/api/transactions'],
     queryFn: api.getTransactions,
   });
 
   const { data: categories = [] } = useQuery({
-    queryKey: ['categories'],
+    queryKey: ['/api/categories'],
     queryFn: api.getCategories,
   });
 
   const { data: accounts = [] } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: api.getAccounts,
   });
   
   const deleteMutation = useMutation({
     mutationFn: api.deleteTransaction,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/monthlyExpenses'] });
       queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       setIsDeleteModalOpen(false);
       setSelectedTransaction(null);

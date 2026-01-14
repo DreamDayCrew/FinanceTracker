@@ -93,19 +93,19 @@ export type Category = typeof categories.$inferSelect;
 
 // Default categories list
 export const DEFAULT_CATEGORIES = [
-  { name: "Groceries", icon: "shopping-cart", color: "#4CAF50", type: "expense" },
+  { name: "Groceries", icon: "cart", color: "#4CAF50", type: "expense" },
   { name: "Transport", icon: "car", color: "#2196F3", type: "expense" },
-  { name: "Dining", icon: "utensils", color: "#FF9800", type: "expense" },
-  { name: "Shopping", icon: "shopping-bag", color: "#E91E63", type: "expense" },
-  { name: "Entertainment", icon: "film", color: "#9C27B0", type: "expense" },
-  { name: "Bills", icon: "file-text", color: "#607D8B", type: "expense" },
+  { name: "Dining", icon: "restaurant", color: "#FF9800", type: "expense" },
+  { name: "Shopping", icon: "bag-handle", color: "#E91E63", type: "expense" },
+  { name: "Entertainment", icon: "videocam", color: "#9C27B0", type: "expense" },
+  { name: "Bills", icon: "receipt", color: "#607D8B", type: "expense" },
   { name: "Health", icon: "heart", color: "#F44336", type: "expense" },
-  { name: "Education", icon: "book", color: "#3F51B5", type: "expense" },
-  { name: "Travel", icon: "plane", color: "#00BCD4", type: "expense" },
+  { name: "Education", icon: "school", color: "#3F51B5", type: "expense" },
+  { name: "Travel", icon: "airplane", color: "#00BCD4", type: "expense" },
   { name: "Salary", icon: "briefcase", color: "#4CAF50", type: "income" },
   { name: "Investment", icon: "trending-up", color: "#8BC34A", type: "income" },
   { name: "Transfer", icon: "repeat", color: "#795548", type: "transfer" },
-  { name: "Other", icon: "more-horizontal", color: "#9E9E9E", type: "expense" },
+  { name: "Other", icon: "ellipsis-horizontal", color: "#9E9E9E", type: "expense" },
 ] as const;
 
 // Transactions (from SMS parsing or manual entry)
@@ -198,7 +198,8 @@ export const scheduledPayments = pgTable("scheduled_payments", {
   name: varchar("name", { length: 200 }).notNull(),
   paymentType: varchar("payment_type", { length: 20 }).default("regular"), // 'regular', 'credit_card_bill'
   amount: decimal("amount", { precision: 12, scale: 2 }), // nullable for auto-calculated credit card bills
-  dueDate: integer("due_date").notNull(), // day of month (1-31)
+  dueDateType: varchar("due_date_type", { length: 20 }).default("fixed_day"), // 'fixed_day' or 'salary_day'
+  dueDate: integer("due_date"), // day of month (1-31) when dueDateType is 'fixed_day', null when 'salary_day'
   categoryId: integer("category_id").references(() => categories.id),
   accountId: integer("account_id").references(() => accounts.id),
   creditCardAccountId: integer("credit_card_account_id").references(() => accounts.id), // for credit card bills
@@ -228,7 +229,8 @@ export const insertScheduledPaymentSchema = createInsertSchema(scheduledPayments
   name: z.string().min(1, "Payment name is required"),
   paymentType: z.enum(["regular", "credit_card_bill"]).optional(),
   amount: z.string().optional(), // optional for auto-calculated credit card bills
-  dueDate: z.number().min(1).max(31),
+  dueDateType: z.enum(["fixed_day", "salary_day"]).optional(),
+  dueDate: z.number().min(1).max(31).optional(), // optional when dueDateType is 'salary_day'
   creditCardAccountId: z.union([z.number(), z.null()]).optional(),
   categoryId: z.union([z.number(), z.null()]).optional(),
   accountId: z.union([z.number(), z.null()]).optional(),
@@ -251,6 +253,18 @@ export const insertScheduledPaymentSchema = createInsertSchema(scheduledPayments
   {
     message: "Amount is required for regular payments and must be a valid positive number",
     path: ["amount"],
+  }
+).refine(
+  (data) => {
+    // dueDate is required when dueDateType is 'fixed_day'
+    if (data.dueDateType === 'fixed_day' && !data.dueDate) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: "Due date is required when due date type is fixed day",
+    path: ["dueDate"],
   }
 );
 

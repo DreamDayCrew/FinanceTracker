@@ -26,12 +26,12 @@ export default function ScanSMSScreen() {
   const colors = getThemedColors(resolvedTheme);
 
   const { data: accounts } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: api.getAccounts,
   });
 
   const { data: categories } = useQuery({
-    queryKey: ['categories'],
+    queryKey: ['/api/categories'],
     queryFn: api.getCategories,
   });
 
@@ -59,9 +59,9 @@ export default function ScanSMSScreen() {
   const createMutation = useMutation({
     mutationFn: api.createTransaction,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       Alert.alert('Success', 'Transaction added successfully!', [
         { text: 'Add Another', onPress: resetForm },
         { text: 'Done', onPress: () => navigation.goBack() },

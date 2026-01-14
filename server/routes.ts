@@ -377,24 +377,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const validatedData = insertCategorySchema.partial().parse(req.body);
+      const category = await storage.updateCategory(id, validatedData);
+      res.json(category);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid category data" });
+    }
+  });
+
+  app.delete("/api/categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteCategory(id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Failed to delete category" });
+    }
+  });
+
+  app.get("/api/categories/usage", async (_req, res) => {
+    try {
+      const usage = await storage.getCategoryUsage();
+      res.json(usage);
+    } catch (error) {
+      console.error("Error fetching category usage:", error);
+      res.status(500).json({ error: "Failed to fetch category usage" });
+    }
+  });
+
   // ========== Accounts ==========
   app.get("/api/accounts", authenticateToken, async (req, res) => {
     try {
       const userId = req.user!.userId;
       const accounts = await storage.getAllAccounts(userId);
-      // Attach card details for credit_card and debit_card accounts
-      const accountsWithCards = await Promise.all(
-        accounts.map(async (account) => {
-          if (account.type === 'credit_card' || account.type === 'debit_card') {
-            const cardDetails = await storage.getCardDetails(account.id);
-            return { ...account, cardDetails };
-          }
-          return account;
-        })
-      );
+      // Optimize: Batch fetch card details for all card accounts at once
+      const cardAccountIds = accounts
+        .filter(a => a.type === 'credit_card' || a.type === 'debit_card')
+        .map(a => a.id);
+      
+      const cardDetailsMap = new Map();
+      if (cardAccountIds.length > 0) {
+        const allCardDetails = await Promise.all(
+          cardAccountIds.map(id => storage.getCardDetails(id))
+        );
+        cardAccountIds.forEach((id, idx) => {
+          if (allCardDetails[idx]) cardDetailsMap.set(id, allCardDetails[idx]);
+        });
+      }
+      
+      const accountsWithCards = accounts.map(account => {
+        if (cardDetailsMap.has(account.id)) {
+          return { ...account, cardDetails: cardDetailsMap.get(account.id) };
+        }
+        return account;
+      });
+      
       res.json(accountsWithCards);
     } catch (error) {
-      console.error("Error fetching accounts:", error);
+      if (process.env.NODE_ENV !== 'production') console.error("Error fetching accounts:", error);
       res.status(500).json({ error: "Failed to fetch accounts" });
     }
   });
@@ -1745,6 +1788,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/credit-card-spending", authenticateToken, async (req, res) => {
     try {
       const userId = req.user!.userId;
+      const cycle = req.query.cycle as string || 'current'; // 'current' or 'previous'
       const accounts = await storage.getAllAccounts(userId);
       const creditCards = accounts.filter(acc => acc.type === 'credit_card' && acc.isActive && acc.billingDate);
       
@@ -1755,18 +1799,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const currentDay = now.getDate();
         const billingDay = card.billingDate!;
         
-        // Determine billing cycle dates
+        // Determine billing cycle dates based on requested cycle
         let cycleStartDate: Date;
         let cycleEndDate: Date;
         
-        if (currentDay >= billingDay) {
-          // Current cycle: billingDay of this month to today
-          cycleStartDate = new Date(now.getFullYear(), now.getMonth(), billingDay, 0, 0, 0);
-          cycleEndDate = new Date(now.getFullYear(), now.getMonth() + 1, billingDay - 1, 23, 59, 59);
+        if (cycle === 'previous') {
+          // Previous complete cycle - this represents the bill that will be paid this month
+          // Example: Today is Jan 14, billing date 13
+          // Previous cycle: Dec 13 to Jan 12 (this is the Jan bill)
+          if (currentDay >= billingDay) {
+            // We're past billing date, so previous cycle is last month to this month
+            cycleStartDate = new Date(now.getFullYear(), now.getMonth() - 1, billingDay, 0, 0, 0);
+            cycleEndDate = new Date(now.getFullYear(), now.getMonth(), billingDay - 1, 23, 59, 59);
+          } else {
+            // We're before billing date, so previous cycle is 2 months ago to last month
+            cycleStartDate = new Date(now.getFullYear(), now.getMonth() - 2, billingDay, 0, 0, 0);
+            cycleEndDate = new Date(now.getFullYear(), now.getMonth() - 1, billingDay - 1, 23, 59, 59);
+          }
         } else {
-          // Previous cycle: billingDay of last month to today
-          cycleStartDate = new Date(now.getFullYear(), now.getMonth() - 1, billingDay, 0, 0, 0);
-          cycleEndDate = new Date(now.getFullYear(), now.getMonth(), billingDay - 1, 23, 59, 59);
+          // Current cycle
+          if (currentDay >= billingDay) {
+            // Current cycle: billingDay of this month to next month's billingDay - 1
+            cycleStartDate = new Date(now.getFullYear(), now.getMonth(), billingDay, 0, 0, 0);
+            cycleEndDate = new Date(now.getFullYear(), now.getMonth() + 1, billingDay - 1, 23, 59, 59);
+          } else {
+            // Previous cycle: billingDay of last month to this month's billingDay - 1
+            cycleStartDate = new Date(now.getFullYear(), now.getMonth() - 1, billingDay, 0, 0, 0);
+            cycleEndDate = new Date(now.getFullYear(), now.getMonth(), billingDay - 1, 23, 59, 59);
+          }
         }
         
         // Get transactions for this card in billing cycle

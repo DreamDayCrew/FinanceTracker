@@ -40,20 +40,20 @@ export default function AccountsScreen() {
   );
 
   const { data: accounts, isLoading } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: api.getAccounts,
   });
 
   const { data: dashboardData } = useQuery({
-    queryKey: ['dashboard'],
+    queryKey: ['/api/dashboard'],
     queryFn: api.getDashboard,
   });
 
   const deleteMutation = useMutation({
     mutationFn: api.deleteAccount,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       setIsDeleteModalOpen(false);
       setSelectedAccount(null);
       Toast.show({

@@ -64,10 +64,13 @@ export interface ScheduledPayment {
   id: number;
   userId: number | null;
   name: string;
+  paymentType?: string;
   amount: string;
-  dueDate: number;
+  dueDateType?: 'fixed_day' | 'salary_day';
+  dueDate: number | null;
   categoryId: number | null;
   accountId: number | null;
+  creditCardAccountId?: number | null;
   frequency?: string | null;
   startMonth?: number | null;
   status: 'active' | 'inactive';
@@ -203,12 +206,14 @@ export interface SavingsContribution {
 
 export interface SalaryProfile {
   id: number;
-  userId: number | null;
-  employerName: string;
-  monthlySalary: string;
-  payDay: number;
-  payDayRule: 'exact' | 'before_weekend' | 'after_weekend' | 'last_working_day';
+  userId: number;
   accountId: number | null;
+  paydayRule: 'fixed_day' | 'last_working_day' | 'nth_weekday';
+  fixedDay: number | null;
+  weekdayPreference: number | null;
+  monthCycleStartRule: 'salary_day' | 'fixed_day';
+  monthCycleStartDay: number | null;
+  monthlyAmount: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

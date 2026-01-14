@@ -30,7 +30,7 @@ export default function AddBudgetScreen() {
   const year = now.getFullYear();
 
   const { data: categories } = useQuery({
-    queryKey: ['categories'],
+    queryKey: ['/api/categories'],
     queryFn: api.getCategories,
   });
 
@@ -43,8 +43,8 @@ export default function AddBudgetScreen() {
   const createMutation = useMutation({
     mutationFn: api.createBudget,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budgets'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/budgets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       navigation.goBack();
       Toast.show({
         type: 'success',
@@ -66,8 +66,8 @@ export default function AddBudgetScreen() {
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: any }) => api.updateBudget(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budgets'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/budgets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       navigation.goBack();
       Toast.show({
         type: 'success',

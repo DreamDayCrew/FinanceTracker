@@ -54,12 +54,12 @@ export default function AddInsuranceScreen() {
   const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   const { data: accounts } = useQuery<Account[]>({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: () => api.getAccounts(),
   });
 
   const { data: existingInsurance, isLoading: isLoadingInsurance } = useQuery<Insurance>({
-    queryKey: ['insurances', insuranceId],
+    queryKey: ['/api/insurances', insuranceId],
     queryFn: () => api.getInsurance(insuranceId),
     enabled: isEditing,
   });
@@ -88,7 +88,7 @@ export default function AddInsuranceScreen() {
   const createMutation = useMutation({
     mutationFn: (data: InsertInsurance) => api.createInsurance(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['insurances'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/insurances'] });
       Toast.show({
         type: 'success',
         text1: 'Insurance Added',
@@ -110,7 +110,7 @@ export default function AddInsuranceScreen() {
   const updateMutation = useMutation({
     mutationFn: (data: Partial<InsertInsurance>) => api.updateInsurance(insuranceId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['insurances'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/insurances'] });
       Toast.show({
         type: 'success',
         text1: 'Insurance Updated',

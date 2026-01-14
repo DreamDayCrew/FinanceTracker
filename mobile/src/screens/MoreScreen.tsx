@@ -61,6 +61,13 @@ const menuItems: MenuItem[] = [
     color: '#6366f1',
   },
   {
+    icon: 'pricetags-outline',
+    title: 'Categories',
+    subtitle: 'Manage expense categories',
+    route: 'Categories',
+    color: '#ec4899',
+  },
+  {
     icon: 'settings-outline',
     title: 'Settings',
     subtitle: 'Theme, export, security',
@@ -99,7 +106,7 @@ export default function MoreScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: colors.textMuted }]}>My Tracker v1.0.21</Text>
+          <Text style={[styles.footerText, { color: colors.textMuted }]}>My Tracker v1.0.13</Text>
           <Text style={[styles.footerSubtext, { color: colors.textMuted }]}>Personal Finance Manager</Text>
         </View>
       </ScrollView>

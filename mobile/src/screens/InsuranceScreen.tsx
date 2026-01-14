@@ -42,14 +42,14 @@ export default function InsuranceScreen() {
   );
 
   const { data: insurances, isLoading } = useQuery<Insurance[]>({
-    queryKey: ['insurances'],
+    queryKey: ['/api/insurances'],
     queryFn: () => api.getInsurances(),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (insuranceId: number) => api.deleteInsurance(insuranceId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['insurances'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/insurances'] });
       setDeleteModalVisible(false);
       setInsuranceToDelete(null);
       Toast.show({

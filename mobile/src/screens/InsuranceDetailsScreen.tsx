@@ -29,19 +29,19 @@ export default function InsuranceDetailsScreen() {
   const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   const { data: insurance, isLoading } = useQuery<Insurance>({
-    queryKey: ['insurances', insuranceId],
+    queryKey: ['/api/insurances', insuranceId],
     queryFn: () => api.getInsurance(insuranceId),
     enabled: !!insuranceId,
   });
 
   const { data: accounts } = useQuery<Account[]>({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: () => api.getAccounts(),
   });
 
   useFocusEffect(
     useCallback(() => {
-      queryClient.invalidateQueries({ queryKey: ['insurances', insuranceId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/insurances', insuranceId] });
     }, [insuranceId])
   );
 
@@ -49,8 +49,8 @@ export default function InsuranceDetailsScreen() {
     mutationFn: ({ premiumId, data }: { premiumId: number; data: { amount: string; accountId?: number; createTransaction?: boolean; affectAccountBalance?: boolean } }) => 
       api.markPremiumPaid(insuranceId, premiumId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['insurances'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/insurances'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
       setPayModalVisible(false);
       setSelectedPremium(null);
       Toast.show({

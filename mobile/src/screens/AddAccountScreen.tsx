@@ -40,7 +40,7 @@ export default function AddAccountScreen() {
 
   // Always fetch accounts - needed for editing and for linking debit cards to bank accounts
   const { data: accounts } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: api.getAccounts,
   });
 
@@ -87,8 +87,8 @@ export default function AddAccountScreen() {
   const createMutation = useMutation({
     mutationFn: api.createAccount,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       navigation.goBack();
       Toast.show({
         type: 'success',
@@ -111,8 +111,8 @@ export default function AddAccountScreen() {
     mutationFn: ({ id, data }: { id: number; data: any }) =>
       api.updateAccount(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       navigation.goBack();
       Toast.show({
         type: 'success',

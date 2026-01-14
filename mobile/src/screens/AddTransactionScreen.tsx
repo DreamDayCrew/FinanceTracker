@@ -41,12 +41,12 @@ export default function AddTransactionScreen() {
   const [isParsing, setIsParsing] = useState(false);
 
   const { data: categories } = useQuery({
-    queryKey: ['categories'],
+    queryKey: ['/api/categories'],
     queryFn: api.getCategories,
   });
 
   const { data: accounts } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: api.getAccounts,
   });
 
@@ -61,7 +61,7 @@ export default function AddTransactionScreen() {
   }, [accounts, isEditMode, selectedAccountId]);
 
   const { data: transactions } = useQuery({
-    queryKey: ['transactions'],
+    queryKey: ['/api/transactions'],
     queryFn: api.getTransactions,
     enabled: isEditMode,
   });
@@ -86,10 +86,10 @@ export default function AddTransactionScreen() {
   const createMutation = useMutation({
     mutationFn: api.createTransaction,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/monthlyExpenses'] });
       queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       navigation.goBack();
       Toast.show({
@@ -113,10 +113,10 @@ export default function AddTransactionScreen() {
     mutationFn: ({ id, data }: { id: number; data: any }) =>
       api.updateTransaction(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/monthlyExpenses'] });
       queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
       navigation.goBack();
       Toast.show({
@@ -154,9 +154,9 @@ export default function AddTransactionScreen() {
         // Bulk parse
         const result = await api.parseSmsBatch(messages);
         
-        queryClient.invalidateQueries({ queryKey: ['transactions'] });
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-        queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/monthlyExpenses'] });
         queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
         
         setShowSmsModal(false);
@@ -172,9 +172,9 @@ export default function AddTransactionScreen() {
         const result = await api.parseSms(smsText);
         
         if (result.success && result.transaction) {
-          queryClient.invalidateQueries({ queryKey: ['transactions'] });
-          queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-          queryClient.invalidateQueries({ queryKey: ['monthlyExpenses'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/monthlyExpenses'] });
           queryClient.invalidateQueries({ queryKey: ['categoryBreakdown'] });
           setShowSmsModal(false);
           setSmsText('');

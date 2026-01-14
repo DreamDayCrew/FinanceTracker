@@ -24,6 +24,7 @@ export default function AddScheduledPaymentScreen() {
   
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
+  const [dueDateType, setDueDateType] = useState<'fixed_day' | 'salary_day'>('fixed_day');
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
@@ -37,12 +38,12 @@ export default function AddScheduledPaymentScreen() {
   const [showCreditCardPicker, setShowCreditCardPicker] = useState(false);
 
   const { data: categories } = useQuery({
-    queryKey: ['categories'],
+    queryKey: ['/api/categories'],
     queryFn: api.getCategories,
   });
 
   const { data: accounts } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['/api/accounts'],
     queryFn: api.getAccounts,
   });
 
@@ -52,7 +53,7 @@ export default function AddScheduledPaymentScreen() {
   const selectedCreditCard = creditCardAccounts.find((a: any) => a.id === creditCardAccountId);
 
   const { data: payments } = useQuery({
-    queryKey: ['scheduled-payments'],
+    queryKey: ['/api/scheduled-payments'],
     queryFn: api.getScheduledPayments,
     enabled: isEditMode,
   });
@@ -74,13 +75,14 @@ export default function AddScheduledPaymentScreen() {
       if (payment) {
         setName(payment.name);
         setAmount(payment.amount);
-        setDueDate(payment.dueDate.toString());
+        setDueDateType(payment.dueDateType || 'fixed_day');
+        setDueDate(payment.dueDate?.toString() || '');
         setNotes(payment.notes || '');
         setSelectedCategoryId(payment.categoryId || null);
         setSelectedAccountId(payment.accountId || null);
         setAffectTransaction(payment.affectTransaction ?? true);
         setAffectAccountBalance(payment.affectAccountBalance ?? true);
-        setPaymentType(payment.paymentType || 'regular');
+        setPaymentType((payment.paymentType as 'regular' | 'credit_card_bill') || 'regular');
         setCreditCardAccountId(payment.creditCardAccountId || null);
         
         // If it's a credit card bill, auto-populate billing date and name
@@ -97,8 +99,8 @@ export default function AddScheduledPaymentScreen() {
   const createMutation = useMutation({
     mutationFn: api.createScheduledPayment,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scheduled-payments'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/scheduled-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       Toast.show({
         type: 'success',
         text1: 'Payment Added',
@@ -123,8 +125,8 @@ export default function AddScheduledPaymentScreen() {
       return api.updateScheduledPayment(paymentId, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scheduled-payments'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/scheduled-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       Toast.show({
         type: 'success',
         text1: 'Payment Updated',
@@ -181,22 +183,26 @@ export default function AddScheduledPaymentScreen() {
       return;
     }
     
-    const dueDateNum = parseInt(dueDate);
-    if (!dueDate || isNaN(dueDateNum) || dueDateNum < 1 || dueDateNum > 31) {
-      Toast.show({
-        type: 'error',
-        text1: 'Invalid Due Date',
-        text2: 'Due date must be between 1 and 31',
-        position: 'bottom',
-        visibilityTime: 3000,
-      });
-      return;
+    // Validate due date only if dueDateType is 'fixed_day'
+    if (dueDateType === 'fixed_day') {
+      const dueDateNum = parseInt(dueDate);
+      if (!dueDate || isNaN(dueDateNum) || dueDateNum < 1 || dueDateNum > 31) {
+        Toast.show({
+          type: 'error',
+          text1: 'Invalid Due Date',
+          text2: 'Due date must be between 1 and 31',
+          position: 'bottom',
+          visibilityTime: 3000,
+        });
+        return;
+      }
     }
 
     mutation.mutate({
       name: name.trim(),
       amount: amount || undefined, // Send undefined for empty amount (auto-calculate)
-      dueDate: dueDateNum,
+      dueDateType,
+      dueDate: dueDateType === 'fixed_day' ? parseInt(dueDate) : null,
       notes: notes.trim() || null,
       categoryId: selectedCategoryId,
       accountId: selectedAccountId,
@@ -355,17 +361,71 @@ export default function AddScheduledPaymentScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={[styles.label, { color: colors.textMuted }]}>Due Date (Day of Month)</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-          placeholder="e.g., 1, 15, 28"
-          placeholderTextColor={colors.textMuted}
-          keyboardType="numeric"
-          maxLength={2}
-          value={dueDate}
-          onChangeText={setDueDate}
-        />
+        <Text style={[styles.label, { color: colors.textMuted }]}>Due Date Type</Text>
+        <View style={styles.paymentTypeRow}>
+          <TouchableOpacity
+            style={[
+              styles.paymentTypeButton,
+              { backgroundColor: dueDateType === 'fixed_day' ? colors.primary : colors.card, borderColor: colors.border }
+            ]}
+            onPress={() => setDueDateType('fixed_day')}
+          >
+            <Ionicons 
+              name="calendar-number-outline" 
+              size={20} 
+              color={dueDateType === 'fixed_day' ? '#fff' : colors.text} 
+            />
+            <Text style={[
+              styles.paymentTypeText,
+              { color: dueDateType === 'fixed_day' ? '#fff' : colors.text }
+            ]}>
+              Fixed Day
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.paymentTypeButton,
+              { backgroundColor: dueDateType === 'salary_day' ? colors.primary : colors.card, borderColor: colors.border }
+            ]}
+            onPress={() => setDueDateType('salary_day')}
+          >
+            <Ionicons 
+              name="cash-outline" 
+              size={20} 
+              color={dueDateType === 'salary_day' ? '#fff' : colors.text} 
+            />
+            <Text style={[
+              styles.paymentTypeText,
+              { color: dueDateType === 'salary_day' ? '#fff' : colors.text }
+            ]}>
+              Salary Day
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {dueDateType === 'fixed_day' ? (
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>Due Date (Day of Month)</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+            placeholder="e.g., 1, 15, 28"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="numeric"
+            maxLength={2}
+            value={dueDate}
+            onChangeText={setDueDate}
+          />
+        </View>
+      ) : (
+        <View style={[styles.infoBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Ionicons name="information-circle-outline" size={20} color={colors.primary} style={styles.infoIcon} />
+          <Text style={[styles.infoText, { color: colors.textMuted }]}>
+            Payment will be scheduled on the same day as your salary (as per your salary profile settings).
+            This will affect only from next month's payment onwards.
+          </Text>
+        </View>
+      )}
 
       <View style={styles.field}>
         <Text style={[styles.label, { color: colors.textMuted }]}>Category (optional)</Text>

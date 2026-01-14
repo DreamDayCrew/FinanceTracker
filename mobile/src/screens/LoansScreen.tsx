@@ -358,20 +358,20 @@ export default function LoansScreen() {
   );
 
   const { data: loans, isLoading } = useQuery<Loan[]>({
-    queryKey: ['loans'],
+    queryKey: ['/api/loans'],
     queryFn: () => api.getLoans(),
   });
 
   const { data: loanSummary } = useQuery<LoanSummary>({
-    queryKey: ['loan-summary'],
+    queryKey: ['/api/loan-summary'],
     queryFn: () => api.getLoanSummary(),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (loanId: number) => api.deleteLoan(loanId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
       setDeleteModalVisible(false);
       setLoanToDelete(null);
       Toast.show({

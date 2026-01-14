@@ -38,6 +38,8 @@ import OTPVerificationScreen from './src/screens/OTPVerificationScreen';
 import SetPasswordScreen from './src/screens/SetPasswordScreen';
 import ExpenseDetailsScreen from './src/screens/ExpenseDetailsScreen';
 import CreditCardDetailsScreen from './src/screens/CreditCardDetailsScreen';
+import CategoriesScreen from './src/screens/CategoriesScreen';
+import AddCategoryScreen from './src/screens/AddCategoryScreen';
 
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
@@ -84,6 +86,8 @@ export type MoreStackParamList = {
   Insurance: undefined;
   AddInsurance: { insuranceId?: number } | undefined;
   InsuranceDetails: { insuranceId: number };
+  Categories: undefined;
+  AddCategory: { categoryId?: number } | undefined;
   Settings: undefined;
   ScanSMS: undefined;
 };
@@ -214,6 +218,16 @@ function MoreStackNavigator() {
         name="InsuranceDetails" 
         component={InsuranceDetailsScreen}
         options={{ title: 'Insurance Details' }}
+      />
+      <MoreStack.Screen 
+        name="Categories" 
+        component={CategoriesScreen}
+        options={{ headerShown: false }}
+      />
+      <MoreStack.Screen 
+        name="AddCategory" 
+        component={AddCategoryScreen}
+        options={{ headerShown: false }}
       />
     </MoreStack.Navigator>
   );
