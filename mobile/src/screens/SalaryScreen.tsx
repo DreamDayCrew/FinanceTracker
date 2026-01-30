@@ -731,8 +731,13 @@ export default function SalaryScreen() {
         </View>
       )}
 
-      {/* Date Picker Modal */}
-      {showDatePicker && editingCycle && (
+      {/* Date Picker Modal for Past Payday */}
+      <Modal
+        visible={showDatePicker && !!editingCycle}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDatePicker(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={[styles.datePickerModal, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
@@ -747,8 +752,7 @@ export default function SalaryScreen() {
                 nestedScrollEnabled={true}
                 showsVerticalScrollIndicator={true}
               >
-                {/* Generate date options for the month */}
-                {(() => {
+                {editingCycle && (() => {
                   const year = editingCycle.year;
                   const month = editingCycle.month;
                   const daysInMonth = new Date(year, month, 0).getDate();
@@ -793,7 +797,7 @@ export default function SalaryScreen() {
             </View>
           </View>
         </View>
-      )}
+      </Modal>
 
       {/* Edit Next Payday Modal */}
       {editingNextPayday && (
@@ -861,7 +865,12 @@ export default function SalaryScreen() {
       )}
 
       {/* Date Picker Modal for Next Payday */}
-      {showNextPaydayDatePicker && editingNextPayday && (
+      <Modal
+        visible={showNextPaydayDatePicker && !!editingNextPayday}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowNextPaydayDatePicker(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={[styles.datePickerModal, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
@@ -876,8 +885,7 @@ export default function SalaryScreen() {
                 nestedScrollEnabled={true}
                 showsVerticalScrollIndicator={true}
               >
-                {/* Generate date options for the month */}
-                {(() => {
+                {editingNextPayday && (() => {
                   const year = editingNextPayday.year;
                   const month = editingNextPayday.month;
                   const daysInMonth = new Date(year, month, 0).getDate();
@@ -894,7 +902,7 @@ export default function SalaryScreen() {
                         style={[
                           styles.dateOption,
                           { backgroundColor: colors.background, borderColor: colors.border },
-                          isSelected && { backgroundColor: colors.primary, borderColor: colors.primary }
+                          isSelected ? { backgroundColor: colors.primary + '20', borderColor: colors.primary } : undefined
                         ]}
                         onPress={() => {
                           setEditNextPaydayDate(date.toISOString());
@@ -904,7 +912,7 @@ export default function SalaryScreen() {
                         <Text style={[
                           styles.dateOptionText,
                           { color: colors.text },
-                          isSelected && { color: '#fff' }
+                          isSelected ? { color: colors.primary, fontWeight: '600' } : undefined
                         ]}>
                           {date.toLocaleDateString('en-IN', {
                             weekday: 'short',
@@ -922,7 +930,7 @@ export default function SalaryScreen() {
             </View>
           </View>
         </View>
-      )}
+      </Modal>
 
       <View style={{ height: 40 }} />
     </ScrollView>
