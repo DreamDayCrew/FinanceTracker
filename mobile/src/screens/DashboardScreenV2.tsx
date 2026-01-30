@@ -8,7 +8,6 @@ import { LineChart } from 'react-native-chart-kit';
 import { api } from '../lib/api';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { RootStackParamList, TabParamList } from '../../App';
-import { FABButton } from '../components/FABButton';
 import { useState, useCallback, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -846,8 +845,6 @@ export default function DashboardScreenV2() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
-
-      <FABButton onPress={() => navigation.navigate('AddTransaction')} />
     </View>
   );
 }
