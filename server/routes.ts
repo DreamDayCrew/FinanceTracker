@@ -1640,13 +1640,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       const count = req.query.count ? parseInt(req.query.count as string) : 6;
-      const paydays = getNextPaydays(
+      const calculatedPaydays = getNextPaydays(
         profile.paydayRule || 'last_working_day',
         profile.fixedDay,
         profile.weekdayPreference,
-        count
+        count + 2
       );
-      res.json(paydays);
+      
+      const cycles = await storage.getSalaryCycles(profile.id);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      
+      const paydays = calculatedPaydays.map(payday => {
+        const cycle = cycles.find(c => c.month === payday.month && c.year === payday.year);
+        if (cycle && cycle.expectedPayDate) {
+          return {
+            ...payday,
+            date: new Date(cycle.expectedPayDate),
+            expectedAmount: cycle.expectedAmount,
+            cycleId: cycle.id,
+          };
+        }
+        return {
+          ...payday,
+          expectedAmount: profile.monthlyAmount,
+        };
+      });
+      
+      const futurePaydays = paydays.filter(p => {
+        const payDate = new Date(p.date);
+        payDate.setHours(0, 0, 0, 0);
+        return payDate >= now;
+      });
+      
+      res.json(futurePaydays.slice(0, count));
     } catch (error) {
       res.status(500).json({ error: "Failed to calculate next paydays" });
     }
