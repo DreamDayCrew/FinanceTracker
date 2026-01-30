@@ -10,7 +10,7 @@ import { View, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import DashboardScreen from './src/screens/DashboardScreen';
+import DashboardScreen from './src/screens/DashboardScreenV2';
 import AccountsScreen from './src/screens/AccountsScreen';
 import TransactionsScreen from './src/screens/TransactionsScreen';
 import MoreScreen from './src/screens/MoreScreen';
