@@ -472,7 +472,7 @@ export default function SalaryScreen() {
           </View>
           
           <View style={styles.paydayList}>
-            {salaryCycles.map((cycle) => {
+            {salaryCycles.map((cycle: SalaryCycle) => {
               const amount = cycle.actualAmount || cycle.expectedAmount;
               return (
                 <TouchableOpacity
@@ -533,7 +533,7 @@ export default function SalaryScreen() {
           </Text>
         ) : (
           <View style={styles.paydayList}>
-            {nextPaydays.map((payday, index) => {
+            {nextPaydays.map((payday: Payday, index: number) => {
               const isThisMonth = index === 0;
               const content = (
                 <View 
@@ -561,39 +561,59 @@ export default function SalaryScreen() {
                     </View>
                   </View>
                   {isThisMonth && (
-                    <Text style={[styles.nextBadge, { color: colors.primary }]}>Next</Text>
+                    <>
+                      <Text style={[styles.nextBadge, { color: colors.primary }]}>Next</Text>
+                      <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                    </>
                   )}
                 </View>
               );
 
-              // Make first payday swipeable
-              if (index === 0 && swipeSettings.enabled) {
+              // Make first payday tappable and swipeable
+              if (index === 0) {
+                if (swipeSettings.enabled) {
+                  return (
+                    <Swipeable
+                      key={`${payday.month}-${payday.year}`}
+                      ref={swipeableRef}
+                      renderRightActions={() => (
+                        <TouchableOpacity
+                          style={[styles.swipeAction, { backgroundColor: colors.primary }]}
+                          onPress={() => handleEditNextPayday(payday)}
+                        >
+                          <Ionicons name="pencil" size={24} color="#fff" />
+                          <Text style={styles.swipeActionText}>Edit</Text>
+                        </TouchableOpacity>
+                      )}
+                      renderLeftActions={() => (
+                        <TouchableOpacity
+                          style={[styles.swipeAction, { backgroundColor: colors.primary }]}
+                          onPress={() => handleEditNextPayday(payday)}
+                        >
+                          <Ionicons name="pencil" size={24} color="#fff" />
+                          <Text style={styles.swipeActionText}>Edit</Text>
+                        </TouchableOpacity>
+                      )}
+                      onSwipeableOpen={() => handleEditNextPayday(payday)}
+                    >
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => handleEditNextPayday(payday)}
+                      >
+                        {content}
+                      </TouchableOpacity>
+                    </Swipeable>
+                  );
+                }
+                // Tap-only when swipe is disabled
                 return (
-                  <Swipeable
+                  <TouchableOpacity
                     key={`${payday.month}-${payday.year}`}
-                    ref={swipeableRef}
-                    renderRightActions={() => (
-                      <TouchableOpacity
-                        style={[styles.swipeAction, { backgroundColor: colors.primary }]}
-                        onPress={() => handleEditNextPayday(payday)}
-                      >
-                        <Ionicons name="pencil" size={24} color="#fff" />
-                        <Text style={styles.swipeActionText}>Edit</Text>
-                      </TouchableOpacity>
-                    )}
-                    renderLeftActions={() => (
-                      <TouchableOpacity
-                        style={[styles.swipeAction, { backgroundColor: colors.primary }]}
-                        onPress={() => handleEditNextPayday(payday)}
-                      >
-                        <Ionicons name="pencil" size={24} color="#fff" />
-                        <Text style={styles.swipeActionText}>Edit</Text>
-                      </TouchableOpacity>
-                    )}
-                    onSwipeableOpen={() => handleEditNextPayday(payday)}
+                    activeOpacity={0.7}
+                    onPress={() => handleEditNextPayday(payday)}
                   >
                     {content}
-                  </Swipeable>
+                  </TouchableOpacity>
                 );
               }
 
