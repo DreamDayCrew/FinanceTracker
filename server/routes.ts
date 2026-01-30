@@ -1677,19 +1677,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(400).json({ error: "Please create a salary profile first" });
         return;
       }
-      const { month, year } = req.body;
-      const expectedPayDate = getPaydayForMonth(
+      const { month, year, expectedPayDate: customPayDate, expectedAmount: customAmount } = req.body;
+      
+      // Check if cycle already exists for this month/year
+      const existingCycles = await storage.getSalaryCycles(profile.id);
+      const existingCycle = existingCycles.find(c => c.month === month && c.year === year);
+      
+      if (existingCycle) {
+        // Update existing cycle with custom values
+        const updateData: any = {};
+        if (customPayDate) {
+          updateData.expectedPayDate = new Date(customPayDate);
+        }
+        if (customAmount) {
+          updateData.expectedAmount = customAmount;
+        }
+        const updated = await storage.updateSalaryCycle(existingCycle.id, updateData);
+        res.status(200).json(updated);
+        return;
+      }
+      
+      // Calculate default expected pay date if not provided
+      const defaultPayDate = getPaydayForMonth(
         year,
         month,
         profile.paydayRule || 'last_working_day',
         profile.fixedDay,
         profile.weekdayPreference
       );
+      
+      // Use custom values if provided, otherwise use defaults
+      const finalPayDate = customPayDate ? new Date(customPayDate) : defaultPayDate;
+      const finalAmount = customAmount || profile.monthlyAmount || undefined;
+      
       const validatedData = insertSalaryCycleSchema.parse({
-        ...req.body,
         salaryProfileId: profile.id,
-        expectedPayDate: expectedPayDate,
-        expectedAmount: profile.monthlyAmount ?? undefined,
+        month,
+        year,
+        expectedPayDate: finalPayDate,
+        expectedAmount: finalAmount,
       });
       const cycle = await storage.createSalaryCycle(validatedData);
       res.status(201).json(cycle);
