@@ -21,7 +21,8 @@ app.use(cors({
     const allowedOrigins = [
       'http://localhost:5000',
       'http://localhost:8081','http://localhost:8082',
-      'https://financetracker-jdqd.onrender.com'
+      'https://financetracker-jdqd.onrender.com',
+      'https://financetracker-ckvf.onrender.com'
     ];
     
     if (allowedOrigins.includes(origin)) {

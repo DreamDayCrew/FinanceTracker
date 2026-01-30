@@ -14,7 +14,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://financetracker-jdqd.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://financetracker-ckvf.onrender.com"
       }
     },
     "production": {

@@ -106,7 +106,7 @@ export default function MoreScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: colors.textMuted }]}>My Tracker v1.0.13</Text>
+          <Text style={[styles.footerText, { color: colors.textMuted }]}>My Tracker v1.0.14</Text>
           <Text style={[styles.footerSubtext, { color: colors.textMuted }]}>Personal Finance Manager</Text>
         </View>
       </ScrollView>
