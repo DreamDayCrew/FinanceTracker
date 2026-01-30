@@ -2,7 +2,7 @@ import {
   users, accounts, categories, transactions, budgets, scheduledPayments, smsLogs,
   paymentOccurrences, savingsGoals, savingsContributions, salaryProfiles, salaryCycles,
   loans, loanComponents, loanInstallments, loanTerms, loanPayments, cardDetails,
-  insurances, insurancePremiums,
+  insurances, insurancePremiums, creditCardStatements,
   type User, type InsertUser,
   type Account, type InsertAccount,
   type Category, type InsertCategory,
@@ -22,6 +22,7 @@ import {
   type CardDetails, type InsertCardDetails,
   type Insurance, type InsertInsurance, type InsuranceWithRelations,
   type InsurancePremium, type InsertInsurancePremium,
+  type CreditCardStatement, type InsertCreditCardStatement,
   type SmsLog, type InsertSmsLog,
   type DashboardStats,
   DEFAULT_CATEGORIES
@@ -94,6 +95,14 @@ export interface IStorage {
   updateScheduledPayment(id: number, payment: Partial<InsertScheduledPayment>): Promise<ScheduledPayment | undefined>;
   deleteScheduledPayment(id: number): Promise<boolean>;
   getCreditCardBills(): Promise<any[]>;
+
+  // Credit Card Statements
+  getCreditCardStatements(accountId: number): Promise<CreditCardStatement[]>;
+  getCreditCardStatement(id: number): Promise<CreditCardStatement | undefined>;
+  getOrCreateCurrentStatement(accountId: number): Promise<CreditCardStatement>;
+  createCreditCardStatement(statement: InsertCreditCardStatement): Promise<CreditCardStatement>;
+  updateCreditCardStatement(id: number, data: Partial<InsertCreditCardStatement>): Promise<CreditCardStatement | undefined>;
+  recordCreditCardPayment(statementId: number, amount: number, paidDate: Date): Promise<CreditCardStatement | undefined>;
 
   // SMS Logs
   createSmsLog(smsLog: InsertSmsLog): Promise<SmsLog>;
@@ -698,6 +707,9 @@ export class DatabaseStorage implements IStorage {
 
     const bills = await Promise.all(
       creditCardAccounts.map(async (account) => {
+        // Get or create current statement for this account
+        const statement = await this.getOrCreateCurrentStatement(account.id);
+        
         // Find credit card bill payment occurrence for this month
         const billPayment = await db
           .select()
@@ -710,29 +722,9 @@ export class DatabaseStorage implements IStorage {
           )
           .limit(1);
 
-        // Calculate billing cycle dates
-        const billingDate = account.billingDate || 1;
-        const cycleStartDate = new Date(currentYear, currentMonth - 2, billingDate);
-        const cycleEndDate = new Date(currentYear, currentMonth - 1, billingDate - 1);
-        
-        // Calculate current cycle spending
-        const cycleTransactions = await db
-          .select()
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.accountId, account.id),
-              eq(transactions.type, 'debit'),
-              gte(transactions.transactionDate, cycleStartDate.toISOString().split('T')[0]),
-              lte(transactions.transactionDate, cycleEndDate.toISOString().split('T')[0])
-            )
-          );
-
-        const cycleSpending = cycleTransactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
-
         // Get payment occurrence for this month
         let paymentOccurrence = null;
-        let paymentStatus = 'pending';
+        let paymentStatus = statement.status || 'unpaid';
         if (billPayment.length > 0) {
           const occurrences = await db
             .select()
@@ -748,12 +740,14 @@ export class DatabaseStorage implements IStorage {
           
           if (occurrences.length > 0) {
             paymentOccurrence = occurrences[0];
-            paymentStatus = paymentOccurrence.status;
+            if (paymentOccurrence.status === 'paid') {
+              paymentStatus = 'paid';
+            }
           }
         }
 
         // Calculate days until due
-        const dueDate = new Date(currentYear, currentMonth - 1, billingDate);
+        const dueDate = new Date(statement.dueDate);
         const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
         return {
@@ -761,20 +755,266 @@ export class DatabaseStorage implements IStorage {
           accountName: account.name,
           bankName: account.bankName,
           billingDate: account.billingDate,
-          cycleSpending: cycleSpending.toFixed(2),
-          cycleStartDate: cycleStartDate.toISOString().split('T')[0],
-          cycleEndDate: cycleEndDate.toISOString().split('T')[0],
+          // Statement-based data
+          statementId: statement.id,
+          openingBalance: statement.openingBalance,
+          newCharges: statement.newCharges,
+          payments: statement.payments,
+          credits: statement.credits,
+          statementBalance: statement.statementBalance,
+          minimumDue: statement.minimumDue,
+          paidAmount: statement.paidAmount,
+          paidDate: statement.paidDate,
+          // Legacy compatibility
+          cycleSpending: statement.newCharges,
+          cycleStartDate: new Date(statement.billingCycleStart).toISOString().split('T')[0],
+          cycleEndDate: new Date(statement.billingCycleEnd).toISOString().split('T')[0],
           dueDate: dueDate.toISOString().split('T')[0],
           daysUntilDue,
           paymentStatus,
           paymentOccurrenceId: paymentOccurrence?.id || null,
           scheduledPaymentId: billPayment[0]?.id || null,
-          limit: account.monthlySpendingLimit ? parseFloat(account.monthlySpendingLimit) : null,
+          limit: account.creditLimit ? parseFloat(account.creditLimit) : null,
+          monthlyLimit: account.monthlySpendingLimit ? parseFloat(account.monthlySpendingLimit) : null,
         };
       })
     );
 
     return bills;
+  }
+
+  // Credit Card Statements
+  async getCreditCardStatements(accountId: number): Promise<CreditCardStatement[]> {
+    return await db
+      .select()
+      .from(creditCardStatements)
+      .where(eq(creditCardStatements.accountId, accountId))
+      .orderBy(desc(creditCardStatements.statementYear), desc(creditCardStatements.statementMonth));
+  }
+
+  async getCreditCardStatement(id: number): Promise<CreditCardStatement | undefined> {
+    const result = await db.select().from(creditCardStatements).where(eq(creditCardStatements.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getOrCreateCurrentStatement(accountId: number): Promise<CreditCardStatement> {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    // Check if statement exists for current month
+    const existing = await db
+      .select()
+      .from(creditCardStatements)
+      .where(
+        and(
+          eq(creditCardStatements.accountId, accountId),
+          eq(creditCardStatements.statementMonth, currentMonth),
+          eq(creditCardStatements.statementYear, currentYear)
+        )
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      // Update the statement with latest transactions
+      return await this.refreshStatement(existing[0]);
+    }
+
+    // Get account details
+    const account = await this.getAccount(accountId);
+    if (!account) {
+      throw new Error('Account not found');
+    }
+
+    // Calculate billing cycle dates
+    const billingDate = account.billingDate || 1;
+    const cycleStartDate = new Date(currentYear, currentMonth - 2, billingDate);
+    const cycleEndDate = new Date(currentYear, currentMonth - 1, billingDate - 1, 23, 59, 59);
+    const statementDate = new Date(currentYear, currentMonth - 1, billingDate);
+    const dueDate = new Date(currentYear, currentMonth - 1, billingDate + 20); // 20 days after statement
+
+    // Get previous month's unpaid balance (opening balance)
+    const previousMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+    const previousYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+    
+    const previousStatement = await db
+      .select()
+      .from(creditCardStatements)
+      .where(
+        and(
+          eq(creditCardStatements.accountId, accountId),
+          eq(creditCardStatements.statementMonth, previousMonth),
+          eq(creditCardStatements.statementYear, previousYear)
+        )
+      )
+      .limit(1);
+
+    let openingBalance = 0;
+    if (previousStatement.length > 0) {
+      const prevBalance = parseFloat(previousStatement[0].statementBalance || '0');
+      const prevPaid = parseFloat(previousStatement[0].paidAmount || '0');
+      openingBalance = Math.max(0, prevBalance - prevPaid);
+    }
+
+    // Calculate new charges (spending during this cycle)
+    const cycleTransactions = await db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.accountId, accountId),
+          eq(transactions.type, 'debit'),
+          gte(transactions.transactionDate, cycleStartDate),
+          lte(transactions.transactionDate, cycleEndDate)
+        )
+      );
+    const newCharges = cycleTransactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+    // Calculate credits/refunds during this cycle
+    const creditTransactions = await db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.accountId, accountId),
+          eq(transactions.type, 'credit'),
+          gte(transactions.transactionDate, cycleStartDate),
+          lte(transactions.transactionDate, cycleEndDate)
+        )
+      );
+    const credits = creditTransactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+    // Calculate statement balance
+    const statementBalance = openingBalance + newCharges - credits;
+    const minimumDue = Math.max(100, statementBalance * 0.05); // 5% or minimum 100
+
+    // Create new statement
+    const result = await db
+      .insert(creditCardStatements)
+      .values({
+        accountId,
+        statementMonth: currentMonth,
+        statementYear: currentYear,
+        billingCycleStart: cycleStartDate,
+        billingCycleEnd: cycleEndDate,
+        statementDate,
+        dueDate,
+        openingBalance: openingBalance.toFixed(2),
+        newCharges: newCharges.toFixed(2),
+        payments: '0',
+        credits: credits.toFixed(2),
+        statementBalance: statementBalance.toFixed(2),
+        minimumDue: minimumDue.toFixed(2),
+        paidAmount: '0',
+        status: 'unpaid',
+      })
+      .returning();
+
+    return result[0];
+  }
+
+  private async refreshStatement(statement: CreditCardStatement): Promise<CreditCardStatement> {
+    // Recalculate new charges and credits from transactions
+    const cycleStartDate = new Date(statement.billingCycleStart);
+    const cycleEndDate = new Date(statement.billingCycleEnd);
+
+    // Calculate new charges
+    const cycleTransactions = await db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.accountId, statement.accountId),
+          eq(transactions.type, 'debit'),
+          gte(transactions.transactionDate, cycleStartDate),
+          lte(transactions.transactionDate, cycleEndDate)
+        )
+      );
+    const newCharges = cycleTransactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+    // Calculate credits
+    const creditTransactions = await db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.accountId, statement.accountId),
+          eq(transactions.type, 'credit'),
+          gte(transactions.transactionDate, cycleStartDate),
+          lte(transactions.transactionDate, cycleEndDate)
+        )
+      );
+    const credits = creditTransactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+    const openingBalance = parseFloat(statement.openingBalance || '0');
+    const paidAmount = parseFloat(statement.paidAmount || '0');
+    const statementBalance = openingBalance + newCharges - credits;
+    const minimumDue = Math.max(100, statementBalance * 0.05);
+
+    // Determine status
+    let status = 'unpaid';
+    if (paidAmount >= statementBalance) {
+      status = 'paid';
+    } else if (paidAmount > 0) {
+      status = 'partial';
+    } else if (new Date() > new Date(statement.dueDate)) {
+      status = 'overdue';
+    }
+
+    // Update statement
+    const result = await db
+      .update(creditCardStatements)
+      .set({
+        newCharges: newCharges.toFixed(2),
+        credits: credits.toFixed(2),
+        statementBalance: statementBalance.toFixed(2),
+        minimumDue: minimumDue.toFixed(2),
+        status,
+      })
+      .where(eq(creditCardStatements.id, statement.id))
+      .returning();
+
+    return result[0];
+  }
+
+  async createCreditCardStatement(statement: InsertCreditCardStatement): Promise<CreditCardStatement> {
+    const result = await db.insert(creditCardStatements).values(statement).returning();
+    return result[0];
+  }
+
+  async updateCreditCardStatement(id: number, data: Partial<InsertCreditCardStatement>): Promise<CreditCardStatement | undefined> {
+    const result = await db
+      .update(creditCardStatements)
+      .set(data)
+      .where(eq(creditCardStatements.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async recordCreditCardPayment(statementId: number, amount: number, paidDate: Date): Promise<CreditCardStatement | undefined> {
+    const statement = await this.getCreditCardStatement(statementId);
+    if (!statement) return undefined;
+
+    const currentPaid = parseFloat(statement.paidAmount || '0');
+    const newPaidAmount = currentPaid + amount;
+    const statementBalance = parseFloat(statement.statementBalance || '0');
+
+    let status = 'partial';
+    if (newPaidAmount >= statementBalance) {
+      status = 'paid';
+    }
+
+    const result = await db
+      .update(creditCardStatements)
+      .set({
+        paidAmount: newPaidAmount.toFixed(2),
+        paidDate,
+        status,
+      })
+      .where(eq(creditCardStatements.id, statementId))
+      .returning();
+
+    return result[0];
   }
 
   // SMS Logs

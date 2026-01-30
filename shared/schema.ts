@@ -303,6 +303,44 @@ export const insertPaymentOccurrenceSchema = createInsertSchema(paymentOccurrenc
 export type InsertPaymentOccurrence = z.infer<typeof insertPaymentOccurrenceSchema>;
 export type PaymentOccurrence = typeof paymentOccurrences.$inferSelect;
 
+// Credit Card Statements (monthly billing statements)
+export const creditCardStatements = pgTable("credit_card_statements", {
+  id: serial("id").primaryKey(),
+  accountId: integer("account_id").notNull().references(() => accounts.id),
+  statementMonth: integer("statement_month").notNull(), // 1-12
+  statementYear: integer("statement_year").notNull(),
+  billingCycleStart: timestamp("billing_cycle_start").notNull(),
+  billingCycleEnd: timestamp("billing_cycle_end").notNull(),
+  statementDate: timestamp("statement_date").notNull(), // date statement was generated
+  dueDate: timestamp("due_date").notNull(),
+  openingBalance: decimal("opening_balance", { precision: 12, scale: 2 }).default("0"), // carried over from previous statement
+  newCharges: decimal("new_charges", { precision: 12, scale: 2 }).default("0"), // spending during this cycle
+  payments: decimal("payments", { precision: 12, scale: 2 }).default("0"), // payments received during this cycle
+  credits: decimal("credits", { precision: 12, scale: 2 }).default("0"), // refunds, cashback, etc.
+  statementBalance: decimal("statement_balance", { precision: 12, scale: 2 }).default("0"), // total amount due
+  minimumDue: decimal("minimum_due", { precision: 12, scale: 2 }).default("0"),
+  paidAmount: decimal("paid_amount", { precision: 12, scale: 2 }).default("0"), // amount paid after statement
+  paidDate: timestamp("paid_date"),
+  status: varchar("status", { length: 20 }).default("unpaid"), // 'unpaid', 'partial', 'paid', 'overdue'
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const creditCardStatementsRelations = relations(creditCardStatements, ({ one }) => ({
+  account: one(accounts, { fields: [creditCardStatements.accountId], references: [accounts.id] }),
+}));
+
+export const insertCreditCardStatementSchema = createInsertSchema(creditCardStatements).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  statementMonth: z.number().min(1).max(12),
+  statementYear: z.number().min(2020),
+  status: z.enum(["unpaid", "partial", "paid", "overdue"]).optional(),
+});
+
+export type InsertCreditCardStatement = z.infer<typeof insertCreditCardStatementSchema>;
+export type CreditCardStatement = typeof creditCardStatements.$inferSelect;
+
 // Savings Goals
 export const savingsGoals = pgTable("savings_goals", {
   id: serial("id").primaryKey(),
