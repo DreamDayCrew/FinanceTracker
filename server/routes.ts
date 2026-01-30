@@ -970,6 +970,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========== Credit Card Statements ==========
+  app.get("/api/credit-card-statements/:accountId", authenticateToken, async (req, res) => {
+    try {
+      const accountId = parseInt(req.params.accountId);
+      const statements = await storage.getCreditCardStatements(accountId);
+      res.json(statements);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch credit card statements" });
+    }
+  });
+
+  app.get("/api/credit-card-statement/:id", authenticateToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const statement = await storage.getCreditCardStatement(id);
+      if (statement) {
+        res.json(statement);
+      } else {
+        res.status(404).json({ error: "Statement not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch statement" });
+    }
+  });
+
+  app.post("/api/credit-card-statements/:accountId/current", authenticateToken, async (req, res) => {
+    try {
+      const accountId = parseInt(req.params.accountId);
+      const statement = await storage.getOrCreateCurrentStatement(accountId);
+      res.json(statement);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get/create statement" });
+    }
+  });
+
+  app.post("/api/credit-card-statements/:id/payment", authenticateToken, async (req, res) => {
+    try {
+      const statementId = parseInt(req.params.id);
+      const { amount, paidDate } = req.body;
+      
+      if (!amount || amount <= 0) {
+        res.status(400).json({ error: "Valid payment amount is required" });
+        return;
+      }
+
+      const statement = await storage.recordCreditCardPayment(
+        statementId, 
+        parseFloat(amount), 
+        paidDate ? new Date(paidDate) : new Date()
+      );
+
+      if (statement) {
+        res.json(statement);
+      } else {
+        res.status(404).json({ error: "Statement not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to record payment" });
+    }
+  });
+
   app.post("/api/payment-occurrences/generate", authenticateToken, async (req, res) => {
     try {
       const userId = req.user!.userId;
