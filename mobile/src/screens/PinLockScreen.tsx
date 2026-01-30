@@ -70,7 +70,7 @@ export default function PinLockScreen() {
     if (newPin.length === 4 && user) {
       setIsVerifying(true);
       try {
-        const result = await api.verifyPin(user.id, newPin);
+        const result = await api.verifyPinAuth(user.id, newPin);
         if (result.success && result.accessToken && result.refreshToken) {
           // Store new tokens
           await storeTokens(result.accessToken, result.refreshToken);

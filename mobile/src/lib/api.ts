@@ -599,7 +599,7 @@ export const api = {
       method: 'POST', 
       body: JSON.stringify({ userId, pin }) 
     }),
-  verifyPin: (userId: number, pin: string) => 
+  verifyPinAuth: (userId: number, pin: string) => 
     apiRequest<{ success: boolean; accessToken: string; refreshToken: string; user: User }>('/api/auth/verify-pin', { 
       method: 'POST', 
       body: JSON.stringify({ userId, pin }) 

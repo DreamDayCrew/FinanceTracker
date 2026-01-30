@@ -2,7 +2,7 @@ export interface Account {
   id: number;
   userId: number | null;
   name: string;
-  type: 'bank' | 'credit_card';
+  type: 'bank' | 'credit_card' | 'debit_card';
   bankName: string | null;
   accountNumber: string | null;
   balance: string;
@@ -119,14 +119,18 @@ export interface DashboardData {
 
 export interface InsertAccount {
   name: string;
-  type: 'bank' | 'credit_card';
+  type: 'bank' | 'credit_card' | 'debit_card';
   bankName?: string | null;
   accountNumber?: string | null;
   balance?: string;
   creditLimit?: string | null;
+  monthlySpendingLimit?: string | null;
+  billingDate?: number | null;
+  linkedAccountId?: number | null;
   icon?: string | null;
   color?: string | null;
   isActive?: boolean;
+  isDefault?: boolean;
 }
 
 export interface InsertTransaction {

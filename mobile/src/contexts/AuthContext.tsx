@@ -197,7 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return false;
     
     try {
-      const result = await api.verifyPin(user.id, pin);
+      const result = await api.verifyPinAuth(user.id, pin);
       if (result.success) {
         unlock();
         return true;

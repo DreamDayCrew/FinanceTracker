@@ -107,6 +107,14 @@ export default function AccountsScreen() {
 
   const bankAccounts = accounts?.filter(a => a.type === 'bank') || [];
   const creditCards = accounts?.filter(a => a.type === 'credit_card') || [];
+  const debitCards = accounts?.filter(a => a.type === 'debit_card') || [];
+
+  // Helper to get linked bank account name
+  const getLinkedAccountName = (linkedAccountId: number | null | undefined) => {
+    if (!linkedAccountId) return null;
+    const linkedAccount = bankAccounts.find(a => a.id === linkedAccountId);
+    return linkedAccount?.name || null;
+  };
 
   const renderRightActions = (account: Account) => {
     const action = swipeSettings.rightAction;
@@ -342,6 +350,80 @@ export default function AccountsScreen() {
     return <View key={account.id}>{content}</View>;
   };
 
+  const renderDebitCard = (account: Account) => {
+    const linkedAccountName = getLinkedAccountName(account.linkedAccountId);
+    const isWeb = Platform.OS === 'web';
+    const showActionButtons = isWeb || !swipeSettings.enabled;
+    const content = (
+      <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
+        <View style={[styles.accountIcon, { backgroundColor: colors.success + '20' }]}>
+          <Ionicons name="wallet-outline" size={24} color={colors.success} />
+        </View>
+        <View style={styles.accountInfo}>
+          <View style={styles.accountNameRow}>
+            <Text style={[styles.accountName, { color: colors.text }]}>{account.name}</Text>
+          </View>
+          {account.accountNumber && (
+            <Text style={[styles.accountNumber, { color: colors.textMuted }]}>****{account.accountNumber}</Text>
+          )}
+          {linkedAccountName && (
+            <View style={styles.linkedAccountRow}>
+              <Ionicons name="link-outline" size={12} color={colors.textMuted} />
+              <Text style={[styles.linkedAccountText, { color: colors.textMuted }]}>
+                Linked to {linkedAccountName}
+              </Text>
+            </View>
+          )}
+        </View>
+        {showActionButtons && (
+          <View style={styles.webActions}>
+            <TouchableOpacity
+              style={[styles.webActionButton, { backgroundColor: colors.primary }]}
+              onPress={() => handleEdit(account)}
+            >
+              <Ionicons name="pencil" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.webActionButton, { backgroundColor: '#ef4444' }]}
+              onPress={() => handleDelete(account)}
+            >
+              <Ionicons name="trash-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+
+    const isSwipeEnabled = swipeSettings.enabled && Platform.OS !== 'web';
+    
+    if (isSwipeEnabled) {
+      return (
+        <Swipeable
+          key={account.id}
+          ref={(ref) => {
+            if (ref) {
+              swipeableRefs.current.set(account.id, ref);
+            } else {
+              swipeableRefs.current.delete(account.id);
+            }
+          }}
+          renderRightActions={() => renderRightActions(account)}
+          renderLeftActions={() => renderLeftActions(account)}
+          onSwipeableOpen={() => {
+            if (currentOpenSwipeable.current !== null && currentOpenSwipeable.current !== account.id) {
+              swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
+            }
+            currentOpenSwipeable.current = account.id;
+          }}
+        >
+          {content}
+        </Swipeable>
+      );
+    }
+
+    return <View key={account.id}>{content}</View>;
+  };
+
   if (isLoading) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
@@ -376,6 +458,13 @@ export default function AccountsScreen() {
             </View>
           )}
         </View>
+
+        {debitCards.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Debit Cards</Text>
+            {debitCards.map((account) => renderDebitCard(account))}
+          </View>
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -618,5 +707,14 @@ const styles = StyleSheet.create({
   modalButtonText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  linkedAccountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 4,
+  },
+  linkedAccountText: {
+    fontSize: 12,
   },
 });
