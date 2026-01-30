@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = process.env.OPENAI_API_KEY 
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 const CATEGORIES = [
   "Groceries",
@@ -19,6 +21,10 @@ const CATEGORIES = [
 ];
 
 export async function suggestCategory(description: string): Promise<string> {
+  if (!openai) {
+    return fallbackCategorization(description);
+  }
+  
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -108,6 +114,10 @@ export interface ParsedSmsData {
 }
 
 export async function parseSmsMessage(message: string, sender?: string): Promise<ParsedSmsData | null> {
+  if (!openai) {
+    return fallbackParseSms(message, sender);
+  }
+  
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",

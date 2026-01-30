@@ -486,13 +486,22 @@ export const api = {
       monthIndex: number;
     }>>('/api/credit-card-spending/monthly'),
 
-  // Credit Card Bills
+  // Credit Card Bills (enhanced with statement data)
   getCreditCardBills: () =>
     apiRequest<Array<{
       accountId: number;
       accountName: string;
       bankName: string | null;
       billingDate: number | null;
+      statementId: number;
+      openingBalance: string;
+      newCharges: string;
+      payments: string;
+      credits: string;
+      statementBalance: string;
+      minimumDue: string;
+      paidAmount: string;
+      paidDate: string | null;
       cycleSpending: string;
       cycleStartDate: string;
       cycleEndDate: string;
@@ -502,7 +511,36 @@ export const api = {
       paymentOccurrenceId: number | null;
       scheduledPaymentId: number | null;
       limit: number | null;
+      monthlyLimit: number | null;
     }>>('/api/credit-card-bills'),
+
+  // Credit Card Statements
+  getCreditCardStatements: (accountId: number) =>
+    apiRequest<Array<{
+      id: number;
+      accountId: number;
+      statementMonth: number;
+      statementYear: number;
+      billingCycleStart: string;
+      billingCycleEnd: string;
+      statementDate: string;
+      dueDate: string;
+      openingBalance: string;
+      newCharges: string;
+      payments: string;
+      credits: string;
+      statementBalance: string;
+      minimumDue: string;
+      paidAmount: string;
+      paidDate: string | null;
+      status: string;
+    }>>(`/api/credit-card-statements/${accountId}`),
+
+  recordCreditCardPayment: (statementId: number, amount: number, paidDate?: string) =>
+    apiRequest<any>(`/api/credit-card-statements/${statementId}/payment`, {
+      method: 'POST',
+      body: JSON.stringify({ amount, paidDate }),
+    }),
 
   // Insurance
   getInsurances: () => apiRequest<Insurance[]>('/api/insurances'),
