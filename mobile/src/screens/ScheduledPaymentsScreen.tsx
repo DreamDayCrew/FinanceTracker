@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Switch, Modal, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Switch, Modal, Platform, TextInput } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -58,6 +58,7 @@ export default function ScheduledPaymentsScreen() {
   const [paymentToDelete, setPaymentToDelete] = useState<ScheduledPayment | null>(null);
   const [paymentCreateTransaction, setPaymentCreateTransaction] = useState(true);
   const [paymentAffectBalance, setPaymentAffectBalance] = useState(true);
+  const [paymentAmount, setPaymentAmount] = useState('');
 
   const { data: payments, isLoading, refetch: refetchPayments } = useQuery({
     queryKey: ['/api/scheduled-payments'],
@@ -168,12 +169,13 @@ export default function ScheduledPaymentsScreen() {
   });
 
   const markAsPaidMutation = useMutation({
-    mutationFn: async ({ occurrenceId, accountId, date, createTransaction, affectBalance }: { 
+    mutationFn: async ({ occurrenceId, accountId, date, createTransaction, affectBalance, customAmount }: { 
       occurrenceId: number; 
       accountId: number; 
       date: string;
       createTransaction: boolean;
       affectBalance: boolean;
+      customAmount?: string;
     }) => {
       const occurrence = occurrences.find(o => o.id === occurrenceId);
       if (!occurrence || !occurrence.scheduledPayment) {
@@ -183,12 +185,13 @@ export default function ScheduledPaymentsScreen() {
       const payment = occurrence.scheduledPayment;
       const affectTransaction = createTransaction;
       const affectAccountBalance = affectBalance;
+      const finalAmount = customAmount || payment.amount;
 
       // Create transaction if affectTransaction is enabled
       if (affectTransaction) {
         await api.createTransaction({
           type: 'debit',
-          amount: payment.amount,
+          amount: finalAmount,
           merchant: payment.name,
           description: `Scheduled payment: ${payment.name}`,
           categoryId: payment.categoryId || null,
@@ -201,7 +204,7 @@ export default function ScheduledPaymentsScreen() {
         if (!affectAccountBalance) {
           const account = accounts.find(a => a.id === accountId);
           if (account) {
-            const newBalance = (parseFloat(account.balance) + parseFloat(payment.amount)).toString();
+            const newBalance = (parseFloat(account.balance) + parseFloat(finalAmount)).toString();
             await api.updateAccount(accountId, { balance: newBalance });
           }
         }
@@ -209,7 +212,7 @@ export default function ScheduledPaymentsScreen() {
         // If no transaction but balance should be affected, update balance directly
         const account = accounts.find(a => a.id === accountId);
         if (account) {
-          const newBalance = (parseFloat(account.balance) - parseFloat(payment.amount)).toString();
+          const newBalance = (parseFloat(account.balance) - parseFloat(finalAmount)).toString();
           await api.updateAccount(accountId, { balance: newBalance });
         }
       }
@@ -232,6 +235,7 @@ export default function ScheduledPaymentsScreen() {
       setSelectedOccurrence(null);
       setPaymentCreateTransaction(true);
       setPaymentAffectBalance(true);
+      setPaymentAmount('');
       Toast.show({
         type: 'success',
         text1: 'Payment Recorded',
@@ -490,6 +494,9 @@ export default function ScheduledPaymentsScreen() {
     setSelectedOccurrence(occurrence);
     setPaymentDate(new Date());
     
+    // Initialize amount for credit card bills (editable)
+    setPaymentAmount(occurrence.scheduledPayment?.amount || '');
+    
     // If the scheduled payment has an account assigned, use that account
     // Otherwise, use the first available account or default account
     if (occurrence.scheduledPayment?.accountId) {
@@ -517,12 +524,14 @@ export default function ScheduledPaymentsScreen() {
       return;
     }
 
+    const isCreditCardBill = selectedOccurrence.scheduledPayment?.paymentType === 'credit_card_bill';
     markAsPaidMutation.mutate({
       occurrenceId: selectedOccurrence.id,
       accountId: selectedAccountId,
       date: paymentDate.toISOString(),
       createTransaction: paymentCreateTransaction,
       affectBalance: paymentAffectBalance,
+      customAmount: isCreditCardBill && paymentAmount ? paymentAmount : undefined,
     });
   };
 
@@ -743,6 +752,7 @@ export default function ScheduledPaymentsScreen() {
           setShowPaymentModal(false);
           setPaymentCreateTransaction(true);
           setPaymentAffectBalance(true);
+          setPaymentAmount('');
         }}
       >
         <View style={styles.modalOverlay}>
@@ -753,6 +763,7 @@ export default function ScheduledPaymentsScreen() {
                 setShowPaymentModal(false);
                 setPaymentCreateTransaction(true);
                 setPaymentAffectBalance(true);
+                setPaymentAmount('');
               }}>
                 <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
@@ -763,9 +774,27 @@ export default function ScheduledPaymentsScreen() {
               <Text style={[styles.paymentModalName, { color: colors.text }]}>
                 {selectedOccurrence?.scheduledPayment?.name}
               </Text>
-              <Text style={[styles.paymentModalAmount, { color: colors.primary }]}>
-                {formatCurrency(parseFloat(selectedOccurrence?.scheduledPayment?.amount || '0'))}
-              </Text>
+              
+              {selectedOccurrence?.scheduledPayment?.paymentType === 'credit_card_bill' ? (
+                <View style={styles.modalField}>
+                  <Text style={[styles.modalFieldLabel, { color: colors.textMuted }]}>Amount (Editable)</Text>
+                  <View style={[styles.amountInputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[styles.currencySymbol, { color: colors.primary }]}>₹</Text>
+                    <TextInput
+                      style={[styles.amountInput, { color: colors.text }]}
+                      value={paymentAmount}
+                      onChangeText={setPaymentAmount}
+                      keyboardType="decimal-pad"
+                      placeholder="0"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                  </View>
+                </View>
+              ) : (
+                <Text style={[styles.paymentModalAmount, { color: colors.primary }]}>
+                  {formatCurrency(parseFloat(selectedOccurrence?.scheduledPayment?.amount || '0'))}
+                </Text>
+              )}
 
               <View style={styles.modalField}>
                 <Text style={[styles.modalFieldLabel, { color: colors.textMuted }]}>Payment Date</Text>
@@ -1304,6 +1333,25 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     marginBottom: 24,
+  },
+  amountInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  currencySymbol: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  amountInput: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '600',
+    padding: 0,
   },
   modalField: {
     marginBottom: 20,
