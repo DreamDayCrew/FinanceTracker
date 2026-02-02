@@ -1364,11 +1364,12 @@ export default function LoanDetailsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
-            <Ionicons name="cash" size={48} color={colors.primary} />
-            <Text style={[styles.formModalTitle, { color: colors.text }]}>Pay EMI</Text>
-            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
-              Confirm payment for {selectedInstallment?.dueDate ? new Date(selectedInstallment.dueDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'this installment'}
-            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+              <Ionicons name="cash" size={48} color={colors.primary} style={{ alignSelf: 'center' }} />
+              <Text style={[styles.formModalTitle, { color: colors.text, textAlign: 'center' }]}>Pay EMI</Text>
+              <Text style={[styles.formModalSubtitle, { color: colors.textMuted, textAlign: 'center' }]}>
+                Confirm payment for {selectedInstallment?.dueDate ? new Date(selectedInstallment.dueDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'this installment'}
+              </Text>
 
             <View style={styles.formGroup}>
               <Text style={[styles.formLabel, { color: colors.text }]}>Amount</Text>
@@ -1411,6 +1412,7 @@ export default function LoanDetailsScreen() {
             <Text style={[styles.toggleNote, { color: colors.textMuted }]}>
               These settings apply to this payment only
             </Text>
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -1456,11 +1458,12 @@ export default function LoanDetailsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
-            <Ionicons name="checkmark-done-circle" size={48} color={colors.primary} />
-            <Text style={[styles.formModalTitle, { color: colors.text }]}>Pre-Close Loan</Text>
-            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
-              Enter the settlement amount and date to close this loan early
-            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+              <Ionicons name="checkmark-done-circle" size={48} color={colors.primary} style={{ alignSelf: 'center' }} />
+              <Text style={[styles.formModalTitle, { color: colors.text, textAlign: 'center' }]}>Pre-Close Loan</Text>
+              <Text style={[styles.formModalSubtitle, { color: colors.textMuted, textAlign: 'center' }]}>
+                Enter the settlement amount and date to close this loan early
+              </Text>
 
             <View style={styles.formGroup}>
               <Text style={[styles.formLabel, { color: colors.text }]}>Settlement Amount</Text>
@@ -1499,6 +1502,7 @@ export default function LoanDetailsScreen() {
                 />
               )}
             </View>
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -1553,11 +1557,12 @@ export default function LoanDetailsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
-            <Ionicons name="cash-outline" size={48} color="#3b82f6" />
-            <Text style={[styles.formModalTitle, { color: colors.text }]}>Part Payment</Text>
-            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
-              Pay extra to reduce your outstanding balance faster
-            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+              <Ionicons name="cash-outline" size={48} color="#3b82f6" style={{ alignSelf: 'center' }} />
+              <Text style={[styles.formModalTitle, { color: colors.text, textAlign: 'center' }]}>Part Payment</Text>
+              <Text style={[styles.formModalSubtitle, { color: colors.textMuted, textAlign: 'center' }]}>
+                Pay extra to reduce your outstanding balance faster
+              </Text>
 
             <View style={styles.formGroup}>
               <Text style={[styles.formLabel, { color: colors.text }]}>Payment Amount</Text>
@@ -1703,6 +1708,7 @@ export default function LoanDetailsScreen() {
                 )}
               </View>
             )}
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -1768,11 +1774,12 @@ export default function LoanDetailsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
-            <Ionicons name="add-circle" size={48} color={colors.success} />
-            <Text style={[styles.formModalTitle, { color: colors.text }]}>Top-Up Loan</Text>
-            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
-              Add additional principal to your loan
-            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+              <Ionicons name="add-circle" size={48} color={colors.success} style={{ alignSelf: 'center' }} />
+              <Text style={[styles.formModalTitle, { color: colors.text, textAlign: 'center' }]}>Top-Up Loan</Text>
+              <Text style={[styles.formModalSubtitle, { color: colors.textMuted, textAlign: 'center' }]}>
+                Add additional principal to your loan
+              </Text>
 
             <View style={styles.formGroup}>
               <Text style={[styles.formLabel, { color: colors.text }]}>Top-Up Amount</Text>
@@ -1823,6 +1830,7 @@ export default function LoanDetailsScreen() {
                 onChangeText={(text) => setTopupData({ ...topupData, notes: text })}
               />
             </View>
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -1880,10 +1888,11 @@ export default function LoanDetailsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.formModalTitle, { color: colors.text }]}>Record Term Change</Text>
-            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
-              Record a change in interest rate, tenure, or EMI
-            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+              <Text style={[styles.formModalTitle, { color: colors.text, textAlign: 'center' }]}>Record Term Change</Text>
+              <Text style={[styles.formModalSubtitle, { color: colors.textMuted, textAlign: 'center' }]}>
+                Record a change in interest rate, tenure, or EMI
+              </Text>
             
             <View style={styles.formGroup}>
               <Text style={[styles.formLabel, { color: colors.text }]}>Interest Rate (%)</Text>
@@ -1931,6 +1940,7 @@ export default function LoanDetailsScreen() {
                 onChangeText={(text) => setNewTerm({ ...newTerm, reason: text })}
               />
             </View>
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -1964,10 +1974,11 @@ export default function LoanDetailsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.formModalTitle, { color: colors.text }]}>Record Payment</Text>
-            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
-              Record a payment outside of the regular EMI schedule
-            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+              <Text style={[styles.formModalTitle, { color: colors.text, textAlign: 'center' }]}>Record Payment</Text>
+              <Text style={[styles.formModalSubtitle, { color: colors.textMuted, textAlign: 'center' }]}>
+                Record a payment outside of the regular EMI schedule
+              </Text>
 
             <View style={styles.formGroup}>
               <Text style={[styles.formLabel, { color: colors.text }]}>Payment Type</Text>
@@ -2036,6 +2047,7 @@ export default function LoanDetailsScreen() {
                 onChangeText={(text) => setNewPayment({ ...newPayment, notes: text })}
               />
             </View>
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -2072,10 +2084,11 @@ export default function LoanDetailsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.formModalTitle, { color: colors.text }]}>Edit Payment</Text>
-            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
-              Update payment details
-            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+              <Text style={[styles.formModalTitle, { color: colors.text, textAlign: 'center' }]}>Edit Payment</Text>
+              <Text style={[styles.formModalSubtitle, { color: colors.textMuted, textAlign: 'center' }]}>
+                Update payment details
+              </Text>
 
             <View style={styles.formGroup}>
               <Text style={[styles.formLabel, { color: colors.text }]}>Payment Type</Text>
@@ -2144,6 +2157,7 @@ export default function LoanDetailsScreen() {
                 onChangeText={(text: string) => setEditPayment({ ...editPayment, notes: text })}
               />
             </View>
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -2234,15 +2248,16 @@ export default function LoanDetailsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
-            <View style={[styles.btIcon, { backgroundColor: colors.primary + '20', marginBottom: 12 }]}>
-              <Ionicons name="swap-horizontal" size={32} color={colors.primary} />
-            </View>
-            <Text style={[styles.formModalTitle, { color: colors.text }]}>Process BT Payment</Text>
-            {selectedBtAllocation && (
-              <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
-                Transfer to: {allLoans.find(l => l.id === selectedBtAllocation.targetLoanId)?.name || 'Unknown Loan'}
-              </Text>
-            )}
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+              <View style={[styles.btIcon, { backgroundColor: colors.primary + '20', marginBottom: 12, alignSelf: 'center' }]}>
+                <Ionicons name="swap-horizontal" size={32} color={colors.primary} />
+              </View>
+              <Text style={[styles.formModalTitle, { color: colors.text, textAlign: 'center' }]}>Process BT Payment</Text>
+              {selectedBtAllocation && (
+                <Text style={[styles.formModalSubtitle, { color: colors.textMuted, textAlign: 'center' }]}>
+                  Transfer to: {allLoans.find(l => l.id === selectedBtAllocation.targetLoanId)?.name || 'Unknown Loan'}
+                </Text>
+              )}
 
             <View style={styles.formGroup}>
               <Text style={[styles.formLabel, { color: colors.text }]}>Original Outstanding</Text>
@@ -2301,6 +2316,7 @@ export default function LoanDetailsScreen() {
                 />
               )}
             </View>
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity

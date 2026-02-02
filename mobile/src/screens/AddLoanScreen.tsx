@@ -829,6 +829,8 @@ export default function AddLoanScreen() {
                               placeholder="BT Amount"
                               placeholderTextColor={colors.textMuted}
                               keyboardType="numeric"
+                              autoFocus={false}
+                              blurOnSubmit={true}
                             />
                           </View>
                         </>
@@ -861,15 +863,27 @@ export default function AddLoanScreen() {
           animationType="slide"
           onRequestClose={() => setShowBtLoanPicker(null)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.btPickerModalContent, { backgroundColor: colors.card }]}>
+          <TouchableOpacity 
+            style={styles.modalOverlay} 
+            activeOpacity={1} 
+            onPress={() => setShowBtLoanPicker(null)}
+          >
+            <TouchableOpacity 
+              style={[styles.btPickerModalContent, { backgroundColor: colors.card }]}
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+            >
               <View style={styles.pickerHeader}>
                 <Text style={[styles.pickerTitle, { color: colors.text }]}>Select Loan for BT</Text>
                 <TouchableOpacity onPress={() => setShowBtLoanPicker(null)}>
                   <Ionicons name="close" size={24} color={colors.text} />
                 </TouchableOpacity>
               </View>
-              <ScrollView style={styles.pickerList}>
+              <ScrollView 
+                style={styles.pickerList}
+                showsVerticalScrollIndicator={true}
+                contentContainerStyle={{ paddingBottom: 20 }}
+              >
                 {activeLoansForBt.length === 0 ? (
                   <View style={styles.emptyPickerState}>
                     <Text style={[styles.emptyPickerText, { color: colors.textMuted }]}>
@@ -903,8 +917,8 @@ export default function AddLoanScreen() {
                   ))
                 )}
               </ScrollView>
-            </View>
-          </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </Modal>
 
         <TouchableOpacity
@@ -1203,6 +1217,7 @@ const styles = StyleSheet.create({
   },
   pickerList: {
     flex: 1,
+    maxHeight: '100%',
   },
   pickerItem: {
     padding: 16,
@@ -1222,10 +1237,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   btPickerModalContent: {
-    maxHeight: '70%',
+    height: '70%',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingBottom: 30,
+    overflow: 'hidden',
   },
   emptyPickerState: {
     padding: 32,
