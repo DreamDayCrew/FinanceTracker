@@ -56,11 +56,32 @@ export default function AddLoanScreen() {
   const [isExistingLoan, setIsExistingLoan] = useState(false);
   const [createTransaction, setCreateTransaction] = useState(false);
   const [affectBalance, setAffectBalance] = useState(false);
+  const [includesBtClosure, setIncludesBtClosure] = useState(false);
+  const [btAllocations, setBtAllocations] = useState<Array<{
+    targetLoanId: string;
+    allocatedAmount: string;
+  }>>([]);
+  const [showBtLoanPicker, setShowBtLoanPicker] = useState<number | null>(null);
 
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['/api/accounts'],
     queryFn: () => api.getAccounts(),
   });
+
+  // Fetch all active loans for BT dropdown
+  const { data: allLoans = [] } = useQuery<Loan[]>({
+    queryKey: ['/api/loans'],
+    queryFn: () => api.getLoans(),
+  });
+
+  // Filter to only active loans that can be selected for BT
+  const activeLoansForBt = useMemo(() => {
+    return allLoans.filter(loan => 
+      loan.status === 'active' && 
+      loan.id !== loanId && // Exclude current loan in edit mode
+      !btAllocations.some(bt => bt.targetLoanId === loan.id.toString()) // Exclude already selected loans
+    );
+  }, [allLoans, loanId, btAllocations]);
 
   // Fetch existing loan data if in edit mode
   const { data: existingLoan, isLoading: isLoadingLoan } = useQuery<Loan>({
@@ -157,8 +178,27 @@ export default function AddLoanScreen() {
         nextEmiDate: isExistingLoan ? nextEmiDate.toISOString() : undefined,
         createTransaction,
         affectBalance,
+        includesBtClosure,
       };
-      return api.createLoan(payload);
+      const newLoan = await api.createLoan(payload);
+      
+      // If BT closure is enabled, create BT allocations
+      if (includesBtClosure && btAllocations.length > 0) {
+        for (const bt of btAllocations) {
+          if (bt.targetLoanId && bt.allocatedAmount) {
+            const targetLoan = allLoans.find(l => l.id.toString() === bt.targetLoanId);
+            if (targetLoan) {
+              await api.createLoanBtAllocation(newLoan.id, {
+                targetLoanId: parseInt(bt.targetLoanId),
+                originalOutstandingAmount: targetLoan.outstandingAmount,
+                allocatedAmount: bt.allocatedAmount,
+              });
+            }
+          }
+        }
+      }
+      
+      return newLoan;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
@@ -694,6 +734,159 @@ export default function AddLoanScreen() {
           </>
         )}
 
+        {/* BT Closure Section - only show when adding new loan */}
+        {!isEditMode && (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 24 }]}>Balance Transfer</Text>
+            
+            {/* Includes BT Closure Toggle */}
+            <View style={[styles.field, styles.toggleField]}>
+              <View style={styles.toggleLeft}>
+                <Ionicons name="swap-horizontal-outline" size={20} color={colors.text} />
+                <View style={styles.toggleTextContainer}>
+                  <Text style={[styles.label, { color: colors.text, marginBottom: 2 }]}>Includes BT Closure</Text>
+                  <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                    Use this loan to close other existing loans
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={includesBtClosure}
+                onValueChange={(value) => {
+                  setIncludesBtClosure(value);
+                  if (!value) {
+                    setBtAllocations([]);
+                  }
+                }}
+                trackColor={{ false: colors.border, true: colors.primary + '80' }}
+                thumbColor={includesBtClosure ? colors.primary : '#f4f3f4'}
+              />
+            </View>
+
+            {/* BT Allocation Rows */}
+            {includesBtClosure && (
+              <View style={styles.btAllocationsContainer}>
+                {btAllocations.map((bt, index) => {
+                  const selectedLoan = allLoans.find(l => l.id.toString() === bt.targetLoanId);
+                  const maxAmount = selectedLoan ? parseFloat(selectedLoan.outstandingAmount) : 0;
+                  
+                  return (
+                    <View key={index} style={[styles.btRow, { borderColor: colors.border }]}>
+                      <View style={styles.btRowHeader}>
+                        <Text style={[styles.btLabel, { color: colors.primary }]}>BT {index + 1}</Text>
+                        <TouchableOpacity 
+                          onPress={() => {
+                            const newAllocations = btAllocations.filter((_, i) => i !== index);
+                            setBtAllocations(newAllocations);
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      {/* Loan Selector */}
+                      <TouchableOpacity
+                        style={[styles.btSelector, { backgroundColor: colors.card, borderColor: colors.border }]}
+                        onPress={() => setShowBtLoanPicker(index)}
+                      >
+                        <Text style={[styles.btSelectorText, { color: selectedLoan ? colors.text : colors.textMuted }]}>
+                          {selectedLoan ? `${selectedLoan.name} (${selectedLoan.lenderName || 'No lender'})` : 'Select a loan...'}
+                        </Text>
+                        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+                      </TouchableOpacity>
+                      
+                      {selectedLoan && (
+                        <>
+                          <Text style={[styles.btOutstandingLabel, { color: colors.textMuted }]}>
+                            Outstanding: ₹{parseFloat(selectedLoan.outstandingAmount).toLocaleString('en-IN')}
+                          </Text>
+                          
+                          {/* Amount Input */}
+                          <View style={[styles.btAmountContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Text style={[styles.currencySymbol, { color: colors.text }]}>₹</Text>
+                            <TextInput
+                              style={[styles.btAmountInput, { color: colors.text }]}
+                              value={bt.allocatedAmount}
+                              onChangeText={(text) => {
+                                const numValue = parseFloat(text) || 0;
+                                const validValue = Math.min(numValue, maxAmount);
+                                const newAllocations = [...btAllocations];
+                                newAllocations[index] = { 
+                                  ...bt, 
+                                  allocatedAmount: numValue > maxAmount ? maxAmount.toString() : text 
+                                };
+                                setBtAllocations(newAllocations);
+                              }}
+                              placeholder="BT Amount"
+                              placeholderTextColor={colors.textMuted}
+                              keyboardType="numeric"
+                            />
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  );
+                })}
+                
+                {/* Add BT Button */}
+                {activeLoansForBt.length > 0 && (
+                  <TouchableOpacity
+                    style={[styles.addBtButton, { borderColor: colors.primary }]}
+                    onPress={() => {
+                      setBtAllocations([...btAllocations, { targetLoanId: '', allocatedAmount: '' }]);
+                    }}
+                  >
+                    <Ionicons name="add" size={20} color={colors.primary} />
+                    <Text style={[styles.addBtButtonText, { color: colors.primary }]}>Add BT Allocation</Text>
+                  </TouchableOpacity>
+                )}
+                
+                {activeLoansForBt.length === 0 && btAllocations.length === 0 && (
+                  <Text style={[styles.noBtText, { color: colors.textMuted }]}>
+                    No active loans available for balance transfer
+                  </Text>
+                )}
+              </View>
+            )}
+          </>
+        )}
+
+        {/* BT Loan Picker Modal */}
+        {showBtLoanPicker !== null && (
+          <View style={[styles.pickerModal, { backgroundColor: colors.background }]}>
+            <View style={styles.pickerHeader}>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>Select Loan for BT</Text>
+              <TouchableOpacity onPress={() => setShowBtLoanPicker(null)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.pickerList}>
+              {activeLoansForBt.map((loan) => (
+                <TouchableOpacity
+                  key={loan.id}
+                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
+                  onPress={() => {
+                    const newAllocations = [...btAllocations];
+                    newAllocations[showBtLoanPicker] = { 
+                      targetLoanId: loan.id.toString(), 
+                      allocatedAmount: loan.outstandingAmount 
+                    };
+                    setBtAllocations(newAllocations);
+                    setShowBtLoanPicker(null);
+                  }}
+                >
+                  <View>
+                    <Text style={[styles.pickerItemTitle, { color: colors.text }]}>{loan.name}</Text>
+                    <Text style={[styles.pickerItemSubtitle, { color: colors.textMuted }]}>
+                      {loan.lenderName || 'No lender'} • Outstanding: ₹{parseFloat(loan.outstandingAmount).toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.submitButton, { backgroundColor: colors.primary }]}
           onPress={handleSubmit}
@@ -894,5 +1087,113 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  btAllocationsContainer: {
+    marginTop: 8,
+  },
+  btRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  btRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  btLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  btSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  btSelectorText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  btOutstandingLabel: {
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  btAmountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  currencySymbol: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  btAmountInput: {
+    flex: 1,
+    fontSize: 16,
+    padding: 0,
+  },
+  addBtButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 12,
+    gap: 8,
+  },
+  addBtButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  noBtText: {
+    fontSize: 13,
+    textAlign: 'center',
+    padding: 16,
+  },
+  pickerModal: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e5e5',
+  },
+  pickerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  pickerList: {
+    flex: 1,
+  },
+  pickerItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  pickerItemTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  pickerItemSubtitle: {
+    fontSize: 13,
+    marginTop: 4,
   },
 });

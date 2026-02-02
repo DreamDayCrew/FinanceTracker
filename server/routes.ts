@@ -3009,6 +3009,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========== Loan BT Allocations ==========
+  app.get("/api/loans/:loanId/bt-allocations", async (req, res) => {
+    try {
+      const allocations = await storage.getLoanBtAllocations(parseInt(req.params.loanId));
+      res.json(allocations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch BT allocations" });
+    }
+  });
+
+  app.get("/api/loans/:loanId/bt-allocations-as-target", async (req, res) => {
+    try {
+      const allocations = await storage.getLoanBtAllocationsByTarget(parseInt(req.params.loanId));
+      res.json(allocations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch BT allocations" });
+    }
+  });
+
+  app.get("/api/bt-allocations/:id", async (req, res) => {
+    try {
+      const allocation = await storage.getLoanBtAllocation(parseInt(req.params.id));
+      if (allocation) {
+        res.json(allocation);
+      } else {
+        res.status(404).json({ error: "BT allocation not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch BT allocation" });
+    }
+  });
+
+  app.post("/api/loans/:loanId/bt-allocations", authenticateToken, async (req, res) => {
+    try {
+      const allocation = await storage.createLoanBtAllocation({
+        ...req.body,
+        sourceLoanId: parseInt(req.params.loanId),
+      });
+      res.status(201).json(allocation);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Failed to create BT allocation" });
+    }
+  });
+
+  app.patch("/api/bt-allocations/:id", async (req, res) => {
+    try {
+      const allocation = await storage.updateLoanBtAllocation(parseInt(req.params.id), req.body);
+      if (allocation) {
+        res.json(allocation);
+      } else {
+        res.status(404).json({ error: "BT allocation not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Invalid BT allocation data" });
+    }
+  });
+
+  app.delete("/api/bt-allocations/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteLoanBtAllocation(parseInt(req.params.id));
+      if (deleted) {
+        res.status(204).send();
+      } else {
+        res.status(404).json({ error: "BT allocation not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete BT allocation" });
+    }
+  });
+
+  app.post("/api/bt-allocations/:id/process", authenticateToken, async (req, res) => {
+    try {
+      const { actualBtAmount, processedDate, processingFee } = req.body;
+      
+      if (!actualBtAmount || !processedDate) {
+        return res.status(400).json({ error: "actualBtAmount and processedDate are required" });
+      }
+
+      const result = await storage.processLoanBtPayment(
+        parseInt(req.params.id),
+        actualBtAmount,
+        new Date(processedDate),
+        processingFee
+      );
+
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Failed to process BT payment" });
+    }
+  });
+
   // ========== Loan Summary ==========
   app.get("/api/loan-summary", async (_req, res) => {
     try {

@@ -510,13 +510,15 @@ export const loans = pgTable("loans", {
   emiDay: integer("emi_day"), // day of month when EMI is due (1-31)
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date"),
-  status: varchar("status", { length: 20 }).default("active"), // 'active', 'closed', 'defaulted', 'preclosed'
+  status: varchar("status", { length: 20 }).default("active"), // 'active', 'closed', 'defaulted', 'preclosed', 'closed_bt'
   isExistingLoan: boolean("is_existing_loan").default(false), // true if tracking an existing loan
   nextEmiDate: timestamp("next_emi_date"), // for existing loans: when next EMI is due
   closureDate: timestamp("closure_date"), // pre-closure or completion date
   closureAmount: decimal("closure_amount", { precision: 14, scale: 2 }), // settlement amount for pre-closure
   createTransaction: boolean("create_transaction").default(false), // create transaction on payment
   affectBalance: boolean("affect_balance").default(false), // affect account balance on payment
+  includesBtClosure: boolean("includes_bt_closure").default(false), // true if this loan includes BT to close other loans
+  closedViaBtFromLoanId: integer("closed_via_bt_from_loan_id"), // if closed via BT, reference to the source loan
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -527,6 +529,8 @@ export const loansRelations = relations(loans, ({ one, many }) => ({
   account: one(accounts, { fields: [loans.accountId], references: [accounts.id] }),
   installments: many(loanInstallments),
   components: many(loanComponents),
+  btAllocations: many(loanBtAllocations),
+  closedViaBtFromLoan: one(loans, { fields: [loans.closedViaBtFromLoanId], references: [loans.id] }),
 }));
 
 export const insertLoanSchema = createInsertSchema(loans).omit({
@@ -544,17 +548,56 @@ export const insertLoanSchema = createInsertSchema(loans).omit({
   emiDay: z.number().min(1).max(31).optional(),
   startDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)),
   endDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
-  status: z.enum(["active", "closed", "defaulted", "preclosed"]).optional(),
+  status: z.enum(["active", "closed", "defaulted", "preclosed", "closed_bt"]).optional(),
   isExistingLoan: z.boolean().optional(),
   nextEmiDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
   closureDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
   closureAmount: z.string().optional(),
   createTransaction: z.boolean().optional(),
   affectBalance: z.boolean().optional(),
+  includesBtClosure: z.boolean().optional(),
+  closedViaBtFromLoanId: z.number().optional(),
 });
 
 export type InsertLoan = z.infer<typeof insertLoanSchema>;
 export type Loan = typeof loans.$inferSelect;
+
+// Loan Balance Transfer Allocations (tracks which loans are being closed via BT from this loan)
+export const loanBtAllocations = pgTable("loan_bt_allocations", {
+  id: serial("id").primaryKey(),
+  sourceLoanId: integer("source_loan_id").references(() => loans.id).notNull(), // the new BT loan
+  targetLoanId: integer("target_loan_id").references(() => loans.id).notNull(), // the loan being closed/paid
+  originalOutstandingAmount: decimal("original_outstanding_amount", { precision: 14, scale: 2 }).notNull(), // outstanding at time of BT setup
+  allocatedAmount: decimal("allocated_amount", { precision: 14, scale: 2 }).notNull(), // amount allocated for BT
+  actualBtAmount: decimal("actual_bt_amount", { precision: 14, scale: 2 }), // actual amount paid during BT (may differ)
+  processingFee: decimal("processing_fee", { precision: 10, scale: 2 }), // optional processing fee
+  processedDate: timestamp("processed_date"), // when BT was actually processed
+  status: varchar("status", { length: 20 }).default("pending"), // 'pending', 'processed', 'partial'
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const loanBtAllocationsRelations = relations(loanBtAllocations, ({ one }) => ({
+  sourceLoan: one(loans, { fields: [loanBtAllocations.sourceLoanId], references: [loans.id] }),
+  targetLoan: one(loans, { fields: [loanBtAllocations.targetLoanId], references: [loans.id] }),
+}));
+
+export const insertLoanBtAllocationSchema = createInsertSchema(loanBtAllocations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  originalOutstandingAmount: z.string().min(1, "Outstanding amount is required"),
+  allocatedAmount: z.string().min(1, "Allocated amount is required"),
+  actualBtAmount: z.string().optional(),
+  processingFee: z.string().optional(),
+  processedDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
+  status: z.enum(["pending", "processed", "partial"]).optional(),
+});
+
+export type InsertLoanBtAllocation = z.infer<typeof insertLoanBtAllocationSchema>;
+export type LoanBtAllocation = typeof loanBtAllocations.$inferSelect;
 
 // Loan Components (for credit card EMI conversions and purchase-specific EMIs)
 export const loanComponents = pgTable("loan_components", {

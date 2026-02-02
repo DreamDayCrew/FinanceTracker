@@ -1,7 +1,7 @@
 import { 
   users, accounts, categories, transactions, budgets, scheduledPayments, smsLogs,
   paymentOccurrences, savingsGoals, savingsContributions, salaryProfiles, salaryCycles,
-  loans, loanComponents, loanInstallments, loanTerms, loanPayments, cardDetails,
+  loans, loanComponents, loanInstallments, loanTerms, loanPayments, loanBtAllocations, cardDetails,
   insurances, insurancePremiums, creditCardStatements,
   type User, type InsertUser,
   type Account, type InsertAccount,
@@ -19,6 +19,7 @@ import {
   type LoanInstallment, type InsertLoanInstallment,
   type LoanTerm, type InsertLoanTerm,
   type LoanPayment, type InsertLoanPayment,
+  type LoanBtAllocation, type InsertLoanBtAllocation,
   type CardDetails, type InsertCardDetails,
   type Insurance, type InsertInsurance, type InsuranceWithRelations,
   type InsurancePremium, type InsertInsurancePremium,
@@ -198,6 +199,15 @@ export interface IStorage {
   deleteInsurancePremium(id: number): Promise<boolean>;
   generateInsurancePremiums(insuranceId: number): Promise<InsurancePremium[]>;
   markPremiumPaid(id: number, paidAmount: string, accountId?: number, transactionId?: number): Promise<InsurancePremium | undefined>;
+
+  // Loan BT Allocations
+  getLoanBtAllocations(sourceLoanId: number): Promise<LoanBtAllocation[]>;
+  getLoanBtAllocation(id: number): Promise<LoanBtAllocation | undefined>;
+  getLoanBtAllocationsByTarget(targetLoanId: number): Promise<LoanBtAllocation[]>;
+  createLoanBtAllocation(allocation: InsertLoanBtAllocation): Promise<LoanBtAllocation>;
+  updateLoanBtAllocation(id: number, allocation: Partial<InsertLoanBtAllocation>): Promise<LoanBtAllocation | undefined>;
+  deleteLoanBtAllocation(id: number): Promise<boolean>;
+  processLoanBtPayment(id: number, actualBtAmount: string, processedDate: Date, processingFee?: string): Promise<{ allocation: LoanBtAllocation; targetLoan: Loan }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2360,6 +2370,107 @@ export class DatabaseStorage implements IStorage {
     }
 
     return updated || undefined;
+  }
+
+  // Loan BT Allocations
+  async getLoanBtAllocations(sourceLoanId: number): Promise<LoanBtAllocation[]> {
+    return await db.select().from(loanBtAllocations)
+      .where(eq(loanBtAllocations.sourceLoanId, sourceLoanId))
+      .orderBy(loanBtAllocations.createdAt);
+  }
+
+  async getLoanBtAllocation(id: number): Promise<LoanBtAllocation | undefined> {
+    const [allocation] = await db.select().from(loanBtAllocations).where(eq(loanBtAllocations.id, id));
+    return allocation || undefined;
+  }
+
+  async getLoanBtAllocationsByTarget(targetLoanId: number): Promise<LoanBtAllocation[]> {
+    return await db.select().from(loanBtAllocations)
+      .where(eq(loanBtAllocations.targetLoanId, targetLoanId))
+      .orderBy(loanBtAllocations.createdAt);
+  }
+
+  async createLoanBtAllocation(allocation: InsertLoanBtAllocation): Promise<LoanBtAllocation> {
+    const [newAllocation] = await db.insert(loanBtAllocations).values({
+      ...allocation,
+      originalOutstandingAmount: allocation.originalOutstandingAmount,
+      allocatedAmount: allocation.allocatedAmount,
+      actualBtAmount: allocation.actualBtAmount,
+      processingFee: allocation.processingFee,
+      status: allocation.status || 'pending',
+    }).returning();
+    return newAllocation;
+  }
+
+  async updateLoanBtAllocation(id: number, allocation: Partial<InsertLoanBtAllocation>): Promise<LoanBtAllocation | undefined> {
+    const [updated] = await db.update(loanBtAllocations)
+      .set({ ...allocation, updatedAt: new Date() })
+      .where(eq(loanBtAllocations.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteLoanBtAllocation(id: number): Promise<boolean> {
+    const result = await db.delete(loanBtAllocations).where(eq(loanBtAllocations.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async processLoanBtPayment(id: number, actualBtAmount: string, processedDate: Date, processingFee?: string): Promise<{ allocation: LoanBtAllocation; targetLoan: Loan }> {
+    const allocation = await this.getLoanBtAllocation(id);
+    if (!allocation) {
+      throw new Error('BT allocation not found');
+    }
+
+    const targetLoan = await this.getLoan(allocation.targetLoanId);
+    if (!targetLoan) {
+      throw new Error('Target loan not found');
+    }
+
+    const btAmount = parseFloat(actualBtAmount);
+    const outstandingAmount = parseFloat(targetLoan.outstandingAmount);
+    const sourceLoanId = allocation.sourceLoanId;
+
+    // Validate BT amount
+    if (btAmount > outstandingAmount) {
+      throw new Error('BT amount cannot exceed outstanding amount');
+    }
+
+    // Determine if this is full closure or partial payment
+    const isFullClosure = Math.abs(btAmount - outstandingAmount) < 0.01; // Allow for floating point precision
+    const newOutstanding = isFullClosure ? 0 : outstandingAmount - btAmount;
+    const newStatus = isFullClosure ? 'processed' : 'partial';
+
+    // Update the BT allocation
+    const [updatedAllocation] = await db.update(loanBtAllocations)
+      .set({
+        actualBtAmount,
+        processedDate,
+        processingFee: processingFee || null,
+        status: newStatus,
+        updatedAt: new Date()
+      })
+      .where(eq(loanBtAllocations.id, id))
+      .returning();
+
+    // Update the target loan
+    const loanUpdateData: any = {
+      outstandingAmount: newOutstanding.toFixed(2),
+      updatedAt: new Date()
+    };
+
+    if (isFullClosure) {
+      loanUpdateData.status = 'closed_bt';
+      loanUpdateData.closureDate = processedDate;
+      loanUpdateData.closureAmount = actualBtAmount;
+      loanUpdateData.closedViaBtFromLoanId = sourceLoanId;
+    }
+
+    const [updatedLoan] = await db.update(loans)
+      .set(loanUpdateData)
+      .where(eq(loans.id, allocation.targetLoanId))
+      .returning();
+
+    return { allocation: updatedAllocation, targetLoan: updatedLoan };
   }
 }
 

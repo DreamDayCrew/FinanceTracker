@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, Animated, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, Animated, Switch, Platform } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +9,8 @@ import Toast from 'react-native-toast-message';
 import { formatCurrency, getThemedColors } from '../lib/utils';
 import { api } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
-import type { Loan, LoanInstallment, LoanTerm, LoanPayment } from '../lib/types';
+import type { Loan, LoanInstallment, LoanTerm, LoanPayment, LoanBtAllocation } from '../lib/types';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 type RouteParams = {
   LoanDetails: {
@@ -27,7 +28,7 @@ export default function LoanDetailsScreen() {
   const queryClient = useQueryClient();
   const { loanId } = route.params;
 
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'payments' | 'terms'>('upcoming');
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'payments' | 'terms' | 'bt'>('upcoming');
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [regenerateModalVisible, setRegenerateModalVisible] = useState(false);
   const [preclosureModalVisible, setPreclosureModalVisible] = useState(false);
@@ -51,6 +52,14 @@ export default function LoanDetailsScreen() {
     additionalTenure: '',
     notes: '' 
   });
+  
+  // BT related state
+  const [btPaymentModalVisible, setBtPaymentModalVisible] = useState(false);
+  const [selectedBtAllocation, setSelectedBtAllocation] = useState<LoanBtAllocation | null>(null);
+  const [btPaymentDate, setBtPaymentDate] = useState(new Date());
+  const [showBtDatePicker, setShowBtDatePicker] = useState(false);
+  const [btPaymentAmount, setBtPaymentAmount] = useState('');
+  const [btProcessingFee, setBtProcessingFee] = useState('');
 
   const { data: loan, isLoading } = useQuery<Loan>({
     queryKey: ['/api/loans', loanId],
@@ -73,6 +82,34 @@ export default function LoanDetailsScreen() {
     queryKey: ['loan-payments', loanId],
     queryFn: () => api.getLoanPayments(loanId),
     enabled: !!loan,
+  });
+
+  // BT allocations for this loan as source (outgoing BTs)
+  const { data: btAllocations = [], refetch: refetchBtAllocations } = useQuery<LoanBtAllocation[]>({
+    queryKey: ['loan-bt-allocations', loanId],
+    queryFn: () => api.getLoanBtAllocations(loanId),
+    enabled: !!loan && loan.includesBtClosure,
+  });
+
+  // BT allocations for this loan as target (if closed via BT)
+  const { data: btAsTarget = [] } = useQuery<LoanBtAllocation[]>({
+    queryKey: ['loan-bt-as-target', loanId],
+    queryFn: () => api.getLoanBtAllocationsAsTarget(loanId),
+    enabled: !!loan,
+  });
+
+  // Get source loan name if this loan was closed via BT
+  const { data: sourceLoan } = useQuery<Loan>({
+    queryKey: ['/api/loans', loan?.closedViaBtFromLoanId],
+    queryFn: () => api.getLoan(loan!.closedViaBtFromLoanId!),
+    enabled: !!loan?.closedViaBtFromLoanId,
+  });
+
+  // Get all loans for displaying target loan names in BT tab
+  const { data: allLoans = [] } = useQuery<Loan[]>({
+    queryKey: ['/api/loans'],
+    queryFn: () => api.getLoans(),
+    enabled: !!loan && (loan.includesBtClosure || btAsTarget.length > 0),
   });
 
   const deleteMutation = useMutation({
@@ -356,6 +393,106 @@ export default function LoanDetailsScreen() {
     },
   });
 
+  // BT Payment mutation
+  const btPaymentMutation = useMutation({
+    mutationFn: async ({ allocationId, actualBtAmount, processedDate, processingFee }: { allocationId: number; actualBtAmount: string; processedDate: string; processingFee?: string }) => {
+      return api.processBtPayment(allocationId, { actualBtAmount, processedDate, processingFee });
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['loan-bt-allocations', loanId] });
+      refetchBtAllocations();
+      
+      const isFullClosure = result.targetLoan.status === 'closed_bt';
+      Toast.show({
+        type: 'success',
+        text1: 'BT Payment Processed',
+        text2: isFullClosure ? 'Target loan has been closed' : 'Target loan outstanding reduced',
+        position: 'bottom',
+      });
+      
+      setBtPaymentModalVisible(false);
+      setSelectedBtAllocation(null);
+      setBtPaymentAmount('');
+      setBtProcessingFee('');
+    },
+    onError: (error: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Failed to Process BT',
+        text2: error.message || 'Could not process BT payment',
+        position: 'bottom',
+      });
+    },
+  });
+
+  const handleOpenBtPayment = (allocation: LoanBtAllocation) => {
+    setSelectedBtAllocation(allocation);
+    setBtPaymentAmount(allocation.allocatedAmount);
+    setBtPaymentDate(new Date());
+    setBtProcessingFee('');
+    setBtPaymentModalVisible(true);
+  };
+
+  const handleProcessBtPayment = () => {
+    if (!selectedBtAllocation) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'No allocation selected',
+        position: 'bottom',
+      });
+      return;
+    }
+    
+    const btAmount = parseFloat(btPaymentAmount);
+    
+    // Validate numeric input
+    if (isNaN(btAmount) || btAmount <= 0) {
+      Toast.show({
+        type: 'error',
+        text1: 'Invalid Amount',
+        text2: 'Please enter a valid positive amount',
+        position: 'bottom',
+      });
+      return;
+    }
+    
+    const targetLoan = allLoans.find(l => l.id === selectedBtAllocation.targetLoanId);
+    const outstanding = targetLoan ? parseFloat(targetLoan.outstandingAmount) : parseFloat(selectedBtAllocation.originalOutstandingAmount);
+    
+    if (btAmount > outstanding) {
+      Toast.show({
+        type: 'error',
+        text1: 'Invalid Amount',
+        text2: 'BT amount cannot exceed outstanding amount',
+        position: 'bottom',
+      });
+      return;
+    }
+    
+    // Validate processing fee if provided
+    if (btProcessingFee) {
+      const fee = parseFloat(btProcessingFee);
+      if (isNaN(fee) || fee < 0) {
+        Toast.show({
+          type: 'error',
+          text1: 'Invalid Fee',
+          text2: 'Please enter a valid processing fee',
+          position: 'bottom',
+        });
+        return;
+      }
+    }
+    
+    btPaymentMutation.mutate({
+      allocationId: selectedBtAllocation.id,
+      actualBtAmount: btPaymentAmount,
+      processedDate: btPaymentDate.toISOString(),
+      processingFee: btProcessingFee || undefined,
+    });
+  };
+
   const handleEditPayment = (payment: LoanPayment) => {
     setEditingPayment(payment);
     setEditPayment({
@@ -584,6 +721,30 @@ export default function LoanDetailsScreen() {
           </View>
         )}
 
+        {/* Closed via BT Banner */}
+        {loan.status === 'closed_bt' && (
+          <View style={[styles.preclosedBanner, { backgroundColor: colors.primary + '20', borderColor: colors.primary }]}>
+            <Ionicons name="swap-horizontal" size={24} color={colors.primary} />
+            <View style={styles.preclosedBannerContent}>
+              <Text style={[styles.preclosedBannerTitle, { color: colors.primary }]}>Closed via Balance Transfer</Text>
+              {sourceLoan ? (
+                <Text style={[styles.preclosedBannerSubtitle, { color: colors.textMuted }]}>
+                  BT from: {sourceLoan.name} ({sourceLoan.lenderName || 'No lender'})
+                </Text>
+              ) : btAsTarget.length > 0 && btAsTarget.find(bt => bt.status === 'processed' || bt.status === 'partial') ? (
+                <Text style={[styles.preclosedBannerSubtitle, { color: colors.textMuted }]}>
+                  BT from: {allLoans.find(l => l.id === btAsTarget.find(bt => bt.status === 'processed' || bt.status === 'partial')?.sourceLoanId)?.name || 'Another loan'}
+                </Text>
+              ) : null}
+              {loan.closureDate && (
+                <Text style={[styles.preclosedBannerSubtitle, { color: colors.textMuted }]}>
+                  Closed on {formatDate(loan.closureDate)} with {formatCurrency(parseFloat(loan.closureAmount || '0'))}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Tabs */}
         <ScrollView 
           horizontal 
@@ -627,6 +788,20 @@ export default function LoanDetailsScreen() {
             >
               <Text style={[styles.tabText, { color: activeTab === 'terms' ? colors.primary : colors.textMuted }]}>
                 Terms
+              </Text>
+            </TouchableOpacity>
+          )}
+          {/* BT Tab - only show if loan includes BT closure */}
+          {loan.includesBtClosure && (
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                activeTab === 'bt' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
+              ]}
+              onPress={() => setActiveTab('bt')}
+            >
+              <Text style={[styles.tabText, { color: activeTab === 'bt' ? colors.primary : colors.textMuted }]}>
+                BT Closures
               </Text>
             </TouchableOpacity>
           )}
@@ -888,6 +1063,129 @@ export default function LoanDetailsScreen() {
                 <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
                   <Text style={[styles.emptyText, { color: colors.textMuted }]}>No payments recorded yet</Text>
                 </View>
+              )}
+            </>
+          )}
+
+          {/* BT Tab Content */}
+          {activeTab === 'bt' && loan.includesBtClosure && (
+            <>
+              {btAllocations.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>No BT allocations found</Text>
+                </View>
+              ) : (
+                <>
+                  {/* Pending BT Allocations */}
+                  {btAllocations.filter(bt => bt.status === 'pending').length > 0 && (
+                    <>
+                      <Text style={[styles.sectionHeader, { color: colors.textMuted }]}>Pending BT Closures</Text>
+                      {btAllocations.filter(bt => bt.status === 'pending').map((bt) => {
+                        const targetLoan = allLoans.find(l => l.id === bt.targetLoanId);
+                        return (
+                          <View key={bt.id} style={[styles.btCard, { backgroundColor: colors.card }]}>
+                            <View style={styles.btCardHeader}>
+                              <View style={[styles.btIcon, { backgroundColor: colors.warning + '20' }]}>
+                                <Ionicons name="time" size={20} color={colors.warning} />
+                              </View>
+                              <View style={styles.btInfo}>
+                                <Text style={[styles.btTargetName, { color: colors.text }]}>
+                                  {targetLoan?.name || 'Unknown Loan'}
+                                </Text>
+                                <Text style={[styles.btLenderName, { color: colors.textMuted }]}>
+                                  {targetLoan?.lenderName || 'No lender'}
+                                </Text>
+                              </View>
+                              <TouchableOpacity
+                                style={[styles.btPayButton, { backgroundColor: colors.primary }]}
+                                onPress={() => handleOpenBtPayment(bt)}
+                              >
+                                <Text style={styles.btPayButtonText}>Pay</Text>
+                              </TouchableOpacity>
+                            </View>
+                            <View style={styles.btDetails}>
+                              <View style={styles.btDetailRow}>
+                                <Text style={[styles.btDetailLabel, { color: colors.textMuted }]}>Original Outstanding</Text>
+                                <Text style={[styles.btDetailValue, { color: colors.text }]}>
+                                  {formatCurrency(parseFloat(bt.originalOutstandingAmount))}
+                                </Text>
+                              </View>
+                              <View style={styles.btDetailRow}>
+                                <Text style={[styles.btDetailLabel, { color: colors.textMuted }]}>Allocated BT Amount</Text>
+                                <Text style={[styles.btDetailValue, { color: colors.primary }]}>
+                                  {formatCurrency(parseFloat(bt.allocatedAmount))}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </>
+                  )}
+                  
+                  {/* Processed BT Allocations */}
+                  {btAllocations.filter(bt => bt.status === 'processed').length > 0 && (
+                    <>
+                      <Text style={[styles.sectionHeader, { color: colors.textMuted }]}>Processed BT Closures</Text>
+                      {btAllocations.filter(bt => bt.status === 'processed').map((bt) => {
+                        const targetLoan = allLoans.find(l => l.id === bt.targetLoanId);
+                        const isFullClosure = parseFloat(bt.actualBtAmount || bt.allocatedAmount) >= parseFloat(bt.originalOutstandingAmount);
+                        return (
+                          <View key={bt.id} style={[styles.btCard, { backgroundColor: colors.card }]}>
+                            <View style={styles.btCardHeader}>
+                              <View style={[styles.btIcon, { backgroundColor: colors.success + '20' }]}>
+                                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                              </View>
+                              <View style={styles.btInfo}>
+                                <Text style={[styles.btTargetName, { color: colors.text }]}>
+                                  {targetLoan?.name || 'Unknown Loan'}
+                                </Text>
+                                <Text style={[styles.btLenderName, { color: colors.textMuted }]}>
+                                  {targetLoan?.lenderName || 'No lender'}
+                                </Text>
+                              </View>
+                              <View style={[styles.btStatusBadge, { backgroundColor: isFullClosure ? colors.success + '20' : colors.primary + '20' }]}>
+                                <Text style={[styles.btStatusText, { color: isFullClosure ? colors.success : colors.primary }]}>
+                                  {isFullClosure ? 'Closed' : 'Partial'}
+                                </Text>
+                              </View>
+                            </View>
+                            <View style={styles.btDetails}>
+                              <View style={styles.btDetailRow}>
+                                <Text style={[styles.btDetailLabel, { color: colors.textMuted }]}>Original Outstanding</Text>
+                                <Text style={[styles.btDetailValue, { color: colors.text }]}>
+                                  {formatCurrency(parseFloat(bt.originalOutstandingAmount))}
+                                </Text>
+                              </View>
+                              <View style={styles.btDetailRow}>
+                                <Text style={[styles.btDetailLabel, { color: colors.textMuted }]}>BT Amount Paid</Text>
+                                <Text style={[styles.btDetailValue, { color: colors.success }]}>
+                                  {formatCurrency(parseFloat(bt.actualBtAmount || bt.allocatedAmount))}
+                                </Text>
+                              </View>
+                              {bt.processingFee && parseFloat(bt.processingFee) > 0 && (
+                                <View style={styles.btDetailRow}>
+                                  <Text style={[styles.btDetailLabel, { color: colors.textMuted }]}>Processing Fee</Text>
+                                  <Text style={[styles.btDetailValue, { color: colors.danger }]}>
+                                    {formatCurrency(parseFloat(bt.processingFee))}
+                                  </Text>
+                                </View>
+                              )}
+                              {bt.processedDate && (
+                                <View style={styles.btDetailRow}>
+                                  <Text style={[styles.btDetailLabel, { color: colors.textMuted }]}>Processed On</Text>
+                                  <Text style={[styles.btDetailValue, { color: colors.textMuted }]}>
+                                    {formatDate(bt.processedDate)}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </>
+                  )}
+                </>
               )}
             </>
           )}
@@ -1558,6 +1856,109 @@ export default function LoanDetailsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* BT Payment Modal */}
+      <Modal
+        visible={btPaymentModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBtPaymentModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
+            <View style={[styles.btIcon, { backgroundColor: colors.primary + '20', marginBottom: 12 }]}>
+              <Ionicons name="swap-horizontal" size={32} color={colors.primary} />
+            </View>
+            <Text style={[styles.formModalTitle, { color: colors.text }]}>Process BT Payment</Text>
+            {selectedBtAllocation && (
+              <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
+                Transfer to: {allLoans.find(l => l.id === selectedBtAllocation.targetLoanId)?.name || 'Unknown Loan'}
+              </Text>
+            )}
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Original Outstanding</Text>
+              <View style={[styles.formInput, { backgroundColor: colors.background, borderColor: colors.border, justifyContent: 'center' }]}>
+                <Text style={{ color: colors.textMuted, fontSize: 16 }}>
+                  {formatCurrency(parseFloat(selectedBtAllocation?.originalOutstandingAmount || '0'))}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>BT Amount *</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
+                value={btPaymentAmount}
+                onChangeText={setBtPaymentAmount}
+                keyboardType="numeric"
+                placeholder="Enter actual BT amount"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Processing Fee (Optional)</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
+                value={btProcessingFee}
+                onChangeText={setBtProcessingFee}
+                keyboardType="numeric"
+                placeholder="Any processing fee"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Payment Date</Text>
+              <TouchableOpacity
+                style={[styles.formInput, { backgroundColor: colors.background, borderColor: colors.border, justifyContent: 'center' }]}
+                onPress={() => setShowBtDatePicker(true)}
+              >
+                <Text style={{ color: colors.text, fontSize: 16 }}>
+                  {btPaymentDate.toLocaleDateString('en-IN')}
+                </Text>
+              </TouchableOpacity>
+              {showBtDatePicker && (
+                <DateTimePicker
+                  value={btPaymentDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, selectedDate) => {
+                    setShowBtDatePicker(Platform.OS === 'ios');
+                    if (selectedDate) {
+                      setBtPaymentDate(selectedDate);
+                    }
+                  }}
+                />
+              )}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
+                onPress={() => {
+                  setBtPaymentModalVisible(false);
+                  setSelectedBtAllocation(null);
+                }}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.primary }]}
+                onPress={handleProcessBtPayment}
+                disabled={btPaymentMutation.isPending || !btPaymentAmount}
+              >
+                {btPaymentMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Process BT</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2138,5 +2539,77 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
     textAlign: 'center',
+  },
+  // BT Tab Styles
+  btCard: {
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  btCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  btIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btInfo: {
+    flex: 1,
+  },
+  btTargetName: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  btLenderName: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  btPayButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  btPayButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  btDetails: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+    gap: 8,
+  },
+  btDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  btDetailLabel: {
+    fontSize: 13,
+  },
+  btDetailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  btStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  btStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

@@ -254,16 +254,33 @@ export interface Loan {
   accountId: number | null;
   lenderName: string | null;
   loanAccountNumber: string | null;
-  status: 'active' | 'closed' | 'defaulted' | 'preclosed';
+  status: 'active' | 'closed' | 'defaulted' | 'preclosed' | 'closed_bt';
   isExistingLoan: boolean;
   nextEmiDate: string | null;
   closureDate: string | null;
   closureAmount: string | null;
+  includesBtClosure?: boolean;
+  closedViaBtFromLoanId?: number | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
   affectBalance: boolean;
   createTransaction: boolean;
+}
+
+export interface LoanBtAllocation {
+  id: number;
+  sourceLoanId: number;
+  targetLoanId: number;
+  originalOutstandingAmount: string;
+  allocatedAmount: string;
+  actualBtAmount: string | null;
+  processingFee: string | null;
+  processedDate: string | null;
+  status: 'pending' | 'processed' | 'partial';
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface LoanInstallment {

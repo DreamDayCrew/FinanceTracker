@@ -4,7 +4,7 @@ import type {
   InsertBudget, InsertScheduledPayment, PaymentOccurrence,
   SavingsGoal, SavingsContribution, InsertSavingsGoal, InsertSavingsContribution,
   SalaryProfile, SalaryCycle, InsertSalaryProfile,
-  Loan, LoanInstallment, InsertLoan,
+  Loan, LoanInstallment, InsertLoan, LoanBtAllocation,
   CardDetails, InsertCardDetails,
   LoanTerm, LoanPayment, InsertLoanTerm, InsertLoanPayment, LoanWithDetails,
   Insurance, InsurancePremium, InsertInsurance, InsertInsurancePremium
@@ -401,6 +401,22 @@ export const api = {
     console.log('API: Full URL:', `${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000'}${endpoint}`);
     return apiRequest<LoanInstallment[]>(endpoint, { method: 'POST' });
   },
+
+  // Loan BT Allocations
+  getLoanBtAllocations: (loanId: number) => 
+    apiRequest<LoanBtAllocation[]>(`/api/loans/${loanId}/bt-allocations`),
+  getLoanBtAllocationsAsTarget: (loanId: number) => 
+    apiRequest<LoanBtAllocation[]>(`/api/loans/${loanId}/bt-allocations-as-target`),
+  getBtAllocation: (id: number) => 
+    apiRequest<LoanBtAllocation>(`/api/bt-allocations/${id}`),
+  createLoanBtAllocation: (loanId: number, data: { targetLoanId: number; originalOutstandingAmount: string; allocatedAmount: string }) =>
+    apiRequest<LoanBtAllocation>(`/api/loans/${loanId}/bt-allocations`, { method: 'POST', body: JSON.stringify(data) }),
+  updateBtAllocation: (id: number, data: Partial<{ allocatedAmount: string; status: string }>) =>
+    apiRequest<LoanBtAllocation>(`/api/bt-allocations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteBtAllocation: (id: number) =>
+    apiRequest<void>(`/api/bt-allocations/${id}`, { method: 'DELETE' }),
+  processBtPayment: (id: number, data: { actualBtAmount: string; processedDate: string; processingFee?: string }) =>
+    apiRequest<{ allocation: LoanBtAllocation; targetLoan: Loan }>(`/api/bt-allocations/${id}/process`, { method: 'POST', body: JSON.stringify(data) }),
 
   getCardDetails: (accountId: number) => 
     apiRequest<CardDetails | null>(`/api/accounts/${accountId}/card-details`),
