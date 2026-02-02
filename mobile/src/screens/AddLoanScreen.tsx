@@ -754,7 +754,10 @@ export default function AddLoanScreen() {
                 value={includesBtClosure}
                 onValueChange={(value) => {
                   setIncludesBtClosure(value);
-                  if (!value) {
+                  if (value && activeLoansForBt.length > 0) {
+                    // Auto-add first BT allocation when toggle is enabled and there are active loans
+                    setBtAllocations([{ targetLoanId: '', allocatedAmount: '' }]);
+                  } else if (!value) {
                     setBtAllocations([]);
                   }
                 }}
@@ -766,6 +769,12 @@ export default function AddLoanScreen() {
             {/* BT Allocation Rows */}
             {includesBtClosure && (
               <View style={styles.btAllocationsContainer}>
+                {activeLoansForBt.length === 0 ? (
+                  <Text style={[styles.noBtText, { color: colors.textMuted }]}>
+                    No active loans available for balance transfer. Add some loans first, then come back to create a BT loan.
+                  </Text>
+                ) : (
+                  <>
                 {btAllocations.map((bt, index) => {
                   const selectedLoan = allLoans.find(l => l.id.toString() === bt.targetLoanId);
                   const maxAmount = selectedLoan ? parseFloat(selectedLoan.outstandingAmount) : 0;
@@ -829,22 +838,16 @@ export default function AddLoanScreen() {
                 })}
                 
                 {/* Add BT Button */}
-                {activeLoansForBt.length > 0 && (
-                  <TouchableOpacity
-                    style={[styles.addBtButton, { borderColor: colors.primary }]}
-                    onPress={() => {
-                      setBtAllocations([...btAllocations, { targetLoanId: '', allocatedAmount: '' }]);
-                    }}
-                  >
-                    <Ionicons name="add" size={20} color={colors.primary} />
-                    <Text style={[styles.addBtButtonText, { color: colors.primary }]}>Add BT Allocation</Text>
-                  </TouchableOpacity>
-                )}
-                
-                {activeLoansForBt.length === 0 && btAllocations.length === 0 && (
-                  <Text style={[styles.noBtText, { color: colors.textMuted }]}>
-                    No active loans available for balance transfer
-                  </Text>
+                <TouchableOpacity
+                  style={[styles.addBtButton, { borderColor: colors.primary }]}
+                  onPress={() => {
+                    setBtAllocations([...btAllocations, { targetLoanId: '', allocatedAmount: '' }]);
+                  }}
+                >
+                  <Ionicons name="add" size={20} color={colors.primary} />
+                  <Text style={[styles.addBtButtonText, { color: colors.primary }]}>Add BT Allocation</Text>
+                </TouchableOpacity>
+                </>
                 )}
               </View>
             )}
