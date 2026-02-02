@@ -2099,6 +2099,9 @@ export class DatabaseStorage implements IStorage {
       // Create transaction if enabled
       if (loan.createTransaction && loan.accountId) {
         const paymentAmount = parseFloat(payment.amount);
+        const paymentDateStr = typeof payment.paymentDate === 'string' 
+          ? payment.paymentDate 
+          : (payment.paymentDate instanceof Date ? payment.paymentDate.toISOString() : new Date().toISOString());
         await this.createTransaction({
           userId: loan.userId,
           accountId: loan.accountId,
@@ -2107,7 +2110,7 @@ export class DatabaseStorage implements IStorage {
           amount: paymentAmount.toFixed(2),
           merchant: '[AUTO] Loan Payment',
           description: `Loan EMI - ${loan.name}`,
-          transactionDate: payment.paymentDate.toISOString(),
+          transactionDate: paymentDateStr,
         });
       }
 
