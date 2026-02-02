@@ -2761,44 +2761,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update outstanding amount
       const newOutstanding = outstanding - paymentAmount;
       
-      // Calculate new EMI or tenure based on effect choice
+      // Get current loan terms
+      const currentTerms = await storage.getLoanTerms(loanId);
+      const latestTerm = currentTerms.length > 0 ? currentTerms[currentTerms.length - 1] : null;
+      
+      // Get current values
+      const currentEmi = parseFloat(latestTerm?.emiAmount || loan.emiAmount || '0');
+      const currentInterestRate = parseFloat(latestTerm?.interestRate || loan.interestRate || '0');
+      const monthlyRate = currentInterestRate / 12 / 100;
+      
+      // Calculate remaining tenure from loan start date
+      const loanStartDate = new Date(loan.startDate || new Date());
+      const paymentDateObj = new Date(paymentDate);
+      const monthsElapsed = Math.floor(
+        (paymentDateObj.getTime() - loanStartDate.getTime()) / (1000 * 60 * 60 * 24 * 30)
+      );
+      const originalTenure = latestTerm?.tenureMonths || loan.tenure;
+      const remainingMonths = Math.max(1, originalTenure - monthsElapsed);
+      
+      let newEmi = currentEmi;
+      let newTenure = remainingMonths;
+      
+      // Calculate based on effect choice
+      if (newOutstanding > 0) {
+        if (effect === 'reduce_emi') {
+          // Keep same tenure, calculate new EMI
+          // EMI = P * r * (1+r)^n / ((1+r)^n - 1)
+          if (monthlyRate > 0) {
+            const factor = Math.pow(1 + monthlyRate, remainingMonths);
+            newEmi = (newOutstanding * monthlyRate * factor) / (factor - 1);
+          } else {
+            // Simple division for 0% interest
+            newEmi = newOutstanding / remainingMonths;
+          }
+          newTenure = remainingMonths;
+        } else {
+          // Keep same EMI, calculate new tenure
+          // n = log(EMI / (EMI - P * r)) / log(1 + r)
+          if (monthlyRate > 0 && currentEmi > newOutstanding * monthlyRate) {
+            newTenure = Math.ceil(
+              Math.log(currentEmi / (currentEmi - newOutstanding * monthlyRate)) / 
+              Math.log(1 + monthlyRate)
+            );
+          } else if (monthlyRate === 0) {
+            // Simple division for 0% interest
+            newTenure = Math.ceil(newOutstanding / currentEmi);
+          } else {
+            // Fallback: EMI too low to cover interest, keep original tenure
+            newTenure = remainingMonths;
+          }
+          newEmi = currentEmi;
+        }
+      }
+      
+      // Calculate new EMI due date based on payment date
+      const nextEmiDate = new Date(paymentDateObj);
+      nextEmiDate.setMonth(nextEmiDate.getMonth() + 1);
+      // Use day from start date as EMI due date
+      nextEmiDate.setDate(loanStartDate.getDate() || 1);
+      
+      // Prepare update data
       let updateData: any = {
         outstandingAmount: newOutstanding.toFixed(2),
+        emiAmount: newEmi.toFixed(2),
+        tenure: newTenure,
       };
 
       // If payment closes the loan
       if (newOutstanding <= 0) {
-        const paymentDateObj = new Date(paymentDate);
         updateData.status = 'preclosed';
         updateData.closureDate = paymentDateObj;
         updateData.closureAmount = paymentAmount.toFixed(2);
+        updateData.emiAmount = '0';
+        updateData.tenure = 0;
       }
 
       const updatedLoan = await storage.updateLoan(loanId, updateData);
 
-      // Create payment record
+      // Create payment record with details
       await storage.createLoanPayment({
         loanId,
-        paymentDate: new Date(paymentDate),
+        paymentDate: paymentDateObj,
         amount: amount,
         paymentType: 'prepayment',
         accountId: accountId || null,
         notes: effect === 'reduce_emi' 
-          ? 'Part payment - Reduce EMI' 
-          : 'Part payment - Reduce Tenure'
+          ? `Part payment - Reduce EMI from ₹${currentEmi.toFixed(0)} to ₹${newEmi.toFixed(0)}` 
+          : `Part payment - Reduce Tenure from ${remainingMonths} to ${newTenure} months`
       });
 
-      // Add a term record to track this event
-      const currentTerm = await storage.getLoanTerms(loanId);
-      const latestTerm = currentTerm.length > 0 ? currentTerm[currentTerm.length - 1] : null;
-      
+      // Add a term record to track this event with new values
       await storage.createLoanTerm({
         loanId,
-        effectiveFrom: new Date(paymentDate),
-        interestRate: latestTerm ? latestTerm.interestRate : loan.interestRate || '0',
-        tenureMonths: latestTerm ? latestTerm.tenureMonths : loan.tenure,
-        emiAmount: latestTerm ? latestTerm.emiAmount : (loan.emiAmount || '0'),
-        reason: `Part payment of ${amount} - ${effect === 'reduce_emi' ? 'Reduce EMI' : 'Reduce Tenure'}`,
+        effectiveFrom: paymentDateObj,
+        interestRate: currentInterestRate.toString(),
+        tenureMonths: newTenure,
+        emiAmount: newEmi.toFixed(2),
+        reason: effect === 'reduce_emi' 
+          ? `Part payment of ₹${paymentAmount.toFixed(0)} - EMI reduced from ₹${currentEmi.toFixed(0)} to ₹${newEmi.toFixed(0)}`
+          : `Part payment of ₹${paymentAmount.toFixed(0)} - Tenure reduced from ${remainingMonths} to ${newTenure} months`,
       });
 
       // Optionally create a transaction

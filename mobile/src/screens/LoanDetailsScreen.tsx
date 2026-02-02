@@ -569,6 +569,75 @@ export default function LoanDetailsScreen() {
     return Math.min(100, Math.max(0, Math.round(((principal - outstanding) / principal) * 100)));
   };
 
+  // Calculate preview of what happens after part payment
+  const calculatePartPaymentPreview = () => {
+    if (!loan || !partPaymentAmount) return null;
+    
+    const paymentAmount = parseFloat(partPaymentAmount);
+    if (isNaN(paymentAmount) || paymentAmount <= 0) return null;
+    
+    const outstanding = parseFloat(loan.outstandingAmount);
+    if (paymentAmount > outstanding) return null;
+    
+    const newOutstanding = outstanding - paymentAmount;
+    if (newOutstanding <= 0) {
+      return { type: 'closure', newOutstanding: 0, newEmi: 0, newTenure: 0 };
+    }
+    
+    // Get current loan values
+    const currentEmi = parseFloat(loan.emiAmount || '0');
+    const currentInterestRate = parseFloat(loan.interestRate || '0');
+    const monthlyRate = currentInterestRate / 12 / 100;
+    
+    // Calculate remaining tenure
+    const startDate = new Date(loan.startDate || new Date());
+    const monthsElapsed = Math.floor(
+      (partPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30)
+    );
+    const originalTenure = loan.tenure || 12;
+    const remainingMonths = Math.max(1, originalTenure - monthsElapsed);
+    
+    let newEmi = currentEmi;
+    let newTenure = remainingMonths;
+    
+    if (partPaymentEffect === 'reduce_emi') {
+      // Keep same tenure, calculate new EMI
+      if (monthlyRate > 0) {
+        const factor = Math.pow(1 + monthlyRate, remainingMonths);
+        newEmi = (newOutstanding * monthlyRate * factor) / (factor - 1);
+      } else {
+        newEmi = newOutstanding / remainingMonths;
+      }
+      newTenure = remainingMonths;
+    } else {
+      // Keep same EMI, calculate new tenure
+      if (monthlyRate > 0 && currentEmi > newOutstanding * monthlyRate) {
+        newTenure = Math.ceil(
+          Math.log(currentEmi / (currentEmi - newOutstanding * monthlyRate)) / 
+          Math.log(1 + monthlyRate)
+        );
+      } else if (monthlyRate === 0) {
+        newTenure = Math.ceil(newOutstanding / currentEmi);
+      } else {
+        newTenure = remainingMonths;
+      }
+      newEmi = currentEmi;
+    }
+    
+    return {
+      type: partPaymentEffect,
+      newOutstanding,
+      newEmi,
+      newTenure,
+      currentEmi,
+      currentTenure: remainingMonths,
+      monthsSaved: partPaymentEffect === 'reduce_tenure' ? remainingMonths - newTenure : 0,
+      emiReduction: partPaymentEffect === 'reduce_emi' ? currentEmi - newEmi : 0,
+    };
+  };
+
+  const partPaymentPreview = calculatePartPaymentPreview();
+
   const getUpcomingInstallments = () => {
     const now = new Date();
     return installments
@@ -1573,6 +1642,67 @@ export default function LoanDetailsScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* Preview Section */}
+            {partPaymentPreview && (
+              <View style={[styles.previewSection, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                <Text style={[styles.previewTitle, { color: colors.text }]}>
+                  {partPaymentPreview.type === 'closure' ? 'Loan will be closed!' : 'After this payment:'}
+                </Text>
+                {partPaymentPreview.type === 'closure' ? (
+                  <View style={styles.previewRow}>
+                    <Ionicons name="checkmark-circle" size={24} color={colors.success} />
+                    <Text style={[styles.previewText, { color: colors.success }]}>
+                      Payment of {formatCurrency(parseFloat(partPaymentAmount))} will close this loan
+                    </Text>
+                  </View>
+                ) : partPaymentPreview.type === 'reduce_tenure' ? (
+                  <>
+                    <View style={styles.previewRow}>
+                      <Text style={[styles.previewLabel, { color: colors.textMuted }]}>New Outstanding:</Text>
+                      <Text style={[styles.previewValue, { color: colors.text }]}>
+                        {formatCurrency(partPaymentPreview.newOutstanding)}
+                      </Text>
+                    </View>
+                    <View style={styles.previewRow}>
+                      <Text style={[styles.previewLabel, { color: colors.textMuted }]}>New Tenure:</Text>
+                      <Text style={[styles.previewValue, { color: colors.primary }]}>
+                        {partPaymentPreview.newTenure} months
+                        <Text style={{ color: colors.success }}> (save {partPaymentPreview.monthsSaved} months)</Text>
+                      </Text>
+                    </View>
+                    <View style={styles.previewRow}>
+                      <Text style={[styles.previewLabel, { color: colors.textMuted }]}>EMI remains:</Text>
+                      <Text style={[styles.previewValue, { color: colors.text }]}>
+                        {formatCurrency(partPaymentPreview.currentEmi || 0)}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.previewRow}>
+                      <Text style={[styles.previewLabel, { color: colors.textMuted }]}>New Outstanding:</Text>
+                      <Text style={[styles.previewValue, { color: colors.text }]}>
+                        {formatCurrency(partPaymentPreview.newOutstanding)}
+                      </Text>
+                    </View>
+                    <View style={styles.previewRow}>
+                      <Text style={[styles.previewLabel, { color: colors.textMuted }]}>New EMI:</Text>
+                      <Text style={[styles.previewValue, { color: colors.primary }]}>
+                        {formatCurrency(partPaymentPreview.newEmi)}
+                        <Text style={{ color: colors.success }}> (save {formatCurrency(partPaymentPreview.emiReduction || 0)}/month)</Text>
+                      </Text>
+                    </View>
+                    <View style={styles.previewRow}>
+                      <Text style={[styles.previewLabel, { color: colors.textMuted }]}>Tenure remains:</Text>
+                      <Text style={[styles.previewValue, { color: colors.text }]}>
+                        {partPaymentPreview.currentTenure} months
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            )}
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -2871,5 +3001,36 @@ const styles = StyleSheet.create({
   effectOptionSubtitle: {
     fontSize: 12,
     marginTop: 2,
+  },
+  previewSection: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  previewTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    gap: 8,
+  },
+  previewLabel: {
+    fontSize: 13,
+  },
+  previewValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  previewText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
   },
 });
