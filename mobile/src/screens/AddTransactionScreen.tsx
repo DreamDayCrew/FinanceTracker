@@ -255,9 +255,12 @@ export default function AddTransactionScreen() {
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
-  const filteredCategories = categories?.filter(c => 
-    type === 'credit' ? c.type === 'income' : c.type === 'expense'
-  ) || [];
+  const filteredCategories = categories?.filter(c => {
+    if (type === 'debit') return c.type === 'expense';
+    if (type === 'credit') return c.type === 'income';
+    if (type === 'transfer') return c.type === 'transfer';
+    return false;
+  }) || [];
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
