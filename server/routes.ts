@@ -2555,9 +2555,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Record the preclosure payment
       const closureAmountNum = parseFloat(closureAmount);
+      const closureDateObj = new Date(closureDate);
+      
       await storage.createLoanPayment({
         loanId,
-        paymentDate: closureDate,
+        paymentDate: closureDateObj,
         amount: closureAmount,
         principalPaid: loan.outstandingAmount, // Principal equals outstanding
         interestPaid: String(Math.max(0, closureAmountNum - parseFloat(loan.outstandingAmount))),
@@ -2570,7 +2572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedLoan = await storage.updateLoan(loanId, {
         status: 'preclosed',
         outstandingAmount: '0',
-        closureDate,
+        closureDate: closureDateObj,
         closureAmount,
       });
 
@@ -2665,9 +2667,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const effectiveRate = interestRate || loan.interestRate;
 
       // Create a loan term record to track the top-up
+      const effectiveFromDate = disbursementDate ? new Date(disbursementDate) : new Date();
+      
       await storage.createLoanTerm({
         loanId,
-        effectiveFrom: disbursementDate || new Date().toISOString().split('T')[0],
+        effectiveFrom: effectiveFromDate,
         interestRate: effectiveRate,
         tenureMonths: newTenure,
         emiAmount: effectiveEmi,
@@ -2707,7 +2711,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           amount: topupAmount,
           merchant: `${loan.name} - Top-Up`,
           description: `Loan top-up disbursement`,
-          transactionDate: disbursementDate || new Date().toISOString().split('T')[0],
+          transactionDate: effectiveFromDate.toISOString().split('T')[0],
         });
 
         // Update account balance (credit = add money)

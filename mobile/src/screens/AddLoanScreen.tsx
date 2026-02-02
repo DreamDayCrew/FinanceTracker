@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Switch, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Switch, Platform, Modal } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -852,40 +852,57 @@ export default function AddLoanScreen() {
         )}
 
         {/* BT Loan Picker Modal */}
-        {showBtLoanPicker !== null && (
-          <View style={[styles.pickerModal, { backgroundColor: colors.background }]}>
-            <View style={styles.pickerHeader}>
-              <Text style={[styles.pickerTitle, { color: colors.text }]}>Select Loan for BT</Text>
-              <TouchableOpacity onPress={() => setShowBtLoanPicker(null)}>
-                <Ionicons name="close" size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.pickerList}>
-              {activeLoansForBt.map((loan) => (
-                <TouchableOpacity
-                  key={loan.id}
-                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
-                  onPress={() => {
-                    const newAllocations = [...btAllocations];
-                    newAllocations[showBtLoanPicker] = { 
-                      targetLoanId: loan.id.toString(), 
-                      allocatedAmount: loan.outstandingAmount 
-                    };
-                    setBtAllocations(newAllocations);
-                    setShowBtLoanPicker(null);
-                  }}
-                >
-                  <View>
-                    <Text style={[styles.pickerItemTitle, { color: colors.text }]}>{loan.name}</Text>
-                    <Text style={[styles.pickerItemSubtitle, { color: colors.textMuted }]}>
-                      {loan.lenderName || 'No lender'} • Outstanding: ₹{parseFloat(loan.outstandingAmount).toLocaleString('en-IN')}
+        <Modal
+          visible={showBtLoanPicker !== null}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowBtLoanPicker(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.btPickerModalContent, { backgroundColor: colors.card }]}>
+              <View style={styles.pickerHeader}>
+                <Text style={[styles.pickerTitle, { color: colors.text }]}>Select Loan for BT</Text>
+                <TouchableOpacity onPress={() => setShowBtLoanPicker(null)}>
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.pickerList}>
+                {activeLoansForBt.length === 0 ? (
+                  <View style={styles.emptyPickerState}>
+                    <Text style={[styles.emptyPickerText, { color: colors.textMuted }]}>
+                      No active loans available for balance transfer
                     </Text>
                   </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                ) : (
+                  activeLoansForBt.map((loan) => (
+                    <TouchableOpacity
+                      key={loan.id}
+                      style={[styles.pickerItem, { borderBottomColor: colors.border }]}
+                      onPress={() => {
+                        if (showBtLoanPicker !== null) {
+                          const newAllocations = [...btAllocations];
+                          newAllocations[showBtLoanPicker] = { 
+                            targetLoanId: loan.id.toString(), 
+                            allocatedAmount: loan.outstandingAmount 
+                          };
+                          setBtAllocations(newAllocations);
+                          setShowBtLoanPicker(null);
+                        }
+                      }}
+                    >
+                      <View>
+                        <Text style={[styles.pickerItemTitle, { color: colors.text }]}>{loan.name}</Text>
+                        <Text style={[styles.pickerItemSubtitle, { color: colors.textMuted }]}>
+                          {loan.lenderName || 'No lender'} • Outstanding: ₹{parseFloat(loan.outstandingAmount).toLocaleString('en-IN')}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            </View>
           </View>
-        )}
+        </Modal>
 
         <TouchableOpacity
           style={[styles.submitButton, { backgroundColor: colors.primary }]}
@@ -1195,5 +1212,24 @@ const styles = StyleSheet.create({
   pickerItemSubtitle: {
     fontSize: 13,
     marginTop: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  btPickerModalContent: {
+    maxHeight: '70%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 30,
+  },
+  emptyPickerState: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptyPickerText: {
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
