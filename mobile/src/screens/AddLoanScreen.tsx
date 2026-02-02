@@ -74,14 +74,20 @@ export default function AddLoanScreen() {
     queryFn: () => api.getLoans(),
   });
 
-  // Filter to only active loans that can be selected for BT
-  const activeLoansForBt = useMemo(() => {
+  // All active loans (excluding current loan in edit mode)
+  const allActiveLoans = useMemo(() => {
     return allLoans.filter(loan => 
       loan.status === 'active' && 
-      loan.id !== loanId && // Exclude current loan in edit mode
+      loan.id !== loanId // Exclude current loan in edit mode
+    );
+  }, [allLoans, loanId]);
+
+  // Filter to only active loans that can be selected for BT (excludes already selected)
+  const activeLoansForBt = useMemo(() => {
+    return allActiveLoans.filter(loan => 
       !btAllocations.some(bt => bt.targetLoanId === loan.id.toString()) // Exclude already selected loans
     );
-  }, [allLoans, loanId, btAllocations]);
+  }, [allActiveLoans, btAllocations]);
 
   // Fetch existing loan data if in edit mode
   const { data: existingLoan, isLoading: isLoadingLoan } = useQuery<Loan>({
@@ -754,7 +760,7 @@ export default function AddLoanScreen() {
                 value={includesBtClosure}
                 onValueChange={(value) => {
                   setIncludesBtClosure(value);
-                  if (value && activeLoansForBt.length > 0) {
+                  if (value && allActiveLoans.length > 0) {
                     // Auto-add first BT allocation when toggle is enabled and there are active loans
                     setBtAllocations([{ targetLoanId: '', allocatedAmount: '' }]);
                   } else if (!value) {
@@ -769,7 +775,7 @@ export default function AddLoanScreen() {
             {/* BT Allocation Rows */}
             {includesBtClosure && (
               <View style={styles.btAllocationsContainer}>
-                {activeLoansForBt.length === 0 ? (
+                {allActiveLoans.length === 0 ? (
                   <Text style={[styles.noBtText, { color: colors.textMuted }]}>
                     No active loans available for balance transfer. Add some loans first, then come back to create a BT loan.
                   </Text>
@@ -839,16 +845,18 @@ export default function AddLoanScreen() {
                   );
                 })}
                 
-                {/* Add BT Button */}
-                <TouchableOpacity
-                  style={[styles.addBtButton, { borderColor: colors.primary }]}
-                  onPress={() => {
-                    setBtAllocations([...btAllocations, { targetLoanId: '', allocatedAmount: '' }]);
-                  }}
-                >
-                  <Ionicons name="add" size={20} color={colors.primary} />
-                  <Text style={[styles.addBtButtonText, { color: colors.primary }]}>Add BT Allocation</Text>
-                </TouchableOpacity>
+                {/* Add BT Button - only show when there are unselected loans available */}
+                {activeLoansForBt.length > 0 && (
+                  <TouchableOpacity
+                    style={[styles.addBtButton, { borderColor: colors.primary }]}
+                    onPress={() => {
+                      setBtAllocations([...btAllocations, { targetLoanId: '', allocatedAmount: '' }]);
+                    }}
+                  >
+                    <Ionicons name="add" size={20} color={colors.primary} />
+                    <Text style={[styles.addBtButtonText, { color: colors.primary }]}>Add BT Allocation</Text>
+                  </TouchableOpacity>
+                )}
                 </>
                 )}
               </View>
