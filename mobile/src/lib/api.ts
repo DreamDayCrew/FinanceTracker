@@ -387,6 +387,14 @@ export const api = {
     notes?: string;
   }) =>
     apiRequest<Loan>(`/api/loans/${id}/topup`, { method: 'POST', body: JSON.stringify(data) }),
+  makePartPayment: (id: number, data: { 
+    amount: string; 
+    paymentDate: string;
+    effect: 'reduce_emi' | 'reduce_tenure';
+    accountId?: number; 
+    createTransaction?: boolean;
+  }) =>
+    apiRequest<Loan>(`/api/loans/${id}/part-payment`, { method: 'POST', body: JSON.stringify(data) }),
   getLoanInstallments: (loanId: number) => 
     apiRequest<LoanInstallment[]>(`/api/loans/${loanId}/installments`),
   updateInstallment: (loanId: number, installmentId: number, data: Partial<LoanInstallment>) => 

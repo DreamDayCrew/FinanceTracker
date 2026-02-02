@@ -42,6 +42,15 @@ export default function LoanDetailsScreen() {
   const [newPayment, setNewPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
   const [editPayment, setEditPayment] = useState({ amount: '', principalPaid: '', interestPaid: '', paymentType: 'emi' as 'emi' | 'prepayment' | 'partial', notes: '' });
   const [preclosureAmount, setPreclosureAmount] = useState('');
+  const [preclosureDate, setPreclosureDate] = useState(new Date());
+  const [showPreclosureDatePicker, setShowPreclosureDatePicker] = useState(false);
+  
+  // Part Payment state
+  const [partPaymentModalVisible, setPartPaymentModalVisible] = useState(false);
+  const [partPaymentAmount, setPartPaymentAmount] = useState('');
+  const [partPaymentDate, setPartPaymentDate] = useState(new Date());
+  const [showPartPaymentDatePicker, setShowPartPaymentDatePicker] = useState(false);
+  const [partPaymentEffect, setPartPaymentEffect] = useState<'reduce_emi' | 'reduce_tenure'>('reduce_tenure');
   const [payEmiModalVisible, setPayEmiModalVisible] = useState(false);
   const [selectedInstallment, setSelectedInstallment] = useState<LoanInstallment | null>(null);
   const [payEmiCreateTransaction, setPayEmiCreateTransaction] = useState(false);
@@ -191,6 +200,37 @@ export default function LoanDetailsScreen() {
         type: 'error',
         text1: 'Top-Up Failed',
         text2: error.message || 'Could not top-up loan',
+        position: 'bottom',
+      });
+    },
+  });
+
+  const partPaymentMutation = useMutation({
+    mutationFn: (data: { amount: string; paymentDate: string; effect: 'reduce_emi' | 'reduce_tenure'; accountId?: number; createTransaction?: boolean }) => 
+      api.makePartPayment(loanId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan-installments', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan-terms', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['loan-payments', loanId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loan-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+      setPartPaymentModalVisible(false);
+      setPartPaymentAmount('');
+      Toast.show({
+        type: 'success',
+        text1: 'Part Payment Successful',
+        text2: 'Outstanding balance has been reduced',
+        position: 'bottom',
+      });
+    },
+    onError: (error: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Part Payment Failed',
+        text2: error.message || 'Could not process part payment',
         position: 'bottom',
       });
     },
@@ -677,6 +717,26 @@ export default function LoanDetailsScreen() {
                 <Text style={[styles.preclosureButtonTitle, { color: colors.text }]}>Pre-Close Loan</Text>
                 <Text style={[styles.preclosureButtonSubtitle, { color: colors.textMuted }]}>
                   Close loan early with settlement amount
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {/* Part Payment Button */}
+            <TouchableOpacity
+              style={[styles.loanActionButton, { backgroundColor: colors.card, borderColor: '#3b82f6' }]}
+              onPress={() => {
+                setPartPaymentAmount('');
+                setPartPaymentDate(new Date());
+                setPartPaymentEffect('reduce_tenure');
+                setPartPaymentModalVisible(true);
+              }}
+            >
+              <Ionicons name="cash-outline" size={20} color="#3b82f6" />
+              <View style={styles.preclosureButtonContent}>
+                <Text style={[styles.preclosureButtonTitle, { color: colors.text }]}>Part Payment</Text>
+                <Text style={[styles.preclosureButtonSubtitle, { color: colors.textMuted }]}>
+                  Pay extra to reduce outstanding faster
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
@@ -1330,7 +1390,7 @@ export default function LoanDetailsScreen() {
             <Ionicons name="checkmark-done-circle" size={48} color={colors.primary} />
             <Text style={[styles.formModalTitle, { color: colors.text }]}>Pre-Close Loan</Text>
             <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
-              Enter the settlement amount to close this loan early
+              Enter the settlement amount and date to close this loan early
             </Text>
 
             <View style={styles.formGroup}>
@@ -1348,12 +1408,36 @@ export default function LoanDetailsScreen() {
               </Text>
             </View>
 
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Closure Date</Text>
+              <TouchableOpacity
+                style={[styles.formInput, { backgroundColor: colors.background, borderColor: colors.border, justifyContent: 'center' }]}
+                onPress={() => setShowPreclosureDatePicker(true)}
+              >
+                <Text style={{ color: colors.text }}>
+                  {preclosureDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </Text>
+              </TouchableOpacity>
+              {showPreclosureDatePicker && (
+                <DateTimePicker
+                  value={preclosureDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, date) => {
+                    setShowPreclosureDatePicker(Platform.OS === 'ios');
+                    if (date) setPreclosureDate(date);
+                  }}
+                />
+              )}
+            </View>
+
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
                 onPress={() => {
                   setPreclosureModalVisible(false);
                   setPreclosureAmount('');
+                  setPreclosureDate(new Date());
                 }}
               >
                 <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
@@ -1373,7 +1457,7 @@ export default function LoanDetailsScreen() {
                   }
                   precloseMutation.mutate({
                     closureAmount: preclosureAmount,
-                    closureDate: new Date().toISOString().split('T')[0],
+                    closureDate: preclosureDate.toISOString().split('T')[0],
                     accountId: loan?.accountId || undefined,
                     createTransaction: !!loan?.accountId,
                   });
@@ -1384,6 +1468,160 @@ export default function LoanDetailsScreen() {
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
                   <Text style={styles.confirmButtonText}>Confirm Pre-Closure</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Part Payment Modal */}
+      <Modal
+        visible={partPaymentModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPartPaymentModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.formModalContent, { backgroundColor: colors.card }]}>
+            <Ionicons name="cash-outline" size={48} color="#3b82f6" />
+            <Text style={[styles.formModalTitle, { color: colors.text }]}>Part Payment</Text>
+            <Text style={[styles.formModalSubtitle, { color: colors.textMuted }]}>
+              Pay extra to reduce your outstanding balance faster
+            </Text>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Payment Amount</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="Enter amount"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                value={partPaymentAmount}
+                onChangeText={setPartPaymentAmount}
+              />
+              <Text style={[styles.formHint, { color: colors.textMuted }]}>
+                Outstanding: {formatCurrency(parseFloat(loan?.outstandingAmount || '0'))}
+              </Text>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Payment Date</Text>
+              <TouchableOpacity
+                style={[styles.formInput, { backgroundColor: colors.background, borderColor: colors.border, justifyContent: 'center' }]}
+                onPress={() => setShowPartPaymentDatePicker(true)}
+              >
+                <Text style={{ color: colors.text }}>
+                  {partPaymentDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </Text>
+              </TouchableOpacity>
+              {showPartPaymentDatePicker && (
+                <DateTimePicker
+                  value={partPaymentDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, date) => {
+                    setShowPartPaymentDatePicker(Platform.OS === 'ios');
+                    if (date) setPartPaymentDate(date);
+                  }}
+                />
+              )}
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Effect of Payment</Text>
+              <View style={styles.effectOptions}>
+                <TouchableOpacity
+                  style={[
+                    styles.effectOption,
+                    { 
+                      backgroundColor: partPaymentEffect === 'reduce_tenure' ? colors.primary + '20' : colors.background,
+                      borderColor: partPaymentEffect === 'reduce_tenure' ? colors.primary : colors.border
+                    }
+                  ]}
+                  onPress={() => setPartPaymentEffect('reduce_tenure')}
+                >
+                  <Ionicons 
+                    name={partPaymentEffect === 'reduce_tenure' ? 'radio-button-on' : 'radio-button-off'} 
+                    size={20} 
+                    color={partPaymentEffect === 'reduce_tenure' ? colors.primary : colors.textMuted} 
+                  />
+                  <View style={styles.effectOptionText}>
+                    <Text style={[styles.effectOptionTitle, { color: colors.text }]}>Reduce Tenure</Text>
+                    <Text style={[styles.effectOptionSubtitle, { color: colors.textMuted }]}>Same EMI, finish earlier</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.effectOption,
+                    { 
+                      backgroundColor: partPaymentEffect === 'reduce_emi' ? colors.primary + '20' : colors.background,
+                      borderColor: partPaymentEffect === 'reduce_emi' ? colors.primary : colors.border
+                    }
+                  ]}
+                  onPress={() => setPartPaymentEffect('reduce_emi')}
+                >
+                  <Ionicons 
+                    name={partPaymentEffect === 'reduce_emi' ? 'radio-button-on' : 'radio-button-off'} 
+                    size={20} 
+                    color={partPaymentEffect === 'reduce_emi' ? colors.primary : colors.textMuted} 
+                  />
+                  <View style={styles.effectOptionText}>
+                    <Text style={[styles.effectOptionTitle, { color: colors.text }]}>Reduce EMI</Text>
+                    <Text style={[styles.effectOptionSubtitle, { color: colors.textMuted }]}>Lower EMI, same tenure</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.background }]}
+                onPress={() => {
+                  setPartPaymentModalVisible(false);
+                  setPartPaymentAmount('');
+                  setPartPaymentDate(new Date());
+                }}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  const amount = parseFloat(partPaymentAmount);
+                  const outstanding = parseFloat(loan?.outstandingAmount || '0');
+                  if (!partPaymentAmount || isNaN(amount) || amount <= 0) {
+                    Toast.show({
+                      type: 'error',
+                      text1: 'Invalid Amount',
+                      text2: 'Please enter a valid payment amount',
+                      position: 'bottom',
+                    });
+                    return;
+                  }
+                  if (amount > outstanding) {
+                    Toast.show({
+                      type: 'error',
+                      text1: 'Amount Too High',
+                      text2: 'Payment cannot exceed outstanding balance',
+                      position: 'bottom',
+                    });
+                    return;
+                  }
+                  partPaymentMutation.mutate({
+                    amount: partPaymentAmount,
+                    paymentDate: partPaymentDate.toISOString().split('T')[0],
+                    effect: partPaymentEffect,
+                    accountId: loan?.accountId || undefined,
+                    createTransaction: !!loan?.accountId,
+                  });
+                }}
+                disabled={partPaymentMutation.isPending || !partPaymentAmount || parseFloat(partPaymentAmount) <= 0}
+              >
+                {partPaymentMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Make Payment</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -2611,5 +2849,27 @@ const styles = StyleSheet.create({
   btStatusText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  effectOptions: {
+    gap: 10,
+  },
+  effectOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 12,
+  },
+  effectOptionText: {
+    flex: 1,
+  },
+  effectOptionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  effectOptionSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
   },
 });

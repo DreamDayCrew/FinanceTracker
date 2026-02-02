@@ -2731,6 +2731,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Part Payment - pay extra to reduce outstanding principal
+  app.post("/api/loans/:id/part-payment", authenticateToken, async (req, res) => {
+    try {
+      const loanId = parseInt(req.params.id);
+      const { amount, paymentDate, effect, accountId, createTransaction } = req.body;
+
+      if (!amount || parseFloat(amount) <= 0) {
+        return res.status(400).json({ error: "Valid payment amount is required" });
+      }
+
+      const paymentAmount = parseFloat(amount);
+
+      // Get the loan
+      const loan = await storage.getLoan(loanId);
+      if (!loan) {
+        return res.status(404).json({ error: "Loan not found" });
+      }
+
+      if (loan.status !== 'active') {
+        return res.status(400).json({ error: "Only active loans can receive part payments" });
+      }
+
+      const outstanding = parseFloat(loan.outstandingAmount);
+      if (paymentAmount > outstanding) {
+        return res.status(400).json({ error: "Payment amount cannot exceed outstanding balance" });
+      }
+
+      // Update outstanding amount
+      const newOutstanding = outstanding - paymentAmount;
+      
+      // Calculate new EMI or tenure based on effect choice
+      let updateData: any = {
+        outstandingAmount: newOutstanding.toFixed(2),
+      };
+
+      // If payment closes the loan
+      if (newOutstanding <= 0) {
+        const paymentDateObj = new Date(paymentDate);
+        updateData.status = 'preclosed';
+        updateData.closureDate = paymentDateObj;
+        updateData.closureAmount = paymentAmount.toFixed(2);
+      }
+
+      const updatedLoan = await storage.updateLoan(loanId, updateData);
+
+      // Create payment record
+      await storage.createLoanPayment({
+        loanId,
+        paymentDate: new Date(paymentDate),
+        amount: amount,
+        paymentType: 'prepayment',
+        accountId: accountId || null,
+        notes: effect === 'reduce_emi' 
+          ? 'Part payment - Reduce EMI' 
+          : 'Part payment - Reduce Tenure'
+      });
+
+      // Add a term record to track this event
+      const currentTerm = await storage.getLoanTerms(loanId);
+      const latestTerm = currentTerm.length > 0 ? currentTerm[currentTerm.length - 1] : null;
+      
+      await storage.createLoanTerm({
+        loanId,
+        effectiveFrom: new Date(paymentDate),
+        interestRate: latestTerm ? latestTerm.interestRate : loan.interestRate || '0',
+        tenureMonths: latestTerm ? latestTerm.tenureMonths : loan.tenure,
+        emiAmount: latestTerm ? latestTerm.emiAmount : (loan.emiAmount || '0'),
+        reason: `Part payment of ${amount} - ${effect === 'reduce_emi' ? 'Reduce EMI' : 'Reduce Tenure'}`,
+      });
+
+      // Optionally create a transaction
+      if (createTransaction && accountId) {
+        const allCategories = await storage.getAllCategories();
+        let loanCategory = allCategories.find((c: { name: string }) => c.name === 'Loan' || c.name === 'EMI');
+        if (!loanCategory) {
+          loanCategory = await storage.createCategory({
+            name: 'Loan',
+            type: 'expense',
+            icon: 'cash',
+            color: '#10b981',
+          });
+        }
+
+        await storage.createTransaction({
+          userId: 1,
+          accountId,
+          categoryId: loanCategory.id,
+          type: 'debit',
+          amount: amount,
+          merchant: `${loan.name} - Part Payment`,
+          description: effect === 'reduce_emi' 
+            ? 'Part payment to reduce EMI' 
+            : 'Part payment to reduce tenure',
+          transactionDate: paymentDate,
+        });
+
+        // Update account balance
+        const account = await storage.getAccount(accountId);
+        if (account && account.balance) {
+          const newBalance = parseFloat(account.balance) - paymentAmount;
+          await storage.updateAccount(accountId, { balance: String(newBalance) });
+        }
+      }
+
+      res.json(updatedLoan);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to process part payment" });
+    }
+  });
+
   app.post("/api/loans/:id/generate-schedule", authenticateToken, async (req, res) => {
     try {
       const installments = await storage.generateLoanInstallments(parseInt(req.params.id));
