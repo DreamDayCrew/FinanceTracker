@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Switch, Platform, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Switch, Platform, Modal, Keyboard } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -1004,6 +1004,8 @@ export default function AddLoanScreen() {
                           };
                           setBtAllocations(newAllocations);
                           setShowBtLoanPicker(null);
+                          // Dismiss keyboard to prevent auto-focus
+                          setTimeout(() => Keyboard.dismiss(), 100);
                         }
                       }}
                     >
