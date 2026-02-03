@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { LineChart } from 'react-native-chart-kit';
 import { api } from '../lib/api';
 import { formatCurrency, getThemedColors, getOrdinalSuffix } from '../lib/utils';
+import type { Loan } from '../lib/types';
 import { useState, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -30,6 +31,11 @@ export default function CreditCardDetailsScreen() {
   const { data: transactions, isLoading, error } = useQuery({
     queryKey: ['/api/transactions'],
     queryFn: api.getTransactions,
+  });
+
+  const { data: loans } = useQuery({
+    queryKey: ['/api/loans'],
+    queryFn: api.getLoans,
   });
 
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -117,6 +123,76 @@ export default function CreditCardDetailsScreen() {
       .sort((a, b) => b.total - a.total);
   }, [transactions, creditCards, selectedMonth, selectedYear, colors]);
 
+  const ccLoanEMIs = useMemo(() => {
+    if (!loans || !creditCards.length) return { totalEMI: 0, byCard: new Map() };
+
+    const activeCCLoans = loans.filter(loan => 
+      loan.type === 'credit_card_loan' && 
+      loan.accountId && 
+      loan.status === 'active' &&
+      creditCards.some(card => card.id === loan.accountId)
+    );
+
+    const byCard = new Map<number, { loans: Loan[]; totalEMI: number }>();
+    let totalEMI = 0;
+
+    activeCCLoans.forEach(loan => {
+      const emiAmount = parseFloat(loan.emiAmount || '0');
+      totalEMI += emiAmount;
+      
+      const cardId = loan.accountId!;
+      const existing = byCard.get(cardId) || { loans: [], totalEMI: 0 };
+      existing.loans.push(loan);
+      existing.totalEMI += emiAmount;
+      byCard.set(cardId, existing);
+    });
+
+    return { totalEMI, byCard };
+  }, [loans, creditCards]);
+
+  const cardsWithActivity = useMemo(() => {
+    const cardMap = new Map<number, { 
+      accountId: number; 
+      accountName: string; 
+      color: string;
+      hasSpending: boolean;
+      hasLoans: boolean;
+      totalSpent: number;
+      totalEMI: number;
+    }>();
+
+    filteredData?.breakdown.forEach(card => {
+      cardMap.set(card.accountId, {
+        accountId: card.accountId,
+        accountName: card.accountName,
+        color: card.color,
+        hasSpending: true,
+        hasLoans: ccLoanEMIs.byCard.has(card.accountId),
+        totalSpent: card.totalSpent,
+        totalEMI: ccLoanEMIs.byCard.get(card.accountId)?.totalEMI || 0,
+      });
+    });
+
+    ccLoanEMIs.byCard.forEach((data, cardId) => {
+      if (!cardMap.has(cardId)) {
+        const card = creditCards.find(c => c.id === cardId);
+        if (card) {
+          cardMap.set(cardId, {
+            accountId: card.id,
+            accountName: card.name,
+            color: card.color || colors.primary,
+            hasSpending: false,
+            hasLoans: true,
+            totalSpent: 0,
+            totalEMI: data.totalEMI,
+          });
+        }
+      }
+    });
+
+    return Array.from(cardMap.values());
+  }, [filteredData, ccLoanEMIs, creditCards, colors]);
+
   const handlePreviousMonth = () => {
     if (selectedMonth === 0) {
       setSelectedMonth(11);
@@ -186,6 +262,10 @@ export default function CreditCardDetailsScreen() {
   };
 
   const selectedCard = selectedCardId 
+    ? cardsWithActivity.find(c => c.accountId === selectedCardId)
+    : null;
+  
+  const selectedCardSpendingData = selectedCardId 
     ? filteredData?.breakdown.find(c => c.accountId === selectedCardId)
     : null;
 
@@ -283,7 +363,7 @@ export default function CreditCardDetailsScreen() {
               </Text>
             </TouchableOpacity>
             
-            {filteredData?.breakdown.map((card) => (
+            {cardsWithActivity.map((card) => (
               <TouchableOpacity
                 key={card.accountId}
                 style={[
@@ -300,6 +380,9 @@ export default function CreditCardDetailsScreen() {
                 ]}>
                   {card.accountName}
                 </Text>
+                {card.hasLoans && !card.hasSpending && (
+                  <Ionicons name="card" size={12} color={selectedCardId === card.accountId ? '#fff' : colors.primary} style={{ marginLeft: 4 }} />
+                )}
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -380,24 +463,27 @@ export default function CreditCardDetailsScreen() {
                           {selectedCard.accountName}
                         </Text>
                         <Text style={[styles.billingInfo, { color: colors.textMuted }]}>
-                          Bill: {selectedCard.billingDate}{getOrdinalSuffix(selectedCard.billingDate)} • {selectedCard.transactionCount} txns
+                          {selectedCardSpendingData 
+                            ? `Bill: ${selectedCardSpendingData.billingDate}${getOrdinalSuffix(selectedCardSpendingData.billingDate)} • ${selectedCardSpendingData.transactionCount} txns`
+                            : selectedCard.hasLoans ? 'EMI loans only' : 'No activity'
+                          }
                         </Text>
-                        {selectedCard.creditLimit > 0 && (
+                        {selectedCardSpendingData && selectedCardSpendingData.creditLimit > 0 && (
                           <View style={styles.utilizationRow}>
                             <View style={[styles.utilizationBar, { backgroundColor: colors.border }]}>
                               <View 
                                 style={[
                                   styles.utilizationFill,
                                   { 
-                                    width: `${Math.min((selectedCard.totalSpent / selectedCard.creditLimit) * 100, 100)}%`,
-                                    backgroundColor: (selectedCard.totalSpent / selectedCard.creditLimit) * 100 >= 90 ? '#f44336' : 
-                                                     (selectedCard.totalSpent / selectedCard.creditLimit) * 100 >= 70 ? '#ff9800' : colors.success
+                                    width: `${Math.min((selectedCard.totalSpent / selectedCardSpendingData.creditLimit) * 100, 100)}%`,
+                                    backgroundColor: (selectedCard.totalSpent / selectedCardSpendingData.creditLimit) * 100 >= 90 ? '#f44336' : 
+                                                     (selectedCard.totalSpent / selectedCardSpendingData.creditLimit) * 100 >= 70 ? '#ff9800' : colors.success
                                   }
                                 ]} 
                               />
                             </View>
                             <Text style={[styles.utilizationText, { color: colors.textMuted }]}>
-                              {((selectedCard.totalSpent / selectedCard.creditLimit) * 100).toFixed(0)}%
+                              {((selectedCard.totalSpent / selectedCardSpendingData.creditLimit) * 100).toFixed(0)}%
                             </Text>
                           </View>
                         )}
@@ -407,56 +493,134 @@ export default function CreditCardDetailsScreen() {
                       <Text style={[styles.cardAmount, { color: colors.text }]}>
                         ₹{selectedCard.totalSpent.toFixed(0)}
                       </Text>
-                      {selectedCard.creditLimit > 0 && (
-                        <Text style={[styles.limitText, { color: colors.textMuted }]}>
-                          of ₹{(selectedCard.creditLimit / 1000).toFixed(0)}k
+                      {selectedCard.totalEMI > 0 && (
+                        <Text style={[styles.limitText, { color: '#ff9800' }]}>
+                          +₹{selectedCard.totalEMI.toFixed(0)} EMI
                         </Text>
                       )}
                     </View>
                   </View>
                 </TouchableOpacity>
 
-                {/* Category breakdown for selected card */}
-                <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>Category Breakdown</Text>
-                {(() => {
-                  const cardCategories = new Map<string, { total: number; count: number; color: string; categoryId: number }>();
-                  selectedCard.transactions.forEach(t => {
-                    if (t.category) {
-                      const key = t.category.name;
-                      const existing = cardCategories.get(key) || { total: 0, count: 0, color: t.category.color || colors.primary, categoryId: t.category.id };
-                      cardCategories.set(key, {
-                        ...existing,
-                        total: existing.total + parseFloat(t.amount),
-                        count: existing.count + 1,
+                {/* Category breakdown for selected card - only if has spending */}
+                {selectedCardSpendingData && selectedCardSpendingData.transactions && (
+                  <>
+                    <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>Category Breakdown</Text>
+                    {(() => {
+                      const cardCategories = new Map<string, { total: number; count: number; color: string; categoryId: number }>();
+                      selectedCardSpendingData.transactions.forEach((t: any) => {
+                        if (t.category) {
+                          const key = t.category.name;
+                          const existing = cardCategories.get(key) || { total: 0, count: 0, color: t.category.color || colors.primary, categoryId: t.category.id };
+                          cardCategories.set(key, {
+                            ...existing,
+                            total: existing.total + parseFloat(t.amount),
+                            count: existing.count + 1,
+                          });
+                        }
                       });
-                    }
-                  });
 
-                  return Array.from(cardCategories.entries())
-                    .map(([name, data]) => ({ categoryName: name, ...data }))
-                    .sort((a, b) => b.total - a.total)
-                    .map((category) => (
-                      <View 
-                        key={category.categoryId} 
-                        style={[styles.smallCategoryCard, { backgroundColor: colors.card }]}
-                      >
-                        <View style={styles.smallCategoryRow}>
-                          <View style={styles.smallCategoryLeft}>
-                            <View style={[styles.smallColorDot, { backgroundColor: category.color }]} />
-                            <Text style={[styles.smallCategoryName, { color: colors.text }]}>
-                              {category.categoryName}
-                            </Text>
+                      return Array.from(cardCategories.entries())
+                        .map(([name, data]) => ({ categoryName: name, ...data }))
+                        .sort((a, b) => b.total - a.total)
+                        .map((category) => (
+                          <View 
+                            key={category.categoryId} 
+                            style={[styles.smallCategoryCard, { backgroundColor: colors.card }]}
+                          >
+                            <View style={styles.smallCategoryRow}>
+                              <View style={styles.smallCategoryLeft}>
+                                <View style={[styles.smallColorDot, { backgroundColor: category.color }]} />
+                                <Text style={[styles.smallCategoryName, { color: colors.text }]}>
+                                  {category.categoryName}
+                                </Text>
+                              </View>
+                              <Text style={[styles.smallCategoryAmount, { color: colors.textMuted }]}>
+                                ₹{category.total.toFixed(0)}
+                              </Text>
+                            </View>
                           </View>
-                          <Text style={[styles.smallCategoryAmount, { color: colors.textMuted }]}>
-                            ₹{category.total.toFixed(0)}
-                          </Text>
-                        </View>
-                      </View>
-                    ));
-                })()}
+                        ));
+                    })()}
+                  </>
+                )}
+
+                {/* No spending message for cards with only loans */}
+                {!selectedCardSpendingData && selectedCard.hasLoans && (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="wallet-outline" size={40} color={colors.textMuted} />
+                    <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                      No spending this month - only EMI loans
+                    </Text>
+                  </View>
+                )}
               </View>
             ) : null}
           </View>
+
+          {/* CC Loan EMI Contributions Section */}
+          {ccLoanEMIs.totalEMI > 0 && (
+            <View style={styles.emiSection}>
+              <View style={styles.emiHeader}>
+                <View style={styles.emiHeaderLeft}>
+                  <Ionicons name="card" size={20} color={colors.primary} />
+                  <Text style={[styles.emiHeaderTitle, { color: colors.text }]}>
+                    Pending EMI Contributions
+                  </Text>
+                </View>
+                <Text style={[styles.emiHeaderTotal, { color: '#ff9800' }]}>
+                  ₹{ccLoanEMIs.totalEMI.toFixed(0)}
+                </Text>
+              </View>
+              
+              <Text style={[styles.emiHelperText, { color: colors.textMuted }]}>
+                These EMI amounts are added to your credit card bills each month
+              </Text>
+
+              {selectedCardId === null ? (
+                Array.from(ccLoanEMIs.byCard.entries()).map(([cardId, data]) => {
+                  const card = creditCards.find(c => c.id === cardId);
+                  if (!card) return null;
+                  return (
+                    <View key={cardId} style={[styles.emiCard, { backgroundColor: colors.card }]}>
+                      <View style={styles.emiCardHeader}>
+                        <View style={[styles.emiCardDot, { backgroundColor: card.color || colors.primary }]} />
+                        <Text style={[styles.emiCardName, { color: colors.text }]}>{card.name}</Text>
+                        <Text style={[styles.emiCardTotal, { color: '#ff9800' }]}>₹{data.totalEMI.toFixed(0)}</Text>
+                      </View>
+                      {data.loans.map((loan: Loan) => (
+                        <View key={loan.id} style={styles.emiLoanRow}>
+                          <Text style={[styles.emiLoanName, { color: colors.textMuted }]}>{loan.name}</Text>
+                          <Text style={[styles.emiLoanAmount, { color: colors.text }]}>₹{parseFloat(loan.emiAmount || '0').toFixed(0)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })
+              ) : (
+                ccLoanEMIs.byCard.get(selectedCardId)?.loans.map((loan: Loan) => (
+                  <View key={loan.id} style={[styles.emiCard, { backgroundColor: colors.card }]}>
+                    <View style={styles.emiLoanRowSingle}>
+                      <View>
+                        <Text style={[styles.emiLoanNameLarge, { color: colors.text }]}>{loan.name}</Text>
+                        <Text style={[styles.emiLoanMeta, { color: colors.textMuted }]}>
+                          {loan.tenure || 0} EMIs remaining • ₹{parseFloat(loan.outstandingAmount || '0').toFixed(0)} outstanding
+                        </Text>
+                      </View>
+                      <View style={styles.emiLoanAmountBox}>
+                        <Text style={[styles.emiLoanAmountLarge, { color: '#ff9800' }]}>₹{parseFloat(loan.emiAmount || '0').toFixed(0)}</Text>
+                        <Text style={[styles.emiLoanAmountLabel, { color: colors.textMuted }]}>monthly</Text>
+                      </View>
+                    </View>
+                  </View>
+                )) || (
+                  <Text style={[styles.noEmiText, { color: colors.textMuted }]}>
+                    No EMI loans on this card
+                  </Text>
+                )
+              )}
+            </View>
+          )}
         </View>
 
         {/* SECOND HALF - Toggle and Chart */}
@@ -867,5 +1031,101 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginTop: 12,
+  },
+  emiSection: {
+    marginTop: 24,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+  },
+  emiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  emiHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  emiHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  emiHeaderTotal: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  emiHelperText: {
+    fontSize: 12,
+    marginBottom: 16,
+  },
+  emiCard: {
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  emiCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  emiCardDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  emiCardName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  emiCardTotal: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  emiLoanRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingLeft: 20,
+  },
+  emiLoanName: {
+    fontSize: 13,
+  },
+  emiLoanAmount: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  emiLoanRowSingle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  emiLoanNameLarge: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  emiLoanMeta: {
+    fontSize: 12,
+  },
+  emiLoanAmountBox: {
+    alignItems: 'flex-end',
+  },
+  emiLoanAmountLarge: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  emiLoanAmountLabel: {
+    fontSize: 11,
+  },
+  noEmiText: {
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 16,
   },
 });
