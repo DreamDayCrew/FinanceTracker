@@ -89,6 +89,17 @@ export default function AddLoanScreen() {
     );
   }, [allActiveLoans, btAllocations]);
 
+  // Filter accounts for CC loans - only show credit cards
+  const filteredAccounts = useMemo(() => {
+    if (formData.type === 'credit_card_loan') {
+      return accounts.filter(acc => acc.type === 'credit_card');
+    }
+    return accounts;
+  }, [accounts, formData.type]);
+
+  // Check if current loan type is credit card loan
+  const isCreditCardLoan = formData.type === 'credit_card_loan';
+
   // Fetch existing loan data if in edit mode
   const { data: existingLoan, isLoading: isLoadingLoan } = useQuery<Loan>({
     queryKey: ['/api/loans', loanId],
@@ -136,22 +147,49 @@ export default function AddLoanScreen() {
     }
   }, [existingLoan, isEditMode]);
 
-  // Auto-select default account
+  // Auto-select default account (but not for CC loans - they must pick a credit card)
   useEffect(() => {
-    if (!formData.accountId && accounts.length > 0 && !isEditMode) {
+    if (!formData.accountId && accounts.length > 0 && !isEditMode && !isCreditCardLoan) {
       const defaultAccount = accounts.find(acc => acc.isDefault);
       if (defaultAccount) {
         setFormData(prev => ({ ...prev, accountId: defaultAccount.id.toString() }));
       }
     }
-  }, [accounts, isEditMode]);
+  }, [accounts, isEditMode, isCreditCardLoan]);
 
-  // Calculate end date based on start date and tenure
+  // When loan type changes, reset accountId if it's not compatible
   useEffect(() => {
-    if (formData.tenure && startDate) {
+    if (formData.accountId) {
+      const selectedAccount = accounts.find(acc => acc.id.toString() === formData.accountId);
+      if (isCreditCardLoan && selectedAccount?.type !== 'credit_card') {
+        // Reset account if switching to CC loan but current account is not a credit card
+        setFormData(prev => ({ ...prev, accountId: '' }));
+      }
+    }
+  }, [formData.type, accounts]);
+
+  // Auto-fill EMI day from credit card's billing date for CC loans
+  useEffect(() => {
+    if (isCreditCardLoan && formData.accountId) {
+      const selectedAccount = accounts.find(acc => acc.id.toString() === formData.accountId);
+      if (selectedAccount?.billingDate) {
+        setFormData(prev => ({ ...prev, emiDay: selectedAccount.billingDate!.toString() }));
+        // Also set next EMI date day to match billing date
+        const newNextEmiDate = new Date(nextEmiDate);
+        newNextEmiDate.setDate(selectedAccount.billingDate);
+        setNextEmiDate(newNextEmiDate);
+      }
+    }
+  }, [formData.accountId, isCreditCardLoan, accounts]);
+
+  // Calculate end date based on start date (new loans) or next EMI date (existing loans) and tenure
+  useEffect(() => {
+    if (formData.tenure) {
       const tenureMonths = parseInt(formData.tenure);
       if (!isNaN(tenureMonths) && tenureMonths > 0) {
-        const calculatedEndDate = new Date(startDate);
+        // For existing loans, use next EMI date as base for end date calculation
+        const baseDate = isExistingLoan ? nextEmiDate : startDate;
+        const calculatedEndDate = new Date(baseDate);
         calculatedEndDate.setMonth(calculatedEndDate.getMonth() + tenureMonths);
         setEndDate(calculatedEndDate);
       } else {
@@ -160,7 +198,7 @@ export default function AddLoanScreen() {
     } else {
       setEndDate(null);
     }
-  }, [formData.tenure, startDate]);
+  }, [formData.tenure, startDate, nextEmiDate, isExistingLoan]);
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -515,57 +553,74 @@ export default function AddLoanScreen() {
             />
           </View>
           <View style={[styles.field, styles.halfField]}>
-            <Text style={[styles.label, { color: colors.textMuted }]}>EMI Due Day *</Text>
+            <Text style={[styles.label, { color: colors.textMuted }]}>
+              EMI Due Day *{isCreditCardLoan && formData.accountId ? ' (Auto)' : ''}
+            </Text>
             <TextInput
-              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              style={[
+                styles.input, 
+                { backgroundColor: colors.card, color: colors.text, borderColor: colors.border },
+                isCreditCardLoan && formData.accountId ? { opacity: 0.7 } : {}
+              ]}
               placeholder="1-28"
               placeholderTextColor={colors.textMuted}
               keyboardType="numeric"
               value={formData.emiDay}
               onChangeText={(text) => setFormData({ ...formData, emiDay: text })}
+              editable={!(isCreditCardLoan && formData.accountId)}
             />
+            {isCreditCardLoan && formData.accountId && (
+              <Text style={[styles.helperText, { color: colors.textMuted, marginTop: 4, fontSize: 11 }]}>
+                From CC billing date
+              </Text>
+            )}
           </View>
         </View>
 
-        <View style={styles.field}>
-          <Text style={[styles.label, { color: colors.textMuted }]}>Start Date</Text>
-          <TouchableOpacity
-            style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => setShowDatePicker(true)}
-            disabled={isEditMode}
-          >
-            <Ionicons name="calendar-outline" size={20} color={colors.text} />
-            <Text style={[styles.datePickerText, { color: colors.text }]}>
-              {startDate.toLocaleDateString('en-US', { 
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric'
-              })}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {/* Start Date - only for NEW loans, not existing loans */}
+        {!isExistingLoan && (
+          <>
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: colors.textMuted }]}>Start Date</Text>
+              <TouchableOpacity
+                style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => setShowDatePicker(true)}
+                disabled={isEditMode}
+              >
+                <Ionicons name="calendar-outline" size={20} color={colors.text} />
+                <Text style={[styles.datePickerText, { color: colors.text }]}>
+                  {startDate.toLocaleDateString('en-US', { 
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric'
+                  })}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-        {showDatePicker && (
-          <DateTimePicker
-            value={startDate}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            themeVariant={resolvedTheme === 'dark' ? 'dark' : 'light'}
-            textColor={colors.text}
-            onChange={(event, selectedDate) => {
-              setShowDatePicker(Platform.OS === 'ios');
-              if (selectedDate) {
-                setStartDate(selectedDate);
-              }
-            }}
-          />
+            {showDatePicker && (
+              <DateTimePicker
+                value={startDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                themeVariant={resolvedTheme === 'dark' ? 'dark' : 'light'}
+                textColor={colors.text}
+                onChange={(event, selectedDate) => {
+                  setShowDatePicker(Platform.OS === 'ios');
+                  if (selectedDate) {
+                    setStartDate(selectedDate);
+                  }
+                }}
+              />
+            )}
+          </>
         )}
 
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textMuted }]}>Expected End Date</Text>
           <TouchableOpacity
-            style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => setShowEndDatePicker(true)}
+            style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }, { opacity: 0.7 }]}
+            disabled={true}
           >
             <Ionicons name="calendar-outline" size={20} color={colors.text} />
             <Text style={[styles.datePickerText, { color: endDate ? colors.text : colors.textMuted }]}>
@@ -578,49 +633,53 @@ export default function AddLoanScreen() {
           </TouchableOpacity>
           {endDate && (
             <Text style={[styles.helperText, { color: colors.textMuted, marginTop: 4 }]}>
-              Calculated based on {formData.tenure} months tenure
+              {isExistingLoan 
+                ? `Calculated: Next EMI Date + ${formData.tenure} months` 
+                : `Calculated: Start Date + ${formData.tenure} months`}
             </Text>
           )}
         </View>
-
-        {showEndDatePicker && (
-          <DateTimePicker
-            value={endDate || new Date()}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            themeVariant={resolvedTheme === 'dark' ? 'dark' : 'light'}
-            textColor={colors.text}
-            minimumDate={startDate}
-            onChange={(event, selectedDate) => {
-              setShowEndDatePicker(Platform.OS === 'ios');
-              if (selectedDate) {
-                setEndDate(selectedDate);
-              }
-            }}
-          />
-        )}
 
         {/* Next EMI Date - only for existing loans */}
         {isExistingLoan && (
           <View style={styles.field}>
             <Text style={[styles.label, { color: colors.textMuted }]}>Next EMI Due Date *</Text>
-            <TouchableOpacity
-              style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => setShowNextEmiDatePicker(true)}
-            >
-              <Ionicons name="calendar-outline" size={20} color={colors.text} />
-              <Text style={[styles.datePickerText, { color: colors.text }]}>
-                {nextEmiDate.toLocaleDateString('en-US', { 
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric'
-                })}
-              </Text>
-            </TouchableOpacity>
+            {/* For CC loans with linked card, EMI date is auto-set from billing date */}
+            {isCreditCardLoan && formData.accountId ? (
+              <>
+                <View style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: 0.7 }]}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.text} />
+                  <Text style={[styles.datePickerText, { color: colors.text }]}>
+                    {nextEmiDate.toLocaleDateString('en-US', { 
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric'
+                    })}
+                  </Text>
+                </View>
+                <Text style={[styles.helperText, { color: colors.textMuted, marginTop: 4 }]}>
+                  Auto-set from credit card billing date
+                </Text>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => setShowNextEmiDatePicker(true)}
+              >
+                <Ionicons name="calendar-outline" size={20} color={colors.text} />
+                <Text style={[styles.datePickerText, { color: colors.text }]}>
+                  {nextEmiDate.toLocaleDateString('en-US', { 
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric'
+                  })}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
-        {showNextEmiDatePicker && (
+        {showNextEmiDatePicker && !(isCreditCardLoan && formData.accountId) && (
           <DateTimePicker
             value={nextEmiDate}
             mode="date"
@@ -636,59 +695,92 @@ export default function AddLoanScreen() {
           />
         )}
 
-        {accounts.length > 0 && (
+        {/* Account Selection - For CC loans: mandatory and only credit cards. For others: optional all accounts */}
+        {(isCreditCardLoan || filteredAccounts.length > 0) && (
           <View style={styles.field}>
-            <Text style={[styles.label, { color: colors.textMuted }]}>Link to Account (optional)</Text>
-            <TouchableOpacity
-              style={[styles.dropdownButton, { backgroundColor: colors.card, borderColor: colors.border }, isEditMode && { opacity: 0.5 }]}
-              onPress={() => !isEditMode && setShowAccountPicker(!showAccountPicker)}
-              disabled={isEditMode}
-            >
-              <Ionicons name="wallet-outline" size={20} color={colors.textMuted} />
-              <Text style={[styles.dropdownText, { color: formData.accountId ? colors.text : colors.textMuted }]}>
-                {formData.accountId ? accounts.find(a => a.id.toString() === formData.accountId)?.name : 'Select Account (Optional)'}
-              </Text>
-              {!isEditMode && (
-                <Ionicons name={showAccountPicker ? "chevron-up" : "chevron-down"} size={20} color={colors.textMuted} />
-              )}
-            </TouchableOpacity>
-            {showAccountPicker && !isEditMode && (
-              <View style={[styles.accountDropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.label, { color: colors.textMuted }]}>
+              {isCreditCardLoan ? 'Credit Card *' : 'Link to Account (optional)'}
+            </Text>
+            {isCreditCardLoan && filteredAccounts.length === 0 ? (
+              <View style={[styles.noCreditCardsNote, { backgroundColor: colors.warning + '20', borderColor: colors.warning }]}>
+                <Ionicons name="warning-outline" size={20} color={colors.warning} />
+                <Text style={[styles.noCreditCardsText, { color: colors.text }]}>
+                  No credit cards found. Please add a credit card first to create a CC loan.
+                </Text>
+              </View>
+            ) : (
+              <>
                 <TouchableOpacity
-                  style={[styles.accountDropdownItem, { borderBottomColor: colors.border }]}
-                  onPress={() => { 
-                    setFormData({ ...formData, accountId: '' }); 
-                    setShowAccountPicker(false); 
-                  }}
+                  style={[
+                    styles.dropdownButton, 
+                    { backgroundColor: colors.card, borderColor: colors.border }, 
+                    isEditMode && { opacity: 0.5 },
+                    isCreditCardLoan && !formData.accountId && { borderColor: colors.warning }
+                  ]}
+                  onPress={() => !isEditMode && setShowAccountPicker(!showAccountPicker)}
+                  disabled={isEditMode}
                 >
-                  <Text style={[styles.accountDropdownText, { color: colors.textMuted }]}>
-                    None
+                  <Ionicons name={isCreditCardLoan ? "card-outline" : "wallet-outline"} size={20} color={colors.textMuted} />
+                  <Text style={[styles.dropdownText, { color: formData.accountId ? colors.text : colors.textMuted }]}>
+                    {formData.accountId 
+                      ? filteredAccounts.find(a => a.id.toString() === formData.accountId)?.name 
+                      : (isCreditCardLoan ? 'Select Credit Card *' : 'Select Account (Optional)')}
                   </Text>
-                  {!formData.accountId && (
-                    <Ionicons name="checkmark" size={20} color={colors.primary} />
+                  {!isEditMode && (
+                    <Ionicons name={showAccountPicker ? "chevron-up" : "chevron-down"} size={20} color={colors.textMuted} />
                   )}
                 </TouchableOpacity>
-                {accounts.map(account => (
-                  <TouchableOpacity
-                    key={account.id}
-                    style={[styles.accountDropdownItem, { borderBottomColor: colors.border }]}
-                    onPress={() => { 
-                      setFormData({ ...formData, accountId: account.id.toString() }); 
-                      setShowAccountPicker(false); 
-                    }}
-                  >
-                    <Text style={[
-                      styles.accountDropdownText,
-                      { color: colors.text },
-                      formData.accountId === account.id.toString() && { fontWeight: '600', color: colors.primary }
-                    ]}>
-                      {account.name}
-                    </Text>
-                    {formData.accountId === account.id.toString() && (
-                      <Ionicons name="checkmark" size={20} color={colors.primary} />
+                {showAccountPicker && !isEditMode && (
+                  <View style={[styles.accountDropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    {/* None option - only for non-CC loans */}
+                    {!isCreditCardLoan && (
+                      <TouchableOpacity
+                        style={[styles.accountDropdownItem, { borderBottomColor: colors.border }]}
+                        onPress={() => { 
+                          setFormData({ ...formData, accountId: '' }); 
+                          setShowAccountPicker(false); 
+                        }}
+                      >
+                        <Text style={[styles.accountDropdownText, { color: colors.textMuted }]}>
+                          None
+                        </Text>
+                        {!formData.accountId && (
+                          <Ionicons name="checkmark" size={20} color={colors.primary} />
+                        )}
+                      </TouchableOpacity>
                     )}
-                  </TouchableOpacity>
-                ))}
+                    {filteredAccounts.map(account => (
+                      <TouchableOpacity
+                        key={account.id}
+                        style={[styles.accountDropdownItem, { borderBottomColor: colors.border }]}
+                        onPress={() => { 
+                          setFormData({ ...formData, accountId: account.id.toString() }); 
+                          setShowAccountPicker(false); 
+                        }}
+                      >
+                        <Text style={[
+                          styles.accountDropdownText,
+                          { color: colors.text },
+                          formData.accountId === account.id.toString() && { fontWeight: '600', color: colors.primary }
+                        ]}>
+                          {account.name}
+                        </Text>
+                        {formData.accountId === account.id.toString() && (
+                          <Ionicons name="checkmark" size={20} color={colors.primary} />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+            {/* CC Loan Note */}
+            {isCreditCardLoan && formData.accountId && (
+              <View style={[styles.ccLoanNote, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
+                <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
+                <Text style={[styles.ccLoanNoteText, { color: colors.textMuted }]}>
+                  This EMI amount will be added to your credit card bill each month. Pay as part of your CC bill.
+                </Text>
               </View>
             )}
           </View>
@@ -1258,5 +1350,31 @@ const styles = StyleSheet.create({
   emptyPickerText: {
     fontSize: 14,
     textAlign: 'center',
+  },
+  noCreditCardsNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+  },
+  noCreditCardsText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  ccLoanNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+    marginTop: 8,
+  },
+  ccLoanNoteText: {
+    fontSize: 12,
+    flex: 1,
+    lineHeight: 18,
   },
 });
