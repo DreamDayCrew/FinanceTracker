@@ -40,6 +40,7 @@ import ExpenseDetailsScreen from './src/screens/ExpenseDetailsScreen';
 import CreditCardDetailsScreen from './src/screens/CreditCardDetailsScreen';
 import CategoriesScreen from './src/screens/CategoriesScreen';
 import AddCategoryScreen from './src/screens/AddCategoryScreen';
+import ImportStatementScreen from './src/screens/ImportStatementScreen';
 
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
@@ -90,6 +91,7 @@ export type MoreStackParamList = {
   AddCategory: { categoryId?: number } | undefined;
   Settings: undefined;
   ScanSMS: undefined;
+  ImportStatement: undefined;
 };
 
 export type RootStackParamList = {
@@ -227,6 +229,11 @@ function MoreStackNavigator() {
       <MoreStack.Screen 
         name="AddCategory" 
         component={AddCategoryScreen}
+        options={{ headerShown: false }}
+      />
+      <MoreStack.Screen 
+        name="ImportStatement" 
+        component={ImportStatementScreen}
         options={{ headerShown: false }}
       />
     </MoreStack.Navigator>

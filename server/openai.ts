@@ -249,3 +249,101 @@ function fallbackSmsParser(message: string): ParsedSmsData | null {
     description: merchant ? `Payment to ${merchant}` : (isCredit ? "Amount credited" : "Amount debited"),
   };
 }
+
+export interface ExtractedTransaction {
+  date: string;
+  description: string;
+  amount: number;
+  type: "debit" | "credit";
+  balance?: number;
+  referenceNumber?: string;
+}
+
+export interface StatementParseResult {
+  transactions: ExtractedTransaction[];
+  accountNumber?: string;
+  bankName?: string;
+  statementPeriod?: string;
+  error?: string;
+}
+
+// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+export async function parseStatementPDF(pdfText: string): Promise<StatementParseResult> {
+  if (!openai) {
+    return { 
+      transactions: [], 
+      error: "OpenAI API key not configured. Please add OPENAI_API_KEY to use PDF import." 
+    };
+  }
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-5",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert at parsing Indian bank statements. Extract all transactions from the provided bank statement text.
+
+For each transaction, extract:
+- date: Transaction date in YYYY-MM-DD format
+- description: Description/narration of the transaction
+- amount: Transaction amount as a positive number
+- type: "debit" for withdrawals/payments, "credit" for deposits/receipts
+- balance: Running balance after transaction (if available)
+- referenceNumber: UPI/NEFT/IMPS reference number (if available)
+
+Also extract:
+- accountNumber: Last 4 digits of account number
+- bankName: Name of the bank
+- statementPeriod: Statement period (e.g., "01 Jan 2025 to 31 Jan 2025")
+
+Return a JSON object with this structure:
+{
+  "transactions": [...],
+  "accountNumber": "1234",
+  "bankName": "HDFC Bank",
+  "statementPeriod": "01 Jan 2025 to 31 Jan 2025"
+}
+
+Important:
+- Parse ALL transactions, don't skip any
+- Amounts should be positive numbers (use type to indicate debit/credit)
+- Dates must be in YYYY-MM-DD format
+- If you cannot parse a date, use the closest valid date you can infer
+- Handle various Indian bank formats (HDFC, ICICI, SBI, Axis, Kotak, etc.)`
+        },
+        {
+          role: "user",
+          content: `Parse this bank statement:\n\n${pdfText.substring(0, 50000)}` // Limit to avoid token limits
+        }
+      ],
+      response_format: { type: "json_object" },
+      max_completion_tokens: 8192
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || "{}");
+    
+    // Validate and clean transactions
+    const transactions: ExtractedTransaction[] = (result.transactions || []).map((t: any) => ({
+      date: t.date || new Date().toISOString().split('T')[0],
+      description: t.description || 'Unknown transaction',
+      amount: Math.abs(parseFloat(t.amount) || 0),
+      type: t.type === 'credit' ? 'credit' : 'debit',
+      balance: t.balance ? parseFloat(t.balance) : undefined,
+      referenceNumber: t.referenceNumber
+    })).filter((t: ExtractedTransaction) => t.amount > 0);
+
+    return {
+      transactions,
+      accountNumber: result.accountNumber,
+      bankName: result.bankName,
+      statementPeriod: result.statementPeriod
+    };
+  } catch (error: any) {
+    console.error("PDF parsing error:", error);
+    return { 
+      transactions: [], 
+      error: error.message || "Failed to parse PDF" 
+    };
+  }
+}

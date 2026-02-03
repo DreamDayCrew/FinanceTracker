@@ -19,6 +19,13 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   {
+    icon: 'document-text-outline',
+    title: 'Import Statement',
+    subtitle: 'Import PDF bank statements',
+    route: 'ImportStatement',
+    color: '#0ea5e9',
+  },
+  {
     icon: 'pie-chart-outline',
     title: 'Budget Planner',
     subtitle: 'Track spending by category',

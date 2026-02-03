@@ -23,12 +23,27 @@ import {
   insertInsuranceSchema,
   insertInsurancePremiumSchema
 } from "@shared/schema";
-import { suggestCategory, parseSmsMessage, fallbackCategorization } from "./openai";
+import { suggestCategory, parseSmsMessage, fallbackCategorization, parseStatementPDF, ExtractedTransaction } from "./openai";
+import multer from "multer";
+import pdfParse from "pdf-parse";
 import { getPaydayForMonth, getNextPaydays, getPastPaydays } from "./salaryUtils";
 import { generateOTP, storeOTP, verifyOTP, sendOTP } from "./emailService";
 import { generateTokenPair, generateAccessToken } from "./jwtService";
 import { authenticateToken } from "./authMiddleware";
 import { verifyToken } from "./jwtService";
+
+// Configure multer for file uploads (memory storage for processing)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'));
+    }
+  }
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Seed default categories on startup
@@ -571,6 +586,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching transaction:", error);
       res.status(500).json({ error: "Failed to fetch transaction" });
+    }
+  });
+
+  // ========== Statement Import ==========
+  
+  // Parse PDF bank statement and extract transactions
+  app.post("/api/import/parse-pdf", authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No PDF file uploaded" });
+      }
+
+      console.log("📄 Parsing PDF statement:", req.file.originalname, "Size:", req.file.size);
+
+      // Extract text from PDF
+      const pdfData = await pdfParse(req.file.buffer);
+      console.log("📝 Extracted text length:", pdfData.text.length);
+
+      if (!pdfData.text || pdfData.text.trim().length < 100) {
+        return res.status(400).json({ 
+          error: "Could not extract text from PDF. Please ensure it's a text-based PDF, not a scanned image." 
+        });
+      }
+
+      // Use AI to parse transactions from the text
+      const result = await parseStatementPDF(pdfData.text);
+
+      if (result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+
+      console.log("✅ Extracted", result.transactions.length, "transactions from statement");
+
+      res.json({
+        transactions: result.transactions,
+        accountNumber: result.accountNumber,
+        bankName: result.bankName,
+        statementPeriod: result.statementPeriod,
+        totalTransactions: result.transactions.length
+      });
+    } catch (error: any) {
+      console.error("PDF parsing error:", error);
+      res.status(500).json({ error: error.message || "Failed to parse PDF" });
+    }
+  });
+
+  // Bulk import transactions (with duplicate detection)
+  app.post("/api/import/transactions", authenticateToken, async (req, res) => {
+    try {
+      const userId = req.user!.userId;
+      const { transactions, accountId, skipDuplicates = true } = req.body;
+
+      if (!Array.isArray(transactions) || transactions.length === 0) {
+        return res.status(400).json({ error: "No transactions to import" });
+      }
+
+      if (!accountId) {
+        return res.status(400).json({ error: "Account ID is required" });
+      }
+
+      // Verify account belongs to user (security check)
+      const account = await storage.getAccount(accountId);
+      if (!account || account.userId !== userId) {
+        return res.status(403).json({ error: "Account not found or access denied" });
+      }
+
+      console.log("📥 Importing", transactions.length, "transactions for account", accountId);
+
+      let imported = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      // Prefetch existing transactions once for duplicate detection (O(1) lookup)
+      let existingTxKeys = new Set<string>();
+      if (skipDuplicates) {
+        const existingTransactions = await storage.getAllTransactions({ accountId });
+        existingTransactions.forEach((existing: any) => {
+          // Create a normalized key: date (YYYY-MM-DD) + amount + type
+          const existingDate = new Date(existing.transactionDate).toISOString().split('T')[0];
+          const key = `${existingDate}|${parseFloat(existing.amount).toFixed(2)}|${existing.type}`;
+          existingTxKeys.add(key);
+        });
+      }
+
+      for (const tx of transactions) {
+        try {
+          // Check for duplicates using precomputed set
+          if (skipDuplicates) {
+            const txDate = new Date(tx.date).toISOString().split('T')[0];
+            const txKey = `${txDate}|${tx.amount.toFixed(2)}|${tx.type}`;
+            
+            if (existingTxKeys.has(txKey)) {
+              skipped++;
+              continue;
+            }
+            // Add to set to prevent importing same tx twice from statement
+            existingTxKeys.add(txKey);
+          }
+
+          // Get category suggestion
+          const categoryName = await suggestCategory(tx.description);
+          const categories = await storage.getCategories();
+          const category = categories.find((c: any) => c.name === categoryName);
+
+          // Create the transaction
+          await storage.createTransaction({
+            userId,
+            accountId,
+            categoryId: category?.id || null,
+            amount: tx.amount.toString(),
+            type: tx.type,
+            description: tx.description,
+            referenceNumber: tx.referenceNumber || null,
+            transactionDate: tx.date,
+            merchant: null,
+            smsId: null,
+            isRecurring: false,
+            toAccountId: null,
+            savingsContributionId: null,
+            paymentOccurrenceId: null
+          });
+
+          imported++;
+        } catch (txError: any) {
+          errors.push(`Transaction on ${tx.date}: ${txError.message}`);
+        }
+      }
+
+      console.log("✅ Import complete:", imported, "imported,", skipped, "skipped");
+
+      res.json({
+        success: true,
+        imported,
+        skipped,
+        errors: errors.length > 0 ? errors : undefined
+      });
+    } catch (error: any) {
+      console.error("Bulk import error:", error);
+      res.status(500).json({ error: error.message || "Failed to import transactions" });
     }
   });
 

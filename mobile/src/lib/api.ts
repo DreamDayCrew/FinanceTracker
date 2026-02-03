@@ -23,7 +23,7 @@ const STORAGE_KEYS = {
 /**
  * Get stored access token
  */
-async function getAccessToken(): Promise<string | null> {
+export async function getAccessToken(): Promise<string | null> {
   try {
     return await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
   } catch (error) {
