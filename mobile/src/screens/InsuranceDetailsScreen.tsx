@@ -173,7 +173,49 @@ export default function InsuranceDetailsScreen() {
             </TouchableOpacity>
           </View>
 
-          <Text style={[styles.insuranceName, { color: colors.text }]}>{insurance.name}</Text>
+          <View style={styles.nameStatusRow}>
+            <Text style={[styles.insuranceName, { color: colors.text }]}>{insurance.name}</Text>
+            {insurance.status && (
+              <View style={[
+                styles.statusBadge, 
+                { 
+                  backgroundColor: insurance.status === 'active' ? `${colors.success}20` :
+                    insurance.status === 'paid_up' ? `${colors.primary}20` :
+                    insurance.status === 'expired' || insurance.status === 'lapsed' ? `${colors.danger}20` :
+                    `${colors.textMuted}20`
+                }
+              ]}>
+                <Ionicons 
+                  name={
+                    insurance.status === 'active' ? 'checkmark-circle' :
+                    insurance.status === 'paid_up' ? 'ribbon' :
+                    insurance.status === 'expired' ? 'time' :
+                    insurance.status === 'lapsed' ? 'alert-circle' :
+                    'close-circle'
+                  } 
+                  size={12} 
+                  color={
+                    insurance.status === 'active' ? colors.success :
+                    insurance.status === 'paid_up' ? colors.primary :
+                    insurance.status === 'expired' || insurance.status === 'lapsed' ? colors.danger :
+                    colors.textMuted
+                  } 
+                />
+                <Text style={[
+                  styles.statusText, 
+                  { 
+                    color: insurance.status === 'active' ? colors.success :
+                      insurance.status === 'paid_up' ? colors.primary :
+                      insurance.status === 'expired' || insurance.status === 'lapsed' ? colors.danger :
+                      colors.textMuted
+                  }
+                ]}>
+                  {insurance.status === 'paid_up' ? 'Paid Up' : 
+                   insurance.status.charAt(0).toUpperCase() + insurance.status.slice(1)}
+                </Text>
+              </View>
+            )}
+          </View>
           <Text style={[styles.insuranceType, { color: colors.textMuted }]}>
             {getInsuranceTypeLabel(insurance.type)}
           </Text>
@@ -576,10 +618,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  nameStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 4,
+  },
   insuranceName: {
     fontSize: 22,
     fontWeight: '700',
-    marginBottom: 4,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   insuranceType: {
     fontSize: 14,

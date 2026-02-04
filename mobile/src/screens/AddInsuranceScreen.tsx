@@ -26,6 +26,14 @@ const FREQUENCY_OPTIONS = [
   { value: 'monthly', label: 'Monthly' },
 ] as const;
 
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active', icon: 'checkmark-circle', color: '#22c55e' },
+  { value: 'paid_up', label: 'Paid Up', icon: 'ribbon', color: '#16a34a' },
+  { value: 'expired', label: 'Expired', icon: 'time', color: '#ef4444' },
+  { value: 'lapsed', label: 'Lapsed', icon: 'alert-circle', color: '#f97316' },
+  { value: 'cancelled', label: 'Cancelled', icon: 'close-circle', color: '#6b7280' },
+] as const;
+
 export default function AddInsuranceScreen() {
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
@@ -46,6 +54,7 @@ export default function AddInsuranceScreen() {
   const [policyTermYears, setPolicyTermYears] = useState('');
   const [premiumPaymentTermYears, setPremiumPaymentTermYears] = useState('');
   const [maturityAmount, setMaturityAmount] = useState('');
+  const [status, setStatus] = useState<typeof STATUS_OPTIONS[number]['value']>('active');
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date(new Date().setFullYear(new Date().getFullYear() + 1)));
   const [accountId, setAccountId] = useState<number | undefined>();
@@ -80,6 +89,7 @@ export default function AddInsuranceScreen() {
       setPolicyTermYears(existingInsurance.policyTermYears ? String(existingInsurance.policyTermYears) : '');
       setPremiumPaymentTermYears(existingInsurance.premiumPaymentTermYears ? String(existingInsurance.premiumPaymentTermYears) : '');
       setMaturityAmount(existingInsurance.maturityAmount || '');
+      setStatus((existingInsurance.status as typeof STATUS_OPTIONS[number]['value']) || 'active');
       setStartDate(new Date(existingInsurance.startDate));
       if (existingInsurance.endDate) {
         setEndDate(new Date(existingInsurance.endDate));
@@ -157,6 +167,7 @@ export default function AddInsuranceScreen() {
       policyTermYears: policyTermYears ? parseInt(policyTermYears) : undefined,
       premiumPaymentTermYears: premiumPaymentTermYears ? parseInt(premiumPaymentTermYears) : undefined,
       maturityAmount: maturityAmount || undefined,
+      status,
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
       accountId,
@@ -500,6 +511,45 @@ export default function AddInsuranceScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Policy Status</Text>
+          <View style={styles.statusGrid}>
+            {STATUS_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.statusOption,
+                  { 
+                    backgroundColor: status === option.value ? `${option.color}20` : colors.card,
+                    borderColor: status === option.value ? option.color : colors.border,
+                  }
+                ]}
+                onPress={() => setStatus(option.value)}
+                data-testid={`status-${option.value}`}
+              >
+                <Ionicons 
+                  name={option.icon as any} 
+                  size={18} 
+                  color={status === option.value ? option.color : colors.textMuted} 
+                />
+                <Text style={[
+                  styles.statusOptionText,
+                  { color: status === option.value ? option.color : colors.text }
+                ]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={[styles.statusHint, { color: colors.textMuted }]}>
+            {status === 'paid_up' && 'Premium payments completed, policy remains active until maturity'}
+            {status === 'active' && 'Policy is active with ongoing premium payments'}
+            {status === 'expired' && 'Policy term has ended'}
+            {status === 'lapsed' && 'Policy lapsed due to non-payment of premiums'}
+            {status === 'cancelled' && 'Policy was cancelled before maturity'}
+          </Text>
+        </View>
+
+        <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Notes</Text>
           <TextInput
             style={[styles.textArea, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
@@ -689,6 +739,29 @@ const styles = StyleSheet.create({
   toggleHint: {
     fontSize: 12,
     marginTop: 2,
+  },
+  statusGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  statusOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+  },
+  statusOptionText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  statusHint: {
+    fontSize: 11,
+    marginTop: 10,
+    fontStyle: 'italic',
   },
   submitButton: {
     height: 52,
