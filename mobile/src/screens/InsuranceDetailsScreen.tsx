@@ -238,6 +238,69 @@ export default function InsuranceDetailsScreen() {
           </View>
         </View>
 
+        {(insurance.policyTermYears || insurance.premiumPaymentTermYears || insurance.maturityAmount) && (
+          <View style={[styles.termsCard, { backgroundColor: colors.card }]}>
+            <View style={styles.termsHeader}>
+              <Ionicons name="time-outline" size={20} color={colors.primary} />
+              <Text style={[styles.termsTitle, { color: colors.text }]}>Policy & Payment Terms</Text>
+            </View>
+            
+            {(insurance.policyTermYears || insurance.premiumPaymentTermYears) && (
+              <>
+                <View style={styles.termsTimeline}>
+                  {insurance.premiumPaymentTermYears && (
+                    <View style={styles.termBlock}>
+                      <View style={[styles.termBar, { backgroundColor: colors.primary }]}>
+                        <Ionicons name="wallet-outline" size={14} color="#fff" />
+                      </View>
+                      <Text style={[styles.termYears, { color: colors.text }]}>
+                        {insurance.premiumPaymentTermYears} years
+                      </Text>
+                      <Text style={[styles.termLabel, { color: colors.textMuted }]}>Premium Payment</Text>
+                    </View>
+                  )}
+                  
+                  {insurance.policyTermYears && (
+                    <View style={styles.termBlock}>
+                      <View style={[styles.termBar, { backgroundColor: colors.success }]}>
+                        <Ionicons name="shield-checkmark-outline" size={14} color="#fff" />
+                      </View>
+                      <Text style={[styles.termYears, { color: colors.text }]}>
+                        {insurance.policyTermYears} years
+                      </Text>
+                      <Text style={[styles.termLabel, { color: colors.textMuted }]}>Policy Term</Text>
+                    </View>
+                  )}
+                </View>
+
+                {insurance.policyTermYears && insurance.premiumPaymentTermYears && 
+                 insurance.policyTermYears > insurance.premiumPaymentTermYears && (
+                  <View style={[styles.paidUpNote, { backgroundColor: `${colors.success}15` }]}>
+                    <Ionicons name="information-circle" size={16} color={colors.success} />
+                    <Text style={[styles.paidUpNoteText, { color: colors.success }]}>
+                      After {insurance.premiumPaymentTermYears} years, policy continues for {insurance.policyTermYears - insurance.premiumPaymentTermYears} more years without premium payments
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
+
+            {insurance.maturityAmount && (
+              <View style={[styles.maturitySection, { borderTopColor: colors.border }]}>
+                <View style={styles.maturityRow}>
+                  <View>
+                    <Text style={[styles.maturityLabel, { color: colors.textMuted }]}>Maturity Amount</Text>
+                    <Text style={[styles.maturityValue, { color: colors.primary }]}>
+                      {formatCurrency(parseFloat(insurance.maturityAmount))}
+                    </Text>
+                  </View>
+                  <Ionicons name="gift-outline" size={24} color={colors.primary} />
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={[styles.summaryCard, { backgroundColor: colors.card }]}>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
@@ -568,6 +631,80 @@ const styles = StyleSheet.create({
   periodValue: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  termsCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 12,
+  },
+  termsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  termsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  termsTimeline: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  termBlock: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  termBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    width: '100%',
+    marginBottom: 8,
+  },
+  termYears: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  termLabel: {
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  paidUpNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  paidUpNoteText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  maturitySection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+  },
+  maturityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  maturityLabel: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  maturityValue: {
+    fontSize: 20,
+    fontWeight: '700',
   },
   summaryCard: {
     marginHorizontal: 16,

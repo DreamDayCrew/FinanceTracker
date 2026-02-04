@@ -43,6 +43,9 @@ export default function AddInsuranceScreen() {
   const [coverageAmount, setCoverageAmount] = useState('');
   const [premiumFrequency, setPremiumFrequency] = useState<typeof FREQUENCY_OPTIONS[number]['value']>('annual');
   const [termsPerPeriod, setTermsPerPeriod] = useState('1');
+  const [policyTermYears, setPolicyTermYears] = useState('');
+  const [premiumPaymentTermYears, setPremiumPaymentTermYears] = useState('');
+  const [maturityAmount, setMaturityAmount] = useState('');
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date(new Date().setFullYear(new Date().getFullYear() + 1)));
   const [accountId, setAccountId] = useState<number | undefined>();
@@ -74,6 +77,9 @@ export default function AddInsuranceScreen() {
       setCoverageAmount(existingInsurance.coverageAmount || '');
       setPremiumFrequency(existingInsurance.premiumFrequency);
       setTermsPerPeriod(String(existingInsurance.termsPerPeriod));
+      setPolicyTermYears(existingInsurance.policyTermYears ? String(existingInsurance.policyTermYears) : '');
+      setPremiumPaymentTermYears(existingInsurance.premiumPaymentTermYears ? String(existingInsurance.premiumPaymentTermYears) : '');
+      setMaturityAmount(existingInsurance.maturityAmount || '');
       setStartDate(new Date(existingInsurance.startDate));
       if (existingInsurance.endDate) {
         setEndDate(new Date(existingInsurance.endDate));
@@ -148,6 +154,9 @@ export default function AddInsuranceScreen() {
       coverageAmount: coverageAmount || undefined,
       premiumFrequency,
       termsPerPeriod: parseInt(termsPerPeriod) || 1,
+      policyTermYears: policyTermYears ? parseInt(policyTermYears) : undefined,
+      premiumPaymentTermYears: premiumPaymentTermYears ? parseInt(premiumPaymentTermYears) : undefined,
+      maturityAmount: maturityAmount || undefined,
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
       accountId,
@@ -320,6 +329,59 @@ export default function AddInsuranceScreen() {
           </View>
         </View>
 
+        {(type === 'life' || type === 'term') && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Policy & Payment Terms</Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.textMuted }]}>
+              For life/term insurance with different policy and payment durations
+            </Text>
+
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={[styles.label, { color: colors.textMuted }]}>Policy Term (Years)</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                  value={policyTermYears}
+                  onChangeText={setPolicyTermYears}
+                  placeholder="e.g. 16"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="numeric"
+                  data-testid="input-policy-term-years"
+                />
+              </View>
+
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 12 }]}>
+                <Text style={[styles.label, { color: colors.textMuted }]}>Premium Term (Years)</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                  value={premiumPaymentTermYears}
+                  onChangeText={setPremiumPaymentTermYears}
+                  placeholder="e.g. 10"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="numeric"
+                  data-testid="input-premium-payment-term-years"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.textMuted }]}>Maturity Amount</Text>
+              <View style={styles.inputWithPrefix}>
+                <Text style={[styles.currencyPrefix, { color: colors.textMuted }]}>₹</Text>
+                <TextInput
+                  style={[styles.inputWithPrefixField, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                  value={maturityAmount}
+                  onChangeText={setMaturityAmount}
+                  placeholder="Amount at maturity"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="numeric"
+                  data-testid="input-maturity-amount"
+                />
+              </View>
+            </View>
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Policy Period</Text>
 
@@ -490,6 +552,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 12,
   },
+  sectionSubtitle: {
+    fontSize: 12,
+    marginBottom: 12,
+  },
+  row: {
+    flexDirection: 'row',
+  },
   inputGroup: {
     marginBottom: 16,
   },
@@ -516,6 +585,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     minHeight: 80,
     textAlignVertical: 'top',
+  },
+  inputWithPrefix: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  currencyPrefix: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginRight: 8,
+  },
+  inputWithPrefixField: {
+    flex: 1,
+    height: 48,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    fontSize: 15,
   },
   typeGrid: {
     flexDirection: 'row',
