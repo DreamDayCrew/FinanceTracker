@@ -826,10 +826,13 @@ export const insurances = pgTable("insurances", {
   coverageAmount: decimal("coverage_amount", { precision: 14, scale: 2 }), // sum insured
   premiumFrequency: varchar("premium_frequency", { length: 20 }).default("annual"), // 'annual', 'semi_annual', 'quarterly', 'monthly'
   termsPerPeriod: integer("terms_per_period").default(1), // number of payment terms per period (e.g., 2 for paying annual in 2 installments)
+  policyTermYears: integer("policy_term_years"), // total policy duration in years (e.g., 16 years)
+  premiumPaymentTermYears: integer("premium_payment_term_years"), // years to pay premium (e.g., 10 years, then policy continues)
+  maturityAmount: decimal("maturity_amount", { precision: 14, scale: 2 }), // amount received at maturity
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date"),
   renewalDate: timestamp("renewal_date"),
-  status: varchar("status", { length: 20 }).default("active"), // 'active', 'expired', 'cancelled', 'lapsed'
+  status: varchar("status", { length: 20 }).default("active"), // 'active', 'expired', 'cancelled', 'lapsed', 'paid_up'
   createTransaction: boolean("create_transaction").default(false), // create transaction on payment
   affectBalance: boolean("affect_balance").default(false), // affect account balance on payment
   notes: text("notes"),
@@ -854,10 +857,13 @@ export const insertInsuranceSchema = createInsertSchema(insurances).omit({
   coverageAmount: z.string().optional(),
   premiumFrequency: z.enum(["annual", "semi_annual", "quarterly", "monthly"]).optional(),
   termsPerPeriod: z.number().min(1).max(12).optional(),
+  policyTermYears: z.number().min(1).max(100).optional(),
+  premiumPaymentTermYears: z.number().min(1).max(100).optional(),
+  maturityAmount: z.string().optional(),
   startDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)),
   endDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
   renewalDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
-  status: z.enum(["active", "expired", "cancelled", "lapsed"]).optional(),
+  status: z.enum(["active", "expired", "cancelled", "lapsed", "paid_up"]).optional(),
   createTransaction: z.boolean().optional(),
   affectBalance: z.boolean().optional(),
 });
