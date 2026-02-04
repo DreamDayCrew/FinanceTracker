@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -7,7 +7,9 @@ import {
   ScrollView, 
   ActivityIndicator,
   Alert,
-  FlatList 
+  FlatList,
+  TextInput,
+  Modal
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,6 +50,10 @@ export default function ImportStatementScreen() {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
+  
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [password, setPassword] = useState('');
+  const [pendingFile, setPendingFile] = useState<{ uri: string; name: string } | null>(null);
 
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['/api/accounts'],
@@ -55,20 +61,10 @@ export default function ImportStatementScreen() {
 
   const bankAccounts = accounts.filter(a => a.type === 'bank');
 
-  const pickDocument = async () => {
+  const parsePdfFile = async (fileUri: string, fileName: string, pdfPassword?: string) => {
+    setIsParsing(true);
+    
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled) return;
-
-      const file = result.assets[0];
-      if (!file) return;
-
-      setIsParsing(true);
-
       const token = await getAccessToken();
       if (!token) {
         throw new Error('Not authenticated. Please log in again.');
@@ -76,10 +72,14 @@ export default function ImportStatementScreen() {
 
       const formData = new FormData();
       formData.append('file', {
-        uri: file.uri,
-        name: file.name,
+        uri: fileUri,
+        name: fileName,
         type: 'application/pdf',
       } as any);
+      
+      if (pdfPassword) {
+        formData.append('password', pdfPassword);
+      }
 
       const response = await fetch(`${API_BASE_URL}/api/import/parse-pdf`, {
         method: 'POST',
@@ -92,6 +92,11 @@ export default function ImportStatementScreen() {
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.requiresPassword) {
+          setPendingFile({ uri: fileUri, name: fileName });
+          setShowPasswordModal(true);
+          return;
+        }
         throw new Error(data.error || 'Failed to parse PDF');
       }
 
@@ -103,6 +108,8 @@ export default function ImportStatementScreen() {
       setParseResult(data);
       setTransactions(txWithSelection);
       setStep('preview');
+      setPendingFile(null);
+      setPassword('');
 
       if (data.accountNumber && bankAccounts.length > 0) {
         const matchingAccount = bankAccounts.find(a => 
@@ -117,6 +124,37 @@ export default function ImportStatementScreen() {
     } finally {
       setIsParsing(false);
     }
+  };
+
+  const pickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) return;
+
+      const file = result.assets[0];
+      if (!file) return;
+
+      await parsePdfFile(file.uri, file.name);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to select PDF');
+    }
+  };
+
+  const handlePasswordSubmit = async () => {
+    if (!pendingFile || !password.trim()) return;
+    
+    setShowPasswordModal(false);
+    await parsePdfFile(pendingFile.uri, pendingFile.name, password.trim());
+  };
+
+  const handlePasswordCancel = () => {
+    setShowPasswordModal(false);
+    setPendingFile(null);
+    setPassword('');
   };
 
   const toggleTransaction = (index: number) => {
@@ -434,6 +472,66 @@ export default function ImportStatementScreen() {
       {step === 'preview' && renderPreviewStep()}
       {step === 'importing' && renderImportingStep()}
       {step === 'done' && renderDoneStep()}
+
+      <Modal
+        visible={showPasswordModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handlePasswordCancel}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Ionicons name="lock-closed" size={32} color={colors.primary} />
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Password Protected PDF
+              </Text>
+            </View>
+            
+            <Text style={[styles.modalDescription, { color: colors.textMuted }]}>
+              This bank statement is password-protected. Please enter the password to continue.
+            </Text>
+            
+            <Text style={[styles.passwordHint, { color: colors.textMuted }]}>
+              Common passwords: DOB (DDMMYYYY), PAN number, or last 4 digits of account
+            </Text>
+            
+            <TextInput
+              style={[styles.passwordInput, { 
+                backgroundColor: colors.background, 
+                color: colors.text,
+                borderColor: colors.border
+              }]}
+              placeholder="Enter PDF password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              autoFocus
+              data-testid="input-pdf-password"
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
+                onPress={handlePasswordCancel}
+                data-testid="button-cancel-password"
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.submitButton, { backgroundColor: colors.primary }]}
+                onPress={handlePasswordSubmit}
+                disabled={!password.trim()}
+                data-testid="button-submit-password"
+              >
+                <Text style={styles.submitButtonText}>Unlock</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -709,5 +807,63 @@ const styles = StyleSheet.create({
   importMoreText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 16,
+    padding: 24,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 12,
+  },
+  modalDescription: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  passwordHint: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  passwordInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  submitButton: {},
+  submitButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
   },
 });

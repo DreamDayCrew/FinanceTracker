@@ -600,8 +600,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log("📄 Parsing PDF statement:", req.file.originalname, "Size:", req.file.size);
 
-      // Extract text from PDF
-      const pdfData = await pdfParse(req.file.buffer);
+      // Get password from request body (for password-protected PDFs)
+      const password = req.body?.password || undefined;
+
+      // Extract text from PDF (with optional password)
+      let pdfData;
+      try {
+        const pdfOptions: any = {};
+        if (password) {
+          pdfOptions.password = password;
+          console.log("🔐 Using password for encrypted PDF");
+        }
+        pdfData = await pdfParse(req.file.buffer, pdfOptions);
+      } catch (pdfError: any) {
+        if (pdfError.message?.includes('password') || pdfError.message?.includes('encrypted')) {
+          return res.status(400).json({ 
+            error: "This PDF is password-protected. Please provide the password.",
+            requiresPassword: true
+          });
+        }
+        throw pdfError;
+      }
+      
       console.log("📝 Extracted text length:", pdfData.text.length);
 
       if (!pdfData.text || pdfData.text.trim().length < 100) {
