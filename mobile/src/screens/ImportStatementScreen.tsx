@@ -65,16 +65,6 @@ export default function ImportStatementScreen() {
     setIsParsing(true);
     
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
-      });
-
-      if (result.canceled) return;
-
-      const file = result.assets[0];
-      if (!file) return;
-
-      setIsParsing(true);
       const token = await getAccessToken();
       if (!token) {
         throw new Error('Not authenticated. Please log in again.');
@@ -91,14 +81,20 @@ export default function ImportStatementScreen() {
         formData.append('password', pdfPassword);
       }
 
+      // Add timeout for the request (90 seconds for AI processing)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 90000);
+
       const response = await fetch(`${API_BASE_URL}/api/import/parse-pdf`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
         },
         body: formData,
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
       const data = await response.json();
 
       if (!response.ok) {
@@ -130,7 +126,11 @@ export default function ImportStatementScreen() {
         }
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to parse PDF');
+      if (error.name === 'AbortError') {
+        Alert.alert('Timeout', 'The request took too long. Please try again with a smaller PDF.');
+      } else {
+        Alert.alert('Error', error.message || 'Failed to parse PDF');
+      }
     } finally {
       setIsParsing(false);
     }
