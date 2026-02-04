@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { api } from '../lib/api';
@@ -10,9 +11,10 @@ import { RootStackParamList } from '../../App';
 import { useTheme } from '../contexts/ThemeContext';
 
 type AddAccountRouteProp = RouteProp<RootStackParamList, 'AddAccount'>;
+type AddAccountNavigationProp = NativeStackNavigationProp<RootStackParamList, 'AddAccount'>;
 
 export default function AddAccountScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<AddAccountNavigationProp>();
   const route = useRoute<AddAccountRouteProp>();
   const queryClient = useQueryClient();
   const { resolvedTheme } = useTheme();
@@ -31,6 +33,8 @@ export default function AddAccountScreen() {
   
   // Card details (for credit_card and debit_card)
   const [cardNumber, setCardNumber] = useState('');
+  const [fullCardNumber, setFullCardNumber] = useState(''); // Store full card number for edit mode
+  const [showCardNumber, setShowCardNumber] = useState(false); // Toggle to show/hide card number
   const [expiryMonth, setExpiryMonth] = useState('');
   const [expiryYear, setExpiryYear] = useState('');
   const [cardholderName, setCardholderName] = useState('');
@@ -48,6 +52,15 @@ export default function AddAccountScreen() {
   const bankAccounts = useMemo(() => {
     return accounts?.filter(a => a.type === 'bank') || [];
   }, [accounts]);
+
+  // Get linked account balance for debit cards
+  const linkedAccountBalance = useMemo(() => {
+    if (type === 'debit_card' && linkedAccountId) {
+      const linkedAccount = bankAccounts.find(a => a.id === linkedAccountId);
+      return linkedAccount?.balance || '0';
+    }
+    return null;
+  }, [type, linkedAccountId, bankAccounts]);
 
   useEffect(() => {
     if (isEditMode && accounts) {
@@ -74,6 +87,10 @@ export default function AddAccountScreen() {
         }
         // Load card details if available
         if (account.cardDetails) {
+          // Store full card number if available
+          if (account.cardDetails.cardNumber) {
+            setFullCardNumber(account.cardDetails.cardNumber);
+          }
           setCardNumber(account.cardDetails.lastFourDigits ? `**** **** **** ${account.cardDetails.lastFourDigits}` : '');
           setExpiryMonth(account.cardDetails.expiryMonth?.toString() || '');
           setExpiryYear(account.cardDetails.expiryYear?.toString() || '');
@@ -141,7 +158,16 @@ export default function AddAccountScreen() {
       });
       return;
     }
-    if (!balance || parseFloat(balance) < 0) {
+    if (type === 'debit_card' && !linkedAccountId) {
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Please select a linked bank account',
+        position: 'bottom',
+      });
+      return;
+    }
+    if (type !== 'debit_card' && (!balance || parseFloat(balance) < 0)) {
       Toast.show({
         type: 'error',
         text1: 'Validation Error',
@@ -163,7 +189,7 @@ export default function AddAccountScreen() {
     const accountData: any = {
       type,
       name: name.trim(),
-      balance,
+      balance: type === 'debit_card' ? (linkedAccountBalance || '0') : balance,
       isDefault,
     };
 
@@ -207,12 +233,23 @@ export default function AddAccountScreen() {
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
+  // Display card number based on visibility toggle
+  const displayCardNumber = useMemo(() => {
+    if (isEditMode && fullCardNumber && showCardNumber) {
+      // Format full card number with spaces
+      const cleaned = fullCardNumber.replace(/\s/g, '');
+      return cleaned.replace(/(\d{4})/g, '$1 ').trim();
+    }
+    return cardNumber;
+  }, [isEditMode, fullCardNumber, showCardNumber, cardNumber]);
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
       <View style={styles.typeSelector}>
         <TouchableOpacity
           style={[styles.typeButton, { backgroundColor: colors.card, borderColor: colors.border }, type === 'bank' && { backgroundColor: colors.primary }]}
-          onPress={() => setType('bank')}
+          onPress={() => !isEditMode && setType('bank')}
+          disabled={isEditMode}
           data-testid="button-type-bank"
         >
           <Ionicons 
@@ -226,7 +263,8 @@ export default function AddAccountScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.typeButton, { backgroundColor: colors.card, borderColor: colors.border }, type === 'credit_card' && { backgroundColor: colors.primary }]}
-          onPress={() => setType('credit_card')}
+          onPress={() => !isEditMode && setType('credit_card')}
+          disabled={isEditMode}
           data-testid="button-type-credit"
         >
           <Ionicons 
@@ -240,7 +278,8 @@ export default function AddAccountScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.typeButton, { backgroundColor: colors.card, borderColor: colors.border }, type === 'debit_card' && { backgroundColor: colors.primary }]}
-          onPress={() => setType('debit_card')}
+          onPress={() => !isEditMode && setType('debit_card')}
+          disabled={isEditMode}
           data-testid="button-type-debit"
         >
           <Ionicons 
@@ -257,30 +296,46 @@ export default function AddAccountScreen() {
       <View style={styles.field}>
         <Text style={[styles.label, { color: colors.textMuted }]}>Account Name</Text>
         <TextInput
-          style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-          placeholder={type === 'bank' ? 'e.g., HDFC Savings' : 'e.g., ICICI Credit Card'}
+          style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }, isEditMode && { opacity: 0.6 }]}
+          placeholder={type === 'bank' ? 'e.g., HDFC Savings' : 'e.g., ICICI Card'}
           placeholderTextColor={colors.textMuted}
           value={name}
           onChangeText={setName}
+          editable={!isEditMode}
         />
       </View>
 
-      <View style={styles.field}>
-        <Text style={[styles.label, { color: colors.textMuted }]}>
-          {type === 'bank' ? 'Current Balance' : 'Available Credit'}
-        </Text>
-        <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
-          <Text style={[styles.currencyPrefix, { color: colors.textMuted }]}>₹</Text>
-          <TextInput
-            style={[styles.amountInput, { color: colors.text }]}
-            placeholder="0"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="numeric"
-            value={balance}
-            onChangeText={setBalance}
-          />
+      {type === 'credit_card' && isEditMode && (
+        <TouchableOpacity 
+          style={[styles.linkButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => navigation.navigate('CreditCardDetails')}
+        >
+          <View style={styles.linkContent}>
+            <Ionicons name="card-outline" size={20} color={colors.primary} />
+            <Text style={[styles.linkText, { color: colors.primary }]}>View All Credit Card Details</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+      )}
+
+      {type !== 'debit_card' && (
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>
+            {type === 'credit_card' ? 'Available Credit' : 'Current Balance'}
+          </Text>
+          <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
+            <Text style={[styles.currencyPrefix, { color: colors.textMuted }]}>₹</Text>
+            <TextInput
+              style={[styles.amountInput, { color: colors.text }]}
+              placeholder="0"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              value={balance}
+              onChangeText={setBalance}
+            />
+          </View>
         </View>
-      </View>
+      )}
 
       {type === 'credit_card' && (
         <View style={styles.field}>
@@ -350,7 +405,9 @@ export default function AddAccountScreen() {
 
       {(type === 'debit_card' || type === 'credit_card') && bankAccounts.length > 0 && (
         <View style={styles.field}>
-          <Text style={[styles.label, { color: colors.textMuted }]}>Linked Bank Account</Text>
+          <Text style={[styles.label, { color: colors.textMuted }]}>
+            Linked Bank Account{type === 'debit_card' ? ' *' : ''}
+          </Text>
           <TouchableOpacity
             style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, justifyContent: 'center' }]}
             onPress={() => setShowLinkedAccountPicker(!showLinkedAccountPicker)}
@@ -358,7 +415,7 @@ export default function AddAccountScreen() {
             <Text style={[styles.pickerText, { color: linkedAccountId ? colors.text : colors.textMuted }]}>
               {linkedAccountId 
                 ? bankAccounts.find(a => a.id === linkedAccountId)?.name || 'Select Account'
-                : 'Select Bank Account (Optional)'}
+                : type === 'debit_card' ? 'Select Bank Account' : 'Select Bank Account (Optional)'}
             </Text>
           </TouchableOpacity>
           {showLinkedAccountPicker && (
@@ -380,7 +437,17 @@ export default function AddAccountScreen() {
               ))}
             </View>
           )}
-          <Text style={[styles.hint, { color: colors.textMuted }]}>Link to the bank account this card belongs to</Text>
+          <Text style={[styles.hint, { color: colors.textMuted }]}>
+            {type === 'debit_card' 
+              ? 'Debit card uses the linked bank account balance'
+              : 'Link to the bank account this card belongs to'}
+          </Text>
+          {type === 'debit_card' && linkedAccountBalance && (
+            <View style={[styles.balanceDisplay, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.balanceLabel, { color: colors.textMuted }]}>Current Balance:</Text>
+              <Text style={[styles.balanceAmount, { color: colors.primary }]}>₹{linkedAccountBalance}</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -393,20 +460,37 @@ export default function AddAccountScreen() {
 
           <View style={styles.field}>
             <Text style={[styles.label, { color: colors.textMuted }]}>Card Number</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              placeholder="1234 5678 9012 3456"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="numeric"
-              maxLength={19}
-              value={cardNumber}
-              onChangeText={(text) => {
-                const cleaned = text.replace(/\s/g, '');
-                const formatted = cleaned.replace(/(\d{4})/g, '$1 ').trim();
-                setCardNumber(formatted);
-              }}
-              data-testid="input-card-number"
-            />
+            <View style={styles.cardNumberContainer}>
+              <TextInput
+                style={[styles.input, styles.cardNumberInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                placeholder="1234 5678 9012 3456"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                maxLength={19}
+                value={displayCardNumber}
+                onChangeText={(text) => {
+                  if (!isEditMode) {
+                    const cleaned = text.replace(/\s/g, '');
+                    const formatted = cleaned.replace(/(\d{4})/g, '$1 ').trim();
+                    setCardNumber(formatted);
+                  }
+                }}
+                editable={!isEditMode}
+                data-testid="input-card-number"
+              />
+              {isEditMode && fullCardNumber && (
+                <TouchableOpacity
+                  style={styles.eyeIconButton}
+                  onPress={() => setShowCardNumber(!showCardNumber)}
+                >
+                  <Ionicons
+                    name={showCardNumber ? "eye-off-outline" : "eye-outline"}
+                    size={22}
+                    color={colors.textMuted}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           <View style={styles.rowFields}>
@@ -664,5 +748,55 @@ const styles = StyleSheet.create({
   cardTypeText: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  linkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  linkContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  linkText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  cardNumberContainer: {
+    position: 'relative',
+  },
+  cardNumberInput: {
+    paddingRight: 50,
+  },
+  eyeIconButton: {
+    position: 'absolute',
+    right: 12,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 4,
+  },
+  balanceDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  balanceLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  balanceAmount: {
+    fontSize: 18,
+    fontWeight: '600',
   },
 });

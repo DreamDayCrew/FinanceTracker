@@ -65,6 +65,16 @@ export default function ImportStatementScreen() {
     setIsParsing(true);
     
     try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+      });
+
+      if (result.canceled) return;
+
+      const file = result.assets[0];
+      if (!file) return;
+
+      setIsParsing(true);
       const token = await getAccessToken();
       if (!token) {
         throw new Error('Not authenticated. Please log in again.');
