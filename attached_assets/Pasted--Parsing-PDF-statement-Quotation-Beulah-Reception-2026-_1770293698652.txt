@@ -1,0 +1,38 @@
+📄 Parsing PDF statement: Quotation_Beulah_Reception_2026-01-22.pdf Size: 687973
+📝 Extracted text length: 807
+PDF parsing error: RateLimitError: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.
+    at Function.generate (/home/kumudha/playArea/FinanceTracker/node_modules/openai/src/core/error.ts:96:14)
+    at OpenAI.makeStatusError (/home/kumudha/playArea/FinanceTracker/node_modules/openai/src/client.ts:478:28)
+    at OpenAI.makeRequest (/home/kumudha/playArea/FinanceTracker/node_modules/openai/src/client.ts:728:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async parseStatementPDF (/home/kumudha/playArea/FinanceTracker/server/openai.ts:280:22)
+    at async <anonymous> (/home/kumudha/playArea/FinanceTracker/server/routes.ts:637:22) {
+  status: 429,
+  headers: Headers {
+    date: 'Thu, 05 Feb 2026 12:11:33 GMT',
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': '337',
+    connection: 'keep-alive',
+    vary: 'Origin',
+    'x-request-id': 'req_7e19d0bce9ba43d49ec61c5dfdd3d16f',
+    'x-openai-proxy-wasm': 'v0.1',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '__cf_bm=OTF3WxyXJBudw8SYmYXCcRJp19k_K90IfOquFyCo97k-1770293493-1.0.1.1-0Kxq4RMh5to2JYuZlDnOfKsCAiTMqkys9fVWri_oDROIFQTZpz31fsToIE8sX.I4gRSGsQAuH6yGGgYlozPhq60d5dg9LHYyCu_2pQ4B2bA; path=/; expires=Thu, 05-Feb-26 12:41:33 GMT; domain=.api.openai.com; HttpOnly; Secure; SameSite=None, _cfuvid=2742cn2WtrueZBJdBRgWfpyc0TvMCQW0ShLSFzaFYZs-1770293493565-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'x-content-type-options': 'nosniff',
+    server: 'cloudflare',
+    'cf-ray': '9c924f990eceb108-MAA',
+    'alt-svc': 'h3=":443"; ma=86400'
+  },
+  requestID: 'req_7e19d0bce9ba43d49ec61c5dfdd3d16f',
+  error: {
+    message: 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.',
+    type: 'insufficient_quota',
+    param: null,
+    code: 'insufficient_quota'
+  },
+  code: 'insufficient_quota',
+  param: null,
+  type: 'insufficient_quota'
+}
+12:11:33 PM [express] POST /api/import/parse-pdf 400 in 8039ms :: {"error":"429 You exceeded your cur…

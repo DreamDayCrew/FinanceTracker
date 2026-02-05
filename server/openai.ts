@@ -341,6 +341,22 @@ Important:
     };
   } catch (error: any) {
     console.error("PDF parsing error:", error);
+    
+    // Handle specific OpenAI error codes
+    if (error.code === 'insufficient_quota' || error.status === 429) {
+      return { 
+        transactions: [], 
+        error: "OpenAI API quota exceeded. Please check your OpenAI account billing and add credits." 
+      };
+    }
+    
+    if (error.status === 401) {
+      return { 
+        transactions: [], 
+        error: "Invalid OpenAI API key. Please check your API key configuration." 
+      };
+    }
+    
     return { 
       transactions: [], 
       error: error.message || "Failed to parse PDF" 
