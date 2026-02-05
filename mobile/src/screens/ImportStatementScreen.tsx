@@ -9,7 +9,8 @@ import {
   Alert,
   FlatList,
   TextInput,
-  Modal
+  Modal,
+  Platform
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -72,11 +73,21 @@ export default function ImportStatementScreen() {
       }
 
       const formData = new FormData();
-      formData.append('file', {
-        uri: fileUri,
-        name: fileName,
-        type: 'application/pdf',
-      } as any);
+      
+      // Handle file differently for web vs native
+      if (Platform.OS === 'web') {
+        // On web, fetch the file URI as a blob
+        const response = await fetch(fileUri);
+        const blob = await response.blob();
+        formData.append('file', blob, fileName);
+      } else {
+        // On native, use the URI directly
+        formData.append('file', {
+          uri: fileUri,
+          name: fileName,
+          type: 'application/pdf',
+        } as any);
+      }
       
       if (pdfPassword) {
         formData.append('password', pdfPassword);
