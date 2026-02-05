@@ -22,7 +22,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [loginMode, setLoginMode] = useState<'password' | 'otp'>('password');
+  const [loginMode, setLoginMode] = useState<'password' | 'otp'>('otp');
 
   const handlePasswordLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -106,6 +106,21 @@ export default function LoginScreen() {
               style={[
                 styles.toggleButton,
                 { borderColor: colors.border },
+                loginMode === 'otp' && { backgroundColor: colors.primary }
+              ]}
+              onPress={() => setLoginMode('otp')}
+            >
+              <Text style={[
+                styles.toggleText,
+                { color: loginMode === 'otp' ? '#fff' : colors.textMuted }
+              ]}>
+                Sign Up / OTP
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                { borderColor: colors.border },
                 loginMode === 'password' && { backgroundColor: colors.primary }
               ]}
               onPress={() => setLoginMode('password')}
@@ -117,22 +132,14 @@ export default function LoginScreen() {
                 Password
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.toggleButton,
-                { borderColor: colors.border },
-                loginMode === 'otp' && { backgroundColor: colors.primary }
-              ]}
-              onPress={() => setLoginMode('otp')}
-            >
-              <Text style={[
-                styles.toggleText,
-                { color: loginMode === 'otp' ? '#fff' : colors.textMuted }
-              ]}>
-                OTP
-              </Text>
-            </TouchableOpacity>
           </View>
+          
+          {/* Mode hint */}
+          <Text style={[styles.modeHint, { color: colors.textMuted }]}>
+            {loginMode === 'otp' 
+              ? 'New user? Enter your details to register. Existing user? We\'ll send an OTP.'
+              : 'For existing users with a password set.'}
+          </Text>
 
           <View style={styles.inputContainer}>
             <Text style={[styles.label, { color: colors.textMuted }]}>Email</Text>
@@ -326,5 +333,11 @@ const styles = StyleSheet.create({
   linkText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  modeHint: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: -8,
+    marginBottom: 8,
   },
 });
