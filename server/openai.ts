@@ -267,13 +267,165 @@ export interface StatementParseResult {
   error?: string;
 }
 
+// Basic regex-based PDF parser as fallback when OpenAI is unavailable
+function parseStatementWithRegex(pdfText: string): StatementParseResult {
+  const transactions: ExtractedTransaction[] = [];
+  
+  // Common date patterns in Indian bank statements
+  const datePatterns = [
+    /(\d{2}[-\/]\d{2}[-\/]\d{4})/g,  // DD-MM-YYYY or DD/MM/YYYY
+    /(\d{2}[-\/]\d{2}[-\/]\d{2})/g,   // DD-MM-YY or DD/MM/YY
+    /(\d{2}\s+[A-Za-z]{3}\s+\d{4})/g, // DD Mon YYYY
+    /(\d{2}\s+[A-Za-z]{3}\s+\d{2})/g, // DD Mon YY
+  ];
+  
+  // Split text into lines
+  const lines = pdfText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  
+  // Extract bank name (usually in first few lines)
+  let bankName: string | undefined;
+  const bankPatterns = ['HDFC', 'ICICI', 'SBI', 'State Bank', 'Axis', 'Kotak', 'Yes Bank', 'IndusInd', 'PNB', 'BOB', 'Canara', 'Union Bank', 'IDFC', 'Federal Bank', 'Bandhan'];
+  for (const line of lines.slice(0, 10)) {
+    for (const bank of bankPatterns) {
+      if (line.toUpperCase().includes(bank.toUpperCase())) {
+        bankName = bank.includes('State') ? 'State Bank of India' : bank + ' Bank';
+        break;
+      }
+    }
+    if (bankName) break;
+  }
+  
+  // Extract account number (last 4 digits)
+  let accountNumber: string | undefined;
+  const accMatch = pdfText.match(/(?:A\/C|Account|Acc)[\s.:]*(?:No\.?)?[\s.:]*[X*\d]*(\d{4})/i);
+  if (accMatch) accountNumber = accMatch[1];
+  
+  // Amount pattern for Indian format (with commas and decimals)
+  const amountRegex = /(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d{2})?)/g;
+  
+  // Process each line looking for transactions
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Skip header lines
+    if (line.match(/^(date|particulars|narration|description|debit|credit|balance|withdrawal|deposit)/i)) {
+      continue;
+    }
+    
+    // Look for date in line
+    let dateMatch: RegExpMatchArray | null = null;
+    for (const pattern of datePatterns) {
+      dateMatch = line.match(pattern);
+      if (dateMatch) break;
+    }
+    
+    if (!dateMatch) continue;
+    
+    // Parse the date
+    let dateStr = dateMatch[1];
+    let parsedDate: Date | null = null;
+    
+    // Try DD-MM-YYYY or DD/MM/YYYY
+    const dmy = dateStr.match(/(\d{2})[-\/](\d{2})[-\/](\d{2,4})/);
+    if (dmy) {
+      const day = parseInt(dmy[1]);
+      const month = parseInt(dmy[2]) - 1;
+      let year = parseInt(dmy[3]);
+      if (year < 100) year += 2000;
+      parsedDate = new Date(year, month, day);
+    }
+    
+    // Try DD Mon YYYY
+    const dMonY = dateStr.match(/(\d{2})\s+([A-Za-z]{3})\s+(\d{2,4})/);
+    if (!parsedDate && dMonY) {
+      const months: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+      const day = parseInt(dMonY[1]);
+      const month = months[dMonY[2].toLowerCase()] ?? 0;
+      let year = parseInt(dMonY[3]);
+      if (year < 100) year += 2000;
+      parsedDate = new Date(year, month, day);
+    }
+    
+    if (!parsedDate || isNaN(parsedDate.getTime())) continue;
+    
+    // Look for amounts in this line
+    const amounts: number[] = [];
+    let match;
+    const tempLine = line.replace(/,/g, '');
+    const numRegex = /(\d+(?:\.\d{2})?)/g;
+    while ((match = numRegex.exec(tempLine)) !== null) {
+      const num = parseFloat(match[1]);
+      if (num > 0 && num < 100000000) { // reasonable amount
+        amounts.push(num);
+      }
+    }
+    
+    if (amounts.length === 0) continue;
+    
+    // Determine transaction type based on keywords
+    const lineUpper = line.toUpperCase();
+    let type: 'debit' | 'credit' = 'debit';
+    
+    if (lineUpper.includes('CR') || lineUpper.includes('CREDIT') || 
+        lineUpper.includes('DEPOSIT') || lineUpper.includes('RECEIVED') ||
+        lineUpper.includes('NEFT-CR') || lineUpper.includes('IMPS-CR') ||
+        lineUpper.includes('SALARY') || lineUpper.includes('REFUND')) {
+      type = 'credit';
+    } else if (lineUpper.includes('DR') || lineUpper.includes('DEBIT') ||
+               lineUpper.includes('WITHDRAWAL') || lineUpper.includes('PAID') ||
+               lineUpper.includes('NEFT-DR') || lineUpper.includes('IMPS-DR') ||
+               lineUpper.includes('ATM') || lineUpper.includes('POS') ||
+               lineUpper.includes('BILL') || lineUpper.includes('EMI')) {
+      type = 'debit';
+    }
+    
+    // Extract description (remove date and numbers)
+    let description = line
+      .replace(dateStr, '')
+      .replace(/[\d,]+\.\d{2}/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    if (description.length < 3) {
+      description = type === 'credit' ? 'Amount credited' : 'Amount debited';
+    }
+    
+    // Use the first reasonable amount as transaction amount
+    const amount = amounts.find(a => a >= 1) || amounts[0];
+    
+    // Extract reference number if present
+    let referenceNumber: string | undefined;
+    const refMatch = line.match(/(?:REF|TXN|UTR|RRN)[\s.:]*([A-Z0-9]+)/i);
+    if (refMatch) referenceNumber = refMatch[1];
+    
+    transactions.push({
+      date: parsedDate.toISOString().split('T')[0],
+      description: description.substring(0, 200),
+      amount,
+      type,
+      referenceNumber
+    });
+  }
+  
+  // Sort by date
+  transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  
+  return {
+    transactions,
+    accountNumber,
+    bankName,
+    error: transactions.length === 0 ? 
+      "Could not extract transactions. The PDF format may not be supported. Try a different bank statement format." : 
+      undefined
+  };
+}
+
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-export async function parseStatementPDF(pdfText: string): Promise<StatementParseResult> {
-  if (!openai) {
-    return { 
-      transactions: [], 
-      error: "OpenAI API key not configured. Please add OPENAI_API_KEY to use PDF import." 
-    };
+export async function parseStatementPDF(pdfText: string, useAI: boolean = true): Promise<StatementParseResult> {
+  // If OpenAI not available or AI disabled, use regex fallback
+  if (!openai || !useAI) {
+    console.log("Using regex-based PDF parser (OpenAI not available or AI disabled)");
+    return parseStatementWithRegex(pdfText);
   }
 
   try {
@@ -340,26 +492,38 @@ Important:
       statementPeriod: result.statementPeriod
     };
   } catch (error: any) {
-    console.error("PDF parsing error:", error);
+    console.error("PDF parsing error with OpenAI:", error);
     
-    // Handle specific OpenAI error codes
+    // On OpenAI errors, fall back to regex parser
+    console.log("Falling back to regex-based parser due to OpenAI error");
+    const fallbackResult = parseStatementWithRegex(pdfText);
+    
+    // Add a note about which parser was used
+    if (fallbackResult.transactions.length > 0) {
+      return {
+        ...fallbackResult,
+        error: undefined // Clear error if we got results
+      };
+    }
+    
+    // If fallback also failed, return appropriate error
     if (error.code === 'insufficient_quota' || error.status === 429) {
       return { 
-        transactions: [], 
-        error: "OpenAI API quota exceeded. Please check your OpenAI account billing and add credits." 
+        ...fallbackResult,
+        error: "AI parsing failed (quota exceeded). Basic parsing found no transactions. Try a standard bank statement format." 
       };
     }
     
     if (error.status === 401) {
       return { 
-        transactions: [], 
-        error: "Invalid OpenAI API key. Please check your API key configuration." 
+        ...fallbackResult,
+        error: "AI parsing unavailable (invalid API key). Basic parsing found no transactions." 
       };
     }
     
     return { 
-      transactions: [], 
-      error: error.message || "Failed to parse PDF" 
+      ...fallbackResult,
+      error: fallbackResult.error || error.message || "Failed to parse PDF" 
     };
   }
 }
