@@ -145,7 +145,11 @@ async function apiRequest<T>(
     '/api/auth/verify-otp',
     '/api/auth/refresh-token',
     '/api/auth/send-otp',
+<<<<<<< Updated upstream
     '/api/auth/request-otp',
+=======
+    '/api/auth/request-otp'
+>>>>>>> Stashed changes
   ];
 
   const isPublicEndpoint = publicEndpoints.some(path => endpoint.startsWith(path));
