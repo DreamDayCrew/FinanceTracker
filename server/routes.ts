@@ -25,9 +25,7 @@ import {
 } from "@shared/schema";
 import { suggestCategory, parseSmsMessage, fallbackCategorization, parseStatementPDF, ExtractedTransaction } from "./openai";
 import multer from "multer";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const pdfParse = require("pdf-parse");
+import { PDFParse } from "pdf-parse";
 import { getPaydayForMonth, getNextPaydays, getPastPaydays } from "./salaryUtils";
 import { generateOTP, storeOTP, verifyOTP, sendOTP } from "./emailService";
 import { generateTokenPair, generateAccessToken } from "./jwtService";
@@ -606,14 +604,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const password = req.body?.password || undefined;
 
       // Extract text from PDF (with optional password)
-      let pdfData;
+      let pdfText: string;
       try {
-        const pdfOptions: any = {};
+        const pdfOptions: any = { data: req.file.buffer };
         if (password) {
           pdfOptions.password = password;
           console.log("🔐 Using password for encrypted PDF");
         }
-        pdfData = await pdfParse(req.file.buffer, pdfOptions);
+        const parser = new PDFParse(pdfOptions);
+        const textResult = await parser.getText();
+        pdfText = textResult.text || '';
+        await parser.destroy();
       } catch (pdfError: any) {
         if (pdfError.message?.includes('password') || pdfError.message?.includes('encrypted')) {
           return res.status(400).json({ 
@@ -624,16 +625,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw pdfError;
       }
       
-      console.log("📝 Extracted text length:", pdfData.text.length);
+      console.log("📝 Extracted text length:", pdfText.length);
 
-      if (!pdfData.text || pdfData.text.trim().length < 100) {
+      if (!pdfText || pdfText.trim().length < 100) {
         return res.status(400).json({ 
           error: "Could not extract text from PDF. Please ensure it's a text-based PDF, not a scanned image." 
         });
       }
 
       // Use AI to parse transactions from the text
-      const result = await parseStatementPDF(pdfData.text);
+      const result = await parseStatementPDF(pdfText);
 
       if (result.error) {
         return res.status(400).json({ error: result.error });
@@ -709,7 +710,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Get category suggestion
           const categoryName = await suggestCategory(tx.description);
-          const categories = await storage.getCategories();
+          const categories = await storage.getAllCategories();
           const category = categories.find((c: any) => c.name === categoryName);
 
           // Create the transaction
