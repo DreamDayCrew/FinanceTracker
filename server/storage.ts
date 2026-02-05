@@ -1760,6 +1760,9 @@ export class DatabaseStorage implements IStorage {
     await db.delete(loanInstallments).where(eq(loanInstallments.loanId, id));
     await db.delete(loanTerms).where(eq(loanTerms.loanId, id));
     await db.delete(loanComponents).where(eq(loanComponents.loanId, id));
+    // Delete BT allocations where this loan is either source or target
+    await db.delete(loanBtAllocations).where(eq(loanBtAllocations.sourceLoanId, id));
+    await db.delete(loanBtAllocations).where(eq(loanBtAllocations.targetLoanId, id));
     const result = await db.delete(loans).where(eq(loans.id, id)).returning();
     return result.length > 0;
   }
