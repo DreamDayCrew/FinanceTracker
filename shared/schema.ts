@@ -230,7 +230,7 @@ export const insertScheduledPaymentSchema = createInsertSchema(scheduledPayments
   paymentType: z.enum(["regular", "credit_card_bill"]).optional(),
   amount: z.string().optional(), // optional for auto-calculated credit card bills
   dueDateType: z.enum(["fixed_day", "salary_day"]).optional(),
-  dueDate: z.number().min(1).max(31).optional(), // optional when dueDateType is 'salary_day'
+  dueDate: z.union([z.number().min(1).max(31), z.null()]).optional(), // optional/null when dueDateType is 'salary_day'
   creditCardAccountId: z.union([z.number(), z.null()]).optional(),
   categoryId: z.union([z.number(), z.null()]).optional(),
   accountId: z.union([z.number(), z.null()]).optional(),
