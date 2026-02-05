@@ -18,7 +18,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getThemedColors } from '../lib/utils';
 import { useTheme } from '../contexts/ThemeContext';
 import { Account } from '../lib/types';
-import { getAccessToken, API_BASE_URL } from '../lib/api';
+import { getAccessToken, API_BASE_URL, api } from '../lib/api';
 
 interface ExtractedTransaction {
   date: string;
@@ -57,6 +57,7 @@ export default function ImportStatementScreen() {
 
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['/api/accounts'],
+    queryFn: api.getAccounts,
   });
 
   const bankAccounts = accounts.filter(a => a.type === 'bank');

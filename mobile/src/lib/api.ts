@@ -12,13 +12,20 @@ import type {
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
 console.log('API_BASE_URL', API_BASE_URL);
 
 const STORAGE_KEYS = {
   ACCESS_TOKEN: '@finance_tracker_access_token',
   REFRESH_TOKEN: '@finance_tracker_refresh_token',
 };
+
+// Callback for when authentication fails and user needs to login again
+let onAuthenticationFailed: (() => void) | null = null;
+
+export function setAuthenticationFailedCallback(callback: () => void) {
+  onAuthenticationFailed = callback;
+}
 
 /**
  * Get stored access token
@@ -86,7 +93,11 @@ export async function clearTokens(): Promise<void> {
 async function refreshAccessToken(): Promise<string | null> {
   try {
     const refreshToken = await getRefreshToken();
-    if (!refreshToken) return null;
+    if (!refreshToken) {
+      // No refresh token available, clear tokens and return null
+      await clearTokens();
+      return null;
+    }
 
     const response = await fetch(`${API_BASE_URL}/api/auth/refresh-token`, {
       method: 'POST',
@@ -94,7 +105,11 @@ async function refreshAccessToken(): Promise<string | null> {
       body: JSON.stringify({ refreshToken }),
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      // Refresh failed, clear tokens
+      await clearTokens();
+      return null;
+    }
 
     const data = await response.json();
     if (data.accessToken) {
@@ -102,9 +117,12 @@ async function refreshAccessToken(): Promise<string | null> {
       return data.accessToken;
     }
 
+    // No access token in response, clear tokens
+    await clearTokens();
     return null;
   } catch (error) {
     console.error('Failed to refresh token:', error);
+    await clearTokens();
     return null;
   }
 }
@@ -119,14 +137,37 @@ async function apiRequest<T>(
     throw new Error('No internet connection. Please check your network settings.');
   }
 
+  // Public endpoints that don't require authentication
+  const publicEndpoints = [
+    '/api/auth/login',
+    '/api/auth/login-password',
+    '/api/auth/signup',
+    '/api/auth/verify-otp',
+    '/api/auth/refresh-token',
+    '/api/auth/send-otp',
+  ];
+
+  const isPublicEndpoint = publicEndpoints.some(path => endpoint.startsWith(path));
+
   // Get token and add to headers
   let token = await getAccessToken();
+  console.log(`[API] ${endpoint} - Token exists:`, !!token, token ? `(${token.substring(0, 20)}...)` : '(none)', `Public: ${isPublicEndpoint}`);
+  
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
   
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  } else if (!isPublicEndpoint) {
+    // Only require token for protected endpoints
+    console.warn(`[API] ${endpoint} - No access token available for protected endpoint, clearing auth`);
+    // No token available for protected endpoint, trigger authentication failure
+    await clearTokens();
+    if (onAuthenticationFailed) {
+      onAuthenticationFailed();
+    }
+    throw new Error('Not authenticated. Please login again.');
   }
 
   const url = `${API_BASE_URL}${endpoint}`;
@@ -173,8 +214,11 @@ async function apiRequest<T>(
 
         return retryResponse.json();
       } else {
-        // Refresh failed, clear tokens and throw auth error
+        // Refresh failed, clear tokens and trigger logout
         await clearTokens();
+        if (onAuthenticationFailed) {
+          onAuthenticationFailed();
+        }
         throw new Error('Session expired. Please login again.');
       }
     }

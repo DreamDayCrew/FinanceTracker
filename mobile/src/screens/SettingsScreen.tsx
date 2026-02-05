@@ -404,6 +404,44 @@ export default function SettingsScreen() {
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <TouchableOpacity 
           style={styles.settingRowButton}
+          onPress={async () => {
+            Alert.alert(
+              'Clear Cache & Logout',
+              'This will clear all stored data and log you out. Use this if you are experiencing authentication issues.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'Clear & Logout', 
+                  style: 'destructive', 
+                  onPress: async () => {
+                    try {
+                      // Clear all AsyncStorage
+                      await AsyncStorage.clear();
+                      // Clear query cache
+                      queryClient.clear();
+                      // Force logout
+                      await logout();
+                    } catch (error) {
+                      console.error('Error clearing cache:', error);
+                    }
+                  }
+                },
+              ]
+            );
+          }}
+        >
+          <View style={styles.settingInfo}>
+            <Ionicons name="refresh-outline" size={22} color="#F59E0B" />
+            <View>
+              <Text style={[styles.settingTitle, { color: '#F59E0B' }]}>Clear Cache & Logout</Text>
+              <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Fix authentication issues</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.settingRowButton}
           onPress={() => {
             Alert.alert(
               'Logout',

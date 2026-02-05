@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api, storeTokens, clearTokens } from '../lib/api';
+import { api, storeTokens, clearTokens, setAuthenticationFailedCallback } from '../lib/api';
 import type { User } from '../lib/types';
 
 interface AuthContextType {
@@ -49,7 +49,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const logout = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEYS.USER);
+      await AsyncStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+      await AsyncStorage.removeItem(STORAGE_KEYS.USERNAME);
+      await clearTokens();
+      setUser(null);
+      setUsername(null);
+      setIsAuthenticated(false);
+      setHasPin(false);
+      setHasPassword(false);
+      hasPinRef.current = false;
+      setIsLocked(false);
+    } catch (error) {
+      console.error('Failed to logout:', error);
+    }
+  }, []);
+
+  // Handle authentication failures from API calls
+  const handleAuthenticationFailed = useCallback(() => {
+    console.log('Authentication failed - logging out user');
+    logout();
+  }, [logout]);
+
   useEffect(() => {
+    // Register callback for authentication failures
+    setAuthenticationFailedCallback(handleAuthenticationFailed);
+    
     checkAuthStatus();
 
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
@@ -61,8 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     return () => {
       subscription.remove();
+      setAuthenticationFailedCallback(() => {}); // Clean up callback
     };
-  }, [lockApp]);
+  }, [lockApp, handleAuthenticationFailed]);
 
   const checkAuthStatus = async () => {
     try {
@@ -154,24 +182,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Failed to save user:', error);
-    }
-  }, []);
-
-  const logout = useCallback(async () => {
-    try {
-      await AsyncStorage.removeItem(STORAGE_KEYS.USER);
-      await AsyncStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
-      await AsyncStorage.removeItem(STORAGE_KEYS.USERNAME);
-      await clearTokens();
-      setUser(null);
-      setUsername(null);
-      setIsAuthenticated(false);
-      setHasPin(false);
-      setHasPassword(false);
-      hasPinRef.current = false;
-      setIsLocked(false);
-    } catch (error) {
-      console.error('Failed to logout:', error);
     }
   }, []);
 
