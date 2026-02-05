@@ -688,5 +688,3 @@ export const api = {
       body: JSON.stringify({ userId, enabled }) 
     }),
 };
-
-export { API_BASE_URL };

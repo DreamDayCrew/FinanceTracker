@@ -1,0 +1,83 @@
+SyntaxError: SyntaxError: /home/expo/workingdir/build/mobile/src/lib/api.ts: Unexpected token (148:0)
+  146 |     '/api/auth/refresh-token',
+  147 |     '/api/auth/send-otp',
+> 148 | <<<<<<< Updated upstream
+      | ^
+  149 |     '/api/auth/request-otp',
+  150 | =======
+  151 |     '/api/auth/request-otp'
+SyntaxError: /home/expo/workingdir/build/mobile/src/lib/api.ts: Unexpected token (148:0)
+  146 |     '/api/auth/refresh-token',
+  147 |     '/api/auth/send-otp',
+> 148 | <<<<<<< Updated upstream
+      | ^
+  149 |     '/api/auth/request-otp',
+  150 | =======
+  151 |     '/api/auth/request-otp'
+    at constructor (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:365:19)
+    at TypeScriptParserMixin.raise (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:6599:19)
+    at TypeScriptParserMixin.unexpected (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:6619:16)
+    at TypeScriptParserMixin.parseExprAtom (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:11442:22)
+    at TypeScriptParserMixin.parseExprSubscripts (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:11081:23)
+    at TypeScriptParserMixin.parseUpdate (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:11066:21)
+    at TypeScriptParserMixin.parseMaybeUnary (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:11046:23)
+    at TypeScriptParserMixin.parseMaybeUnary (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:9837:18)
+    at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10899:61)
+    at TypeScriptParserMixin.parseExprOps (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10904:23)
+    at TypeScriptParserMixin.parseMaybeConditional (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10881:23)
+    at TypeScriptParserMixin.parseMaybeAssign (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10831:21)
+    at TypeScriptParserMixin.parseMaybeAssign (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:9786:20)
+    at /home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10800:39
+    at TypeScriptParserMixin.allowInAnd (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12426:12)
+    at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10800:17)
+    at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12493:17)
+    at TypeScriptParserMixin.parseExprListItem (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12175:18)
+    at TypeScriptParserMixin.parseExprList (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12150:22)
+    at TypeScriptParserMixin.parseArrayLike (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12057:26)
+    at TypeScriptParserMixin.parseArrayLike (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:9193:24)
+    at TypeScriptParserMixin.parseExprAtom (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:11335:23)
+    at TypeScriptParserMixin.parseExprSubscripts (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:11081:23)
+    at TypeScriptParserMixin.parseUpdate (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:11066:21)
+    at TypeScriptParserMixin.parseMaybeUnary (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:11046:23)
+    at TypeScriptParserMixin.parseMaybeUnary (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:9837:18)
+    at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10899:61)
+    at TypeScriptParserMixin.parseExprOps (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10904:23)
+    at TypeScriptParserMixin.parseMaybeConditional (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10881:23)
+    at TypeScriptParserMixin.parseMaybeAssign (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10831:21)
+    at TypeScriptParserMixin.parseMaybeAssign (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:9786:20)
+    at /home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10800:39
+    at TypeScriptParserMixin.allowInAnd (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12421:16)
+    at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:10800:17)
+    at TypeScriptParserMixin.parseVar (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:13384:91)
+    at TypeScriptParserMixin.parseVarStatement (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:13230:10)
+    at TypeScriptParserMixin.parseVarStatement (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:9408:31)
+    at TypeScriptParserMixin.parseStatementContent (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12851:23)
+    at TypeScriptParserMixin.parseStatementContent (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:9508:18)
+    at TypeScriptParserMixin.parseStatementLike (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12767:17)
+    at TypeScriptParserMixin.parseStatementListItem (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12747:17)
+    at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:13316:61)
+    at TypeScriptParserMixin.parseBlockBody (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:13309:10)
+    at TypeScriptParserMixin.parseBlock (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:13297:10)
+    at TypeScriptParserMixin.parseFunctionBody (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12100:24)
+    at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12086:10)
+    at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:9172:18)
+    at /home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:13445:12
+    at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:12403:14)
+    at TypeScriptParserMixin.parseFunction (/home/expo/workingdir/build/mobile/node_modules/@babel/parser/lib/index.js:13444:10)
+> Task :app:createBundleReleaseJsAndAssets FAILED
+> Task :expo-modules-core:buildCMakeRelWithDebInfo[armeabi-v7a]
+FAILURE: Build failed with an exception.
+* What went wrong:
+Execution failed for task ':app:createBundleReleaseJsAndAssets'.
+> Process 'command 'node'' finished with non-zero exit value 1
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+BUILD FAILED in 3m 17s
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+For more on this, please refer to https://docs.gradle.org/8.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+518 actionable tasks: 518 executed
+Error: Gradle build failed with unknown error. See logs for the "Run gradlew" phase for more information.
