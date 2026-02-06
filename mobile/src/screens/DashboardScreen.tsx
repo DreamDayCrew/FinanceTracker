@@ -122,8 +122,9 @@ export default function DashboardScreen() {
   const maskValue = (val: string) => hideBalance ? '\u2022\u2022\u2022\u2022\u2022\u2022' : val;
 
   const renderBillItem = (bill: BillItem, showSubLabel?: string) => {
-    const statusColor = bill.isPaid ? '#10b981' : bill.status === 'overdue' ? '#ef4444' : '#f59e0b';
-    const statusIcon: keyof typeof Ionicons.glyphMap = bill.isPaid ? 'checkmark-circle' : bill.status === 'overdue' ? 'alert-circle' : 'time';
+    const statusColor = bill.isPaid ? '#10b981' : bill.status === 'overdue' ? '#ef4444' : bill.status === 'due_today' ? '#3b82f6' : '#f59e0b';
+    const statusIcon: keyof typeof Ionicons.glyphMap = bill.isPaid ? 'checkmark-circle' : bill.status === 'overdue' ? 'alert-circle' : bill.status === 'due_today' ? 'today' : 'time';
+    const statusText = bill.isPaid ? 'Paid' : bill.status === 'overdue' ? 'Overdue' : bill.status === 'due_today' ? 'Due Today' : 'Pending';
 
     return (
       <View key={`bill-${bill.id}-${showSubLabel}`} style={[styles.billDetailRow, { borderBottomColor: colors.border }]}>
@@ -148,7 +149,7 @@ export default function DashboardScreen() {
           <View style={[styles.statusBadge, { backgroundColor: statusColor + '18' }]}>
             <Ionicons name={statusIcon} size={10} color={statusColor} />
             <Text style={[styles.statusBadgeText, { color: statusColor }]}>
-              {bill.isPaid ? 'Paid' : bill.status === 'overdue' ? 'Overdue' : 'Pending'}
+              {statusText}
             </Text>
           </View>
         </View>
@@ -392,6 +393,7 @@ export default function DashboardScreen() {
                       {renderAccordionSection(
                         'Credit Card Bills', 'card-outline', '#ec4899', 'creditCard',
                         billsDueDetails?.creditCardBills || [],
+                        (item) => `${item.bankName || ''}${item.creditLimit ? ` · Limit: ${formatCurrency(item.creditLimit)}` : ''}`.replace(/^[\s·]+/, ''),
                       )}
                       {renderAccordionSection(
                         'Loan EMIs', 'cash-outline', '#f59e0b', 'loans',

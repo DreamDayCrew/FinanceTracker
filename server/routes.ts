@@ -2274,7 +2274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const scheduledPaymentsBills = [];
-      const creditCardBills = [];
+      const manualCreditCardBills = [];
       for (const p of activePayments) {
         if (!isPaymentDueThisMonth(p)) continue;
         const occurrences = await storage.getPaymentOccurrences({
@@ -2299,11 +2299,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
 
         if (p.paymentType === 'credit_card_bill') {
-          creditCardBills.push(billItem);
+          manualCreditCardBills.push(billItem);
         } else {
           scheduledPaymentsBills.push(billItem);
         }
       }
+
+      const creditCardBills: any[] = [];
+      const manualCCAccountIds = new Set(
+        activePayments.filter(p => p.paymentType === 'credit_card_bill').map(p => p.creditCardAccountId).filter(Boolean)
+      );
+      for (const card of creditCards) {
+        if (manualCCAccountIds.has(card.id)) continue;
+        if (!card.billingDate) continue;
+        const billingDay = card.billingDate;
+        let prevCycleStart: Date;
+        let prevCycleEnd: Date;
+        if (today >= billingDay) {
+          prevCycleStart = new Date(now.getFullYear(), now.getMonth() - 1, billingDay, 0, 0, 0);
+          prevCycleEnd = new Date(now.getFullYear(), now.getMonth(), billingDay - 1, 23, 59, 59);
+        } else {
+          prevCycleStart = new Date(now.getFullYear(), now.getMonth() - 2, billingDay, 0, 0, 0);
+          prevCycleEnd = new Date(now.getFullYear(), now.getMonth() - 1, billingDay - 1, 23, 59, 59);
+        }
+        const prevCycleTxns = await storage.getAllTransactions({
+          userId,
+          accountId: card.id,
+          startDate: prevCycleStart,
+          endDate: prevCycleEnd,
+        });
+        const billAmount = prevCycleTxns
+          .filter(t => t.type === 'debit')
+          .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+        if (billAmount > 0) {
+          const creditLimit = card.creditLimit ? parseFloat(card.creditLimit) : null;
+          creditCardBills.push({
+            id: `cc-auto-${card.id}`,
+            name: `${card.name} Bill`,
+            amount: billAmount,
+            dueDate: billingDay,
+            dueDateType: 'fixed_day',
+            frequency: 'monthly',
+            isPaid: false,
+            paidAmount: 0,
+            status: billingDay < today ? 'overdue' : billingDay === today ? 'due_today' : 'pending',
+            creditLimit,
+            bankName: card.bankName || '',
+            isAutoCalculated: true,
+          });
+        }
+      }
+      creditCardBills.push(...manualCreditCardBills);
 
       const loans = await storage.getAllLoans(userId);
       const activeLoans = loans.filter(l => l.status === 'active');
@@ -2552,27 +2598,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const creditCardBillItems: any[] = [];
       let totalCreditCardBills = 0;
+      const allAccounts = await storage.getAllAccounts(userId);
+      const ccCards = allAccounts.filter(a => a.type === 'credit_card' && a.isActive && a.billingDate);
+      const manualCCIds = new Set(
+        activePayments.filter(p => p.paymentType === 'credit_card_bill').map(p => p.creditCardAccountId).filter(Boolean)
+      );
+      for (const card of ccCards) {
+        if (manualCCIds.has(card.id)) continue;
+        const billingDay = card.billingDate!;
+        const currentDay = now.getDate();
+        let curCycleStart: Date;
+        let curCycleEnd: Date;
+        if (currentDay >= billingDay) {
+          curCycleStart = new Date(now.getFullYear(), now.getMonth(), billingDay, 0, 0, 0);
+          curCycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, billingDay - 1, 23, 59, 59);
+        } else {
+          curCycleStart = new Date(now.getFullYear(), now.getMonth() - 1, billingDay, 0, 0, 0);
+          curCycleEnd = new Date(now.getFullYear(), now.getMonth(), billingDay - 1, 23, 59, 59);
+        }
+        const curCycleTxns = await storage.getAllTransactions({
+          userId,
+          accountId: card.id,
+          startDate: curCycleStart,
+          endDate: new Date(),
+        });
+        const spentSoFar = curCycleTxns
+          .filter(t => t.type === 'debit')
+          .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+        const creditLimit = card.creditLimit ? parseFloat(card.creditLimit) : null;
+        if (spentSoFar > 0) {
+          creditCardBillItems.push({
+            id: `cc-auto-${card.id}`,
+            name: `${card.name} Bill`,
+            amount: spentSoFar,
+            dueDate: billingDay,
+            subLabel: `Spent so far this cycle`,
+            creditLimit,
+          });
+          totalCreditCardBills += spentSoFar;
+        }
+      }
       for (const p of activePayments) {
         if (p.paymentType !== 'credit_card_bill') continue;
         if (!isPaymentDueNextMonth(p)) continue;
-        const amount = parseFloat(p.amount || '0');
-        let creditLimit: number | null = null;
-        if (p.linkedAccountId) {
-          const accounts = await storage.getAllAccounts(userId);
-          const linkedCard = accounts.find(a => a.id === p.linkedAccountId);
+        if (manualCCIds.has(p.creditCardAccountId)) {
+          const amount = parseFloat(p.amount || '0');
+          let creditLimit: number | null = null;
+          const linkedCard = allAccounts.find(a => a.id === p.creditCardAccountId);
           if (linkedCard && linkedCard.creditLimit) {
             creditLimit = parseFloat(linkedCard.creditLimit);
           }
+          creditCardBillItems.push({
+            id: p.id,
+            name: p.name,
+            amount,
+            dueDate: p.dueDate,
+            subLabel: 'Monthly',
+            creditLimit,
+          });
+          totalCreditCardBills += amount;
         }
-        creditCardBillItems.push({
-          id: p.id,
-          name: p.name,
-          amount,
-          dueDate: p.dueDate,
-          subLabel: 'Monthly',
-          creditLimit,
-        });
-        totalCreditCardBills += amount;
       }
 
       const totalOutflow = totalScheduled + totalLoans + totalInsurance + totalCreditCardBills;

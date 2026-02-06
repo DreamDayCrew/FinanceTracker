@@ -126,7 +126,7 @@ export interface AccountBreakdown {
 }
 
 export interface BillItem {
-  id: number;
+  id: number | string;
   name: string;
   amount: number;
   dueDate: number | null;
@@ -139,6 +139,9 @@ export interface BillItem {
   lenderName?: string;
   insuranceType?: string;
   providerName?: string;
+  creditLimit?: number | null;
+  bankName?: string;
+  isAutoCalculated?: boolean;
 }
 
 export interface BillsDueDetails {
