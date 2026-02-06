@@ -141,6 +141,15 @@ export default function ExpenseDetailsScreen() {
     return iconMap[categoryName] || 'pricetag';
   };
 
+  // Map invalid icon names to valid Ionicons
+  const getValidIconName = (iconName: string): string => {
+    const iconMap: { [key: string]: string } = {
+      'shopping-bag': 'bag-handle',
+      'shopping-cart': 'cart-outline',
+    };
+    return iconMap[iconName] || iconName || 'ellipsis-horizontal';
+  };
+
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   const handlePreviousMonth = () => {
