@@ -203,8 +203,9 @@ export const scheduledPayments = pgTable("scheduled_payments", {
   categoryId: integer("category_id").references(() => categories.id),
   accountId: integer("account_id").references(() => accounts.id),
   creditCardAccountId: integer("credit_card_account_id").references(() => accounts.id), // for credit card bills
-  frequency: varchar("frequency", { length: 20 }).default("monthly"), // 'monthly', 'quarterly', 'half_yearly', 'yearly', 'one_time'
-  startMonth: integer("start_month"), // 1-12, for quarterly/yearly payments
+  frequency: varchar("frequency", { length: 20 }).default("monthly"), // 'monthly', 'quarterly', 'half_yearly', 'yearly', 'one_time', 'custom'
+  customIntervalMonths: integer("custom_interval_months"), // number of months between payments (e.g., 2, 3, 5, 8)
+  startMonth: integer("start_month"), // 1-12, for quarterly/yearly/custom payments
   status: varchar("status", { length: 20 }).default("active"), // 'active', 'inactive'
   notes: text("notes"),
   affectTransaction: boolean("affect_transaction").default(true),
@@ -234,7 +235,8 @@ export const insertScheduledPaymentSchema = createInsertSchema(scheduledPayments
   creditCardAccountId: z.union([z.number(), z.null()]).optional(),
   categoryId: z.union([z.number(), z.null()]).optional(),
   accountId: z.union([z.number(), z.null()]).optional(),
-  frequency: z.enum(["monthly", "quarterly", "half_yearly", "yearly", "one_time"]).optional(),
+  frequency: z.enum(["monthly", "quarterly", "half_yearly", "yearly", "one_time", "custom"]).optional(),
+  customIntervalMonths: z.union([z.number().min(1).max(60), z.null()]).optional(),
   startMonth: z.number().min(1).max(12).optional(),
   status: z.enum(["active", "inactive"]).optional(),
   notes: z.union([z.string(), z.null()]).optional(),

@@ -23,7 +23,19 @@ const FREQUENCY_OPTIONS: Record<string, string> = {
   quarterly: 'Every 3 Months',
   half_yearly: 'Every 6 Months',
   yearly: 'Yearly',
+  one_time: 'One Time',
+  custom: 'Custom',
 };
+
+function getFrequencyLabel(payment: any): string {
+  if (payment.frequency === 'custom' && payment.customIntervalMonths) {
+    const months = payment.customIntervalMonths;
+    if (months === 1) return 'Monthly';
+    if (months === 12) return 'Yearly';
+    return `Every ${months} Months`;
+  }
+  return FREQUENCY_OPTIONS[payment.frequency || 'monthly'] || 'Monthly';
+}
 
 export default function ScheduledPaymentsScreen() {
   const navigation = useNavigation<NavigationProp>();
@@ -382,7 +394,7 @@ export default function ScheduledPaymentsScreen() {
               )}
               <View style={[styles.frequencyBadge, { backgroundColor: `${colors.primary}20` }]}>
                 <Text style={[styles.frequencyText, { color: colors.primary }]}>
-                  {FREQUENCY_OPTIONS[payment.frequency || 'monthly'] || 'Monthly'}
+                  {getFrequencyLabel(payment)}
                 </Text>
               </View>
             </View>
@@ -681,7 +693,7 @@ export default function ScheduledPaymentsScreen() {
                         {category && ` • ${category.name}`}
                         {payment?.frequency && payment.frequency !== 'monthly' && (
                           <Text style={{ color: colors.primary }}>
-                            {' '}• {FREQUENCY_OPTIONS[payment.frequency] || payment.frequency}
+                            {' '}• {getFrequencyLabel(payment)}
                           </Text>
                         )}
                       </Text>

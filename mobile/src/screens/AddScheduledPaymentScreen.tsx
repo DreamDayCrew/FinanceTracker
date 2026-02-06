@@ -36,6 +36,9 @@ export default function AddScheduledPaymentScreen() {
   const [paymentType, setPaymentType] = useState<'regular' | 'credit_card_bill'>('regular');
   const [creditCardAccountId, setCreditCardAccountId] = useState<number | null>(null);
   const [showCreditCardPicker, setShowCreditCardPicker] = useState(false);
+  const [frequency, setFrequency] = useState<string>('monthly');
+  const [customIntervalMonths, setCustomIntervalMonths] = useState('');
+  const [showFrequencyPicker, setShowFrequencyPicker] = useState(false);
 
   const { data: categories } = useQuery({
     queryKey: ['/api/categories'],
@@ -84,6 +87,10 @@ export default function AddScheduledPaymentScreen() {
         setAffectAccountBalance(payment.affectAccountBalance ?? true);
         setPaymentType((payment.paymentType as 'regular' | 'credit_card_bill') || 'regular');
         setCreditCardAccountId(payment.creditCardAccountId || null);
+        setFrequency(payment.frequency || 'monthly');
+        if (payment.customIntervalMonths) {
+          setCustomIntervalMonths(payment.customIntervalMonths.toString());
+        }
         
         // If it's a credit card bill, auto-populate billing date and name
         if (payment.paymentType === 'credit_card_bill' && payment.creditCardAccountId) {
@@ -198,9 +205,23 @@ export default function AddScheduledPaymentScreen() {
       }
     }
 
+    if (frequency === 'custom') {
+      const interval = parseInt(customIntervalMonths);
+      if (!customIntervalMonths || isNaN(interval) || interval < 1 || interval > 60) {
+        Toast.show({
+          type: 'error',
+          text1: 'Validation Error',
+          text2: 'Custom interval must be between 1 and 60 months',
+          position: 'bottom',
+          visibilityTime: 3000,
+        });
+        return;
+      }
+    }
+
     mutation.mutate({
       name: name.trim(),
-      amount: amount || undefined, // Send undefined for empty amount (auto-calculate)
+      amount: amount || undefined,
       dueDateType,
       dueDate: dueDateType === 'fixed_day' ? parseInt(dueDate) : null,
       notes: notes.trim() || null,
@@ -211,6 +232,8 @@ export default function AddScheduledPaymentScreen() {
       affectAccountBalance,
       paymentType,
       creditCardAccountId: paymentType === 'credit_card_bill' ? creditCardAccountId : null,
+      frequency,
+      customIntervalMonths: frequency === 'custom' ? parseInt(customIntervalMonths) : null,
     });
   };
 
@@ -424,6 +447,84 @@ export default function AddScheduledPaymentScreen() {
             Payment will be scheduled on the same day as your salary (as per your salary profile settings).
             This will affect only from next month's payment onwards.
           </Text>
+        </View>
+      )}
+
+      <View style={styles.field}>
+        <Text style={[styles.label, { color: colors.textMuted }]}>Payment Frequency</Text>
+        <TouchableOpacity
+          style={[styles.dropdownButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setShowFrequencyPicker(!showFrequencyPicker)}
+        >
+          <Ionicons name="repeat-outline" size={20} color={colors.textMuted} />
+          <Text style={[styles.dropdownText, { color: colors.text }]}>
+            {frequency === 'monthly' ? 'Every Month' :
+             frequency === 'quarterly' ? 'Every 3 Months' :
+             frequency === 'half_yearly' ? 'Every 6 Months' :
+             frequency === 'yearly' ? 'Every Year' :
+             frequency === 'one_time' ? 'One Time' :
+             frequency === 'custom' && customIntervalMonths ? `Every ${customIntervalMonths} Months` :
+             'Custom Interval'}
+          </Text>
+          <Ionicons name={showFrequencyPicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+        {showFrequencyPicker && (
+          <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {[
+              { value: 'monthly', label: 'Every Month', desc: 'Rent, subscriptions, etc.' },
+              { value: 'quarterly', label: 'Every 3 Months', desc: 'Quarterly bills' },
+              { value: 'half_yearly', label: 'Every 6 Months', desc: 'Semi-annual payments' },
+              { value: 'yearly', label: 'Every Year', desc: 'Annual renewals' },
+              { value: 'custom', label: 'Custom Interval', desc: 'Set your own interval in months' },
+              { value: 'one_time', label: 'One Time', desc: 'Single payment only' },
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[
+                  styles.dropdownItem,
+                  frequency === opt.value && { backgroundColor: `${colors.primary}15` }
+                ]}
+                onPress={() => { 
+                  setFrequency(opt.value); 
+                  if (opt.value !== 'custom') setCustomIntervalMonths('');
+                  setShowFrequencyPicker(false); 
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.dropdownItemText, { color: frequency === opt.value ? colors.primary : colors.text }]}>
+                    {opt.label}
+                  </Text>
+                  <Text style={[styles.dropdownItemSubtext, { color: colors.textMuted }]}>
+                    {opt.desc}
+                  </Text>
+                </View>
+                {frequency === opt.value && (
+                  <Ionicons name="checkmark" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+
+      {frequency === 'custom' && (
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>Repeat Every (Months)</Text>
+          <View style={[styles.infoBox, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 8 }]}>
+            <Ionicons name="information-circle-outline" size={20} color={colors.primary} style={styles.infoIcon} />
+            <Text style={[styles.infoText, { color: colors.textMuted }]}>
+              E.g., enter 5 for Netflix 5-month plan, 3 for ACT quarterly, 8 for an 8-month subscription.
+            </Text>
+          </View>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+            placeholder="e.g., 3, 5, 8"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="numeric"
+            maxLength={2}
+            value={customIntervalMonths}
+            onChangeText={setCustomIntervalMonths}
+          />
         </View>
       )}
 

@@ -1316,6 +1316,19 @@ export class DatabaseStorage implements IStorage {
         case 'yearly':
           shouldCreate = startMonth ? month === startMonth : month === 1;
           break;
+        case 'custom':
+          if (payment.customIntervalMonths && payment.customIntervalMonths > 0) {
+            const interval = payment.customIntervalMonths;
+            const refMonth = startMonth || ((payment.createdAt instanceof Date ? payment.createdAt : new Date(payment.createdAt)).getMonth() + 1);
+            // Check if the current month falls on the custom interval cycle
+            const monthDiff = ((month - refMonth) % 12 + 12) % 12;
+            const yearDiff = year - (payment.createdAt instanceof Date ? payment.createdAt : new Date(payment.createdAt)).getFullYear();
+            const totalMonthsDiff = yearDiff * 12 + (month - refMonth);
+            shouldCreate = totalMonthsDiff >= 0 && totalMonthsDiff % interval === 0;
+          } else {
+            shouldCreate = true; // fallback to monthly if no interval set
+          }
+          break;
         case 'one_time':
           shouldCreate = false;
           break;

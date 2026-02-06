@@ -72,6 +72,7 @@ export interface ScheduledPayment {
   accountId: number | null;
   creditCardAccountId?: number | null;
   frequency?: string | null;
+  customIntervalMonths?: number | null;
   startMonth?: number | null;
   status: 'active' | 'inactive';
   notes: string | null;
@@ -160,6 +161,7 @@ export interface InsertScheduledPayment {
   dueDate: number;
   categoryId?: number | null;
   frequency?: string;
+  customIntervalMonths?: number | null;
   startMonth?: number | null;
   status?: 'active' | 'inactive';
   notes?: string | null;
