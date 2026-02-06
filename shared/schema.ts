@@ -237,7 +237,7 @@ export const insertScheduledPaymentSchema = createInsertSchema(scheduledPayments
   accountId: z.union([z.number(), z.null()]).optional(),
   frequency: z.enum(["monthly", "quarterly", "half_yearly", "yearly", "one_time", "custom"]).optional(),
   customIntervalMonths: z.union([z.number().min(1).max(60), z.null()]).optional(),
-  startMonth: z.number().min(1).max(12).optional(),
+  startMonth: z.union([z.number().min(1).max(12), z.null()]).optional(),
   status: z.enum(["active", "inactive"]).optional(),
   notes: z.union([z.string(), z.null()]).optional(),
 }).refine(

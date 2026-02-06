@@ -39,6 +39,8 @@ export default function AddScheduledPaymentScreen() {
   const [frequency, setFrequency] = useState<string>('monthly');
   const [customIntervalMonths, setCustomIntervalMonths] = useState('');
   const [showFrequencyPicker, setShowFrequencyPicker] = useState(false);
+  const [startMonth, setStartMonth] = useState<number | null>(null);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
 
   const { data: categories } = useQuery({
     queryKey: ['/api/categories'],
@@ -90,6 +92,9 @@ export default function AddScheduledPaymentScreen() {
         setFrequency(payment.frequency || 'monthly');
         if (payment.customIntervalMonths) {
           setCustomIntervalMonths(payment.customIntervalMonths.toString());
+        }
+        if (payment.startMonth) {
+          setStartMonth(payment.startMonth);
         }
         
         // If it's a credit card bill, auto-populate billing date and name
@@ -219,6 +224,18 @@ export default function AddScheduledPaymentScreen() {
       }
     }
 
+    const needsStartMonth = frequency === 'yearly' || frequency === 'quarterly' || frequency === 'half_yearly' || frequency === 'custom';
+    if (needsStartMonth && !startMonth) {
+      Toast.show({
+        type: 'error',
+        text1: 'Missing Month',
+        text2: frequency === 'yearly' ? 'Please select which month this payment is due' : 'Please select the starting month for this payment cycle',
+        position: 'bottom',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+
     mutation.mutate({
       name: name.trim(),
       amount: amount || undefined,
@@ -234,6 +251,7 @@ export default function AddScheduledPaymentScreen() {
       creditCardAccountId: paymentType === 'credit_card_bill' ? creditCardAccountId : null,
       frequency,
       customIntervalMonths: frequency === 'custom' ? parseInt(customIntervalMonths) : null,
+      startMonth: needsStartMonth ? startMonth : null,
     });
   };
 
@@ -487,6 +505,10 @@ export default function AddScheduledPaymentScreen() {
                 onPress={() => { 
                   setFrequency(opt.value); 
                   if (opt.value !== 'custom') setCustomIntervalMonths('');
+                  if (opt.value === 'monthly' || opt.value === 'one_time') {
+                    setStartMonth(null);
+                    setShowMonthPicker(false);
+                  }
                   setShowFrequencyPicker(false); 
                 }}
               >
@@ -525,6 +547,78 @@ export default function AddScheduledPaymentScreen() {
             value={customIntervalMonths}
             onChangeText={setCustomIntervalMonths}
           />
+        </View>
+      )}
+
+      {(frequency === 'yearly' || frequency === 'quarterly' || frequency === 'half_yearly' || frequency === 'custom') && (
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>
+            {frequency === 'yearly' ? 'Payment Month' :
+             frequency === 'quarterly' ? 'Starting Month (repeats every 3 months)' :
+             frequency === 'half_yearly' ? 'Starting Month (repeats every 6 months)' :
+             'Starting Month'}
+          </Text>
+          <View style={[styles.infoBox, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 8 }]}>
+            <Ionicons name="information-circle-outline" size={20} color={colors.primary} style={styles.infoIcon} />
+            <Text style={[styles.infoText, { color: colors.textMuted }]}>
+              {frequency === 'yearly'
+                ? 'Select the month when this payment is due each year. E.g., October for Prime membership.'
+                : frequency === 'quarterly'
+                ? 'Select the first month of your cycle. Payments will repeat every 3 months from this month.'
+                : frequency === 'half_yearly'
+                ? 'Select the first month of your cycle. Payments will repeat every 6 months from this month.'
+                : 'Select the first month when this payment starts. It will repeat based on your custom interval.'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.dropdownButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setShowMonthPicker(!showMonthPicker)}
+          >
+            <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+            <Text style={[styles.dropdownText, { color: startMonth ? colors.text : colors.textMuted, flex: 1 }]}>
+              {startMonth
+                ? ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][startMonth - 1]
+                : 'Select Month'}
+            </Text>
+            <Ionicons name={showMonthPicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+          {showMonthPicker && (
+            <View style={[styles.monthGrid, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month, idx) => (
+                <TouchableOpacity
+                  key={month}
+                  style={[
+                    styles.monthChip,
+                    { borderColor: startMonth === idx + 1 ? colors.primary : colors.border },
+                    startMonth === idx + 1 && { backgroundColor: colors.primary + '18' },
+                  ]}
+                  onPress={() => {
+                    setStartMonth(idx + 1);
+                    setShowMonthPicker(false);
+                  }}
+                >
+                  <Text style={[
+                    styles.monthChipText,
+                    { color: startMonth === idx + 1 ? colors.primary : colors.text },
+                    startMonth === idx + 1 && { fontWeight: '700' },
+                  ]}>
+                    {month}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {startMonth && frequency !== 'yearly' && (
+            <Text style={[styles.monthHint, { color: colors.textMuted }]}>
+              {frequency === 'quarterly'
+                ? `Payments in: ${[startMonth, ((startMonth - 1 + 3) % 12) + 1, ((startMonth - 1 + 6) % 12) + 1, ((startMonth - 1 + 9) % 12) + 1].map(m => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]).join(', ')}`
+                : frequency === 'half_yearly'
+                ? `Payments in: ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][startMonth - 1]} & ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][((startMonth - 1 + 6) % 12)]}`
+                : frequency === 'custom' && customIntervalMonths
+                ? `Starting from ${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][startMonth - 1]}, every ${customIntervalMonths} months`
+                : ''}
+            </Text>
+          )}
         </View>
       )}
 
@@ -797,5 +891,30 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  monthGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  monthChip: {
+    width: '22%',
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  monthChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  monthHint: {
+    fontSize: 11,
+    marginTop: 6,
+    fontStyle: 'italic',
   },
 });
