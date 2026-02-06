@@ -451,7 +451,7 @@ export default function DashboardScreen() {
               <View style={styles.forecastMsgRow}>
                 <Ionicons name="information-circle-outline" size={13} color={colors.textMuted} />
                 <Text style={[styles.forecastMsgText, { color: colors.textMuted }]}>
-                  Salary on {forecast.salary[0].creditDay}{getOrdinalSuffix(forecast.salary[0].creditDay)} {forecast.monthLabel.split(' ')[0]}
+                  Based on current month salary credited on {forecast.salary[0].creditDay}{getOrdinalSuffix(forecast.salary[0].creditDay)}
                   {forecast.salary[0].bankName ? ` via ${forecast.salary[0].bankName}` : ''}
                 </Text>
               </View>
