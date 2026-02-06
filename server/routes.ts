@@ -2390,6 +2390,184 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/next-month-forecast", authenticateToken, async (req, res) => {
+    try {
+      const userId = req.user!.userId;
+      const now = new Date();
+      let nextMonth = now.getMonth() + 2;
+      let nextYear = now.getFullYear();
+      if (nextMonth > 12) {
+        nextMonth = 1;
+        nextYear++;
+      }
+
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthLabel = `${monthNames[nextMonth - 1]} ${nextYear}`;
+
+      const salaryProfile = await storage.getSalaryProfile(userId);
+      const salaryItems: any[] = [];
+      let totalIncome = 0;
+
+      if (salaryProfile && salaryProfile.isActive && salaryProfile.monthlyAmount) {
+        const payday = getPaydayForMonth(
+          nextYear,
+          nextMonth,
+          salaryProfile.paydayRule || 'last_working_day',
+          salaryProfile.fixedDay,
+          salaryProfile.weekdayPreference,
+        );
+        const amount = parseFloat(salaryProfile.monthlyAmount);
+        let accountName = 'Salary Account';
+        let bankName = '';
+        if (salaryProfile.accountId) {
+          const accounts = await storage.getAllAccounts(userId);
+          const acc = accounts.find(a => a.id === salaryProfile.accountId);
+          if (acc) {
+            accountName = acc.name;
+            bankName = acc.bankName || '';
+          }
+        }
+        salaryItems.push({
+          profileId: salaryProfile.id,
+          accountName,
+          bankName,
+          amount,
+          creditDate: payday.toISOString(),
+          creditDay: payday.getDate(),
+        });
+        totalIncome += amount;
+      }
+
+      const allPayments = await storage.getAllScheduledPayments(userId);
+      const activePayments = allPayments.filter(p => p.status === 'active');
+
+      const isPaymentDueNextMonth = (payment: any): boolean => {
+        const frequency = payment.frequency || 'monthly';
+        const startMonth = payment.startMonth;
+
+        switch (frequency) {
+          case 'monthly': return true;
+          case 'quarterly': {
+            if (startMonth) {
+              const quarterMonths = [startMonth];
+              for (let i = 1; i < 4; i++) {
+                quarterMonths.push(((startMonth - 1 + i * 3) % 12) + 1);
+              }
+              return quarterMonths.includes(nextMonth);
+            }
+            return [1, 4, 7, 10].includes(nextMonth);
+          }
+          case 'half_yearly': {
+            if (startMonth) {
+              return nextMonth === startMonth || nextMonth === ((startMonth + 5) % 12) + 1;
+            }
+            return nextMonth === 1 || nextMonth === 7;
+          }
+          case 'yearly':
+            return startMonth ? nextMonth === startMonth : nextMonth === 1;
+          case 'custom': {
+            if (payment.customIntervalMonths && payment.customIntervalMonths > 0) {
+              const interval = payment.customIntervalMonths;
+              const refMonth = startMonth || ((payment.createdAt instanceof Date ? payment.createdAt : new Date(payment.createdAt)).getMonth() + 1);
+              const refYear = (payment.createdAt instanceof Date ? payment.createdAt : new Date(payment.createdAt)).getFullYear();
+              const totalMonthsDiff = (nextYear - refYear) * 12 + (nextMonth - refMonth);
+              return totalMonthsDiff >= 0 && totalMonthsDiff % interval === 0;
+            }
+            return true;
+          }
+          case 'one_time': {
+            if (startMonth) {
+              const createdYear = (payment.createdAt instanceof Date ? payment.createdAt : new Date(payment.createdAt)).getFullYear();
+              return nextMonth === startMonth && nextYear >= createdYear;
+            }
+            return false;
+          }
+          default: return true;
+        }
+      };
+
+      const scheduledPaymentItems: any[] = [];
+      let totalScheduled = 0;
+      for (const p of activePayments) {
+        if (p.paymentType === 'credit_card_bill') continue;
+        if (!isPaymentDueNextMonth(p)) continue;
+        const amount = parseFloat(p.amount || '0');
+        const freq = p.frequency || 'monthly';
+        const freqLabel = freq === 'monthly' ? 'Monthly' : freq === 'quarterly' ? 'Quarterly' : freq === 'half_yearly' ? 'Half Yearly' : freq === 'yearly' ? 'Yearly' : freq === 'custom' ? 'Custom' : '';
+        scheduledPaymentItems.push({
+          id: p.id,
+          name: p.name,
+          amount,
+          dueDate: p.dueDate,
+          subLabel: freqLabel,
+        });
+        totalScheduled += amount;
+      }
+
+      const loans = await storage.getAllLoans(userId);
+      const activeLoans = loans.filter(l => l.status === 'active');
+      const loanItems: any[] = [];
+      let totalLoans = 0;
+      for (const loan of activeLoans) {
+        const installments = await storage.getLoanInstallments(loan.id);
+        const nextInstallment = installments.find(inst => {
+          const d = new Date(inst.dueDate);
+          return d.getMonth() + 1 === nextMonth && d.getFullYear() === nextYear;
+        });
+        const amount = nextInstallment ? parseFloat(nextInstallment.emiAmount) : parseFloat(loan.emiAmount || '0');
+        const typeLabel = loan.type === 'home_loan' ? 'Home Loan' : loan.type === 'personal_loan' ? 'Personal Loan' : loan.type === 'credit_card_loan' ? 'CC Loan' : loan.type === 'item_emi' ? 'Item EMI' : 'Loan';
+        loanItems.push({
+          id: loan.id,
+          name: loan.name,
+          amount,
+          dueDate: loan.emiDay,
+          subLabel: `${typeLabel}${loan.lenderName ? ` · ${loan.lenderName}` : ''}`,
+        });
+        totalLoans += amount;
+      }
+
+      const allInsurances = await storage.getAllInsurances(userId);
+      const activeInsurances = allInsurances.filter(i => i.status === 'active');
+      const insuranceItems: any[] = [];
+      let totalInsurance = 0;
+      for (const ins of activeInsurances) {
+        const premiums = ins.premiums || [];
+        const nextPremium = premiums.find((p: any) => {
+          const d = new Date(p.dueDate);
+          return d.getMonth() + 1 === nextMonth && d.getFullYear() === nextYear && p.status !== 'paid';
+        });
+        if (nextPremium) {
+          const amount = parseFloat(nextPremium.amount);
+          const typeLabel = ins.type === 'health' ? 'Health' : ins.type === 'life' ? 'Life' : ins.type === 'vehicle' ? 'Vehicle' : ins.type === 'home' ? 'Home' : ins.type === 'term' ? 'Term' : 'Insurance';
+          insuranceItems.push({
+            id: ins.id,
+            name: ins.name,
+            amount,
+            dueDate: new Date(nextPremium.dueDate).getDate(),
+            subLabel: `${typeLabel}${ins.providerName ? ` · ${ins.providerName}` : ''}`,
+          });
+          totalInsurance += amount;
+        }
+      }
+
+      const totalOutflow = totalScheduled + totalLoans + totalInsurance;
+
+      res.json({
+        monthLabel,
+        salary: salaryItems,
+        scheduledPayments: scheduledPaymentItems.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
+        loans: loanItems.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
+        insurance: insuranceItems.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
+        totalIncome,
+        totalOutflow,
+        net: totalIncome - totalOutflow,
+      });
+    } catch (error) {
+      console.error("Error fetching next month forecast:", error);
+      res.status(500).json({ error: "Failed to fetch next month forecast" });
+    }
+  });
+
   // Get credit card billing cycle spending
   app.get("/api/credit-card-spending", authenticateToken, async (req, res) => {
     try {

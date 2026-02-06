@@ -173,6 +173,32 @@ export interface DashboardSummary {
   lastTransactions: Transaction[];
 }
 
+export interface NextMonthForecastItem {
+  id: number;
+  name: string;
+  amount: number;
+  dueDate: number | null;
+  subLabel?: string;
+}
+
+export interface NextMonthForecast {
+  monthLabel: string;
+  salary: Array<{
+    profileId: number;
+    accountName: string;
+    bankName: string;
+    amount: number;
+    creditDate: string;
+    creditDay: number;
+  }>;
+  scheduledPayments: NextMonthForecastItem[];
+  loans: NextMonthForecastItem[];
+  insurance: NextMonthForecastItem[];
+  totalIncome: number;
+  totalOutflow: number;
+  net: number;
+}
+
 export interface InsertAccount {
   name: string;
   type: 'bank' | 'credit_card' | 'debit_card';

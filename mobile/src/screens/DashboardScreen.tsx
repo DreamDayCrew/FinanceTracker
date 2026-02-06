@@ -11,7 +11,7 @@ import { FABButton } from '../components/FABButton';
 import { useState, useCallback, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { BillItem } from '../lib/types';
+import { BillItem, NextMonthForecast, NextMonthForecastItem } from '../lib/types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -41,9 +41,17 @@ export default function DashboardScreen() {
     queryFn: api.getDashboardSummary,
   });
 
+  const { data: forecast } = useQuery({
+    queryKey: ['/api/next-month-forecast'],
+    queryFn: api.getNextMonthForecast,
+  });
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await queryClient.refetchQueries({ queryKey: ['/api/dashboard-summary'] });
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: ['/api/dashboard-summary'] }),
+      queryClient.refetchQueries({ queryKey: ['/api/next-month-forecast'] }),
+    ]);
     setRefreshing(false);
   }, [queryClient]);
 
@@ -395,6 +403,133 @@ export default function DashboardScreen() {
             </View>
           </View>
         </View>
+
+        {/* ===== Next Month Plan ===== */}
+        {forecast && (
+          <View style={[styles.card, { backgroundColor: colors.card }]}>
+            <View style={styles.cardHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={[styles.forecastIconWrap, { backgroundColor: '#3b82f6' + '15' }]}>
+                  <Ionicons name="calendar-outline" size={16} color="#3b82f6" />
+                </View>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>{forecast.monthLabel} Plan</Text>
+              </View>
+            </View>
+
+            {forecast.salary.length > 0 && (
+              <View style={styles.forecastSection}>
+                <View style={styles.forecastSectionHeader}>
+                  <Ionicons name="wallet-outline" size={14} color="#10b981" />
+                  <Text style={[styles.forecastSectionTitle, { color: '#10b981' }]}>Salary Income</Text>
+                </View>
+                {forecast.salary.map((s) => (
+                  <View key={s.profileId} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
+                    <View style={[styles.forecastDot, { backgroundColor: '#10b981' }]} />
+                    <View style={styles.forecastRowInfo}>
+                      <Text style={[styles.forecastRowName, { color: colors.text }]}>{s.accountName}</Text>
+                      <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
+                        {s.bankName ? `${s.bankName} · ` : ''}Credit: {s.creditDay}{getOrdinalSuffix(s.creditDay)} {forecast.monthLabel.split(' ')[0]}
+                      </Text>
+                    </View>
+                    <Text style={[styles.forecastRowAmt, { color: '#10b981' }]}>+{formatCurrency(s.amount)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {forecast.scheduledPayments.length > 0 && (
+              <View style={styles.forecastSection}>
+                <View style={styles.forecastSectionHeader}>
+                  <Ionicons name="repeat-outline" size={14} color="#6366f1" />
+                  <Text style={[styles.forecastSectionTitle, { color: '#6366f1' }]}>Scheduled Payments</Text>
+                  <Text style={[styles.forecastSectionCount, { color: colors.textMuted }]}>({forecast.scheduledPayments.length})</Text>
+                </View>
+                {forecast.scheduledPayments.map((item) => (
+                  <View key={`sp-${item.id}`} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
+                    <View style={[styles.forecastDot, { backgroundColor: '#6366f1' }]} />
+                    <View style={styles.forecastRowInfo}>
+                      <Text style={[styles.forecastRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                      <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
+                        {item.subLabel}{item.dueDate ? ` · Due: ${item.dueDate}${getOrdinalSuffix(item.dueDate)}` : ''}
+                      </Text>
+                    </View>
+                    <Text style={[styles.forecastRowAmt, { color: '#ef4444' }]}>-{formatCurrency(item.amount)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {forecast.loans.length > 0 && (
+              <View style={styles.forecastSection}>
+                <View style={styles.forecastSectionHeader}>
+                  <Ionicons name="cash-outline" size={14} color="#f59e0b" />
+                  <Text style={[styles.forecastSectionTitle, { color: '#f59e0b' }]}>Loan EMIs</Text>
+                  <Text style={[styles.forecastSectionCount, { color: colors.textMuted }]}>({forecast.loans.length})</Text>
+                </View>
+                {forecast.loans.map((item) => (
+                  <View key={`loan-${item.id}`} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
+                    <View style={[styles.forecastDot, { backgroundColor: '#f59e0b' }]} />
+                    <View style={styles.forecastRowInfo}>
+                      <Text style={[styles.forecastRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                      <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
+                        {item.subLabel}{item.dueDate ? ` · Due: ${item.dueDate}${getOrdinalSuffix(item.dueDate)}` : ''}
+                      </Text>
+                    </View>
+                    <Text style={[styles.forecastRowAmt, { color: '#ef4444' }]}>-{formatCurrency(item.amount)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {forecast.insurance.length > 0 && (
+              <View style={styles.forecastSection}>
+                <View style={styles.forecastSectionHeader}>
+                  <Ionicons name="shield-checkmark-outline" size={14} color="#8b5cf6" />
+                  <Text style={[styles.forecastSectionTitle, { color: '#8b5cf6' }]}>Insurance Premiums</Text>
+                  <Text style={[styles.forecastSectionCount, { color: colors.textMuted }]}>({forecast.insurance.length})</Text>
+                </View>
+                {forecast.insurance.map((item) => (
+                  <View key={`ins-${item.id}`} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
+                    <View style={[styles.forecastDot, { backgroundColor: '#8b5cf6' }]} />
+                    <View style={styles.forecastRowInfo}>
+                      <Text style={[styles.forecastRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                      <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
+                        {item.subLabel}{item.dueDate ? ` · Due: ${item.dueDate}${getOrdinalSuffix(item.dueDate)}` : ''}
+                      </Text>
+                    </View>
+                    <Text style={[styles.forecastRowAmt, { color: '#ef4444' }]}>-{formatCurrency(item.amount)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {forecast.salary.length === 0 && forecast.scheduledPayments.length === 0 && forecast.loans.length === 0 && forecast.insurance.length === 0 && (
+              <View style={styles.emptyState}>
+                <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
+                <Text style={[styles.emptyText, { color: colors.textMuted }]}>No planned items for {forecast.monthLabel}</Text>
+              </View>
+            )}
+
+            {(forecast.totalIncome > 0 || forecast.totalOutflow > 0) && (
+              <View style={[styles.forecastFooter, { borderTopColor: colors.border }]}>
+                <View style={styles.forecastFooterRow}>
+                  <Text style={[styles.forecastFooterLabel, { color: colors.textMuted }]}>Projected Income</Text>
+                  <Text style={[styles.forecastFooterValue, { color: '#10b981' }]}>+{formatCurrency(forecast.totalIncome)}</Text>
+                </View>
+                <View style={styles.forecastFooterRow}>
+                  <Text style={[styles.forecastFooterLabel, { color: colors.textMuted }]}>Projected Outflow</Text>
+                  <Text style={[styles.forecastFooterValue, { color: '#ef4444' }]}>-{formatCurrency(forecast.totalOutflow)}</Text>
+                </View>
+                <View style={[styles.forecastFooterRow, styles.forecastNetRow]}>
+                  <Text style={[styles.forecastNetLabel, { color: colors.text }]}>Estimated Balance</Text>
+                  <Text style={[styles.forecastNetValue, { color: forecast.net >= 0 ? '#10b981' : '#ef4444' }]}>
+                    {forecast.net >= 0 ? '+' : ''}{formatCurrency(forecast.net)}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* ===== Remaining Cards below main card ===== */}
 
@@ -1064,5 +1199,89 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+
+  forecastIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  forecastSection: {
+    marginBottom: 12,
+  },
+  forecastSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  forecastSectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  forecastSectionCount: {
+    fontSize: 11,
+  },
+  forecastRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    paddingLeft: 4,
+  },
+  forecastDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  forecastRowInfo: {
+    flex: 1,
+  },
+  forecastRowName: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  forecastRowMeta: {
+    fontSize: 10,
+    marginTop: 1,
+  },
+  forecastRowAmt: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  forecastFooter: {
+    borderTopWidth: 1,
+    paddingTop: 12,
+    marginTop: 4,
+    gap: 6,
+  },
+  forecastFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  forecastFooterLabel: {
+    fontSize: 12,
+  },
+  forecastFooterValue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  forecastNetRow: {
+    marginTop: 4,
+    paddingTop: 8,
+  },
+  forecastNetLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  forecastNetValue: {
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

@@ -1,6 +1,6 @@
 import type { 
   Account, Category, Transaction, Budget, ScheduledPayment, 
-  User, DashboardData, DashboardSummary, InsertAccount, InsertTransaction, 
+  User, DashboardData, DashboardSummary, NextMonthForecast, InsertAccount, InsertTransaction, 
   InsertBudget, InsertScheduledPayment, PaymentOccurrence,
   SavingsGoal, SavingsContribution, InsertSavingsGoal, InsertSavingsContribution,
   SalaryProfile, SalaryCycle, InsertSalaryProfile,
@@ -261,6 +261,7 @@ async function apiRequest<T>(
 export const api = {
   getDashboard: () => apiRequest<DashboardData>('/api/dashboard'),
   getDashboardSummary: () => apiRequest<DashboardSummary>('/api/dashboard-summary'),
+  getNextMonthForecast: () => apiRequest<NextMonthForecast>('/api/next-month-forecast'),
   
   getAccounts: () => apiRequest<Account[]>('/api/accounts'),
   createAccount: (data: InsertAccount) => 
