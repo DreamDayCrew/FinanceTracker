@@ -118,13 +118,45 @@ export interface DashboardData {
   upcomingBills: ScheduledPayment[];
 }
 
+export interface AccountBreakdown {
+  accountId: number;
+  accountName: string;
+  bankName: string;
+  amount: number;
+}
+
+export interface BillItem {
+  id: number;
+  name: string;
+  amount: number;
+  dueDate: number | null;
+  dueDateType?: string;
+  frequency?: string;
+  isPaid: boolean;
+  paidAmount: number;
+  status: string;
+  loanType?: string;
+  lenderName?: string;
+  insuranceType?: string;
+  providerName?: string;
+}
+
+export interface BillsDueDetails {
+  scheduledPayments: BillItem[];
+  creditCardBills: BillItem[];
+  loans: BillItem[];
+  insurance: BillItem[];
+}
+
 export interface DashboardSummary {
   monthLabel: string;
   totalIncome: number;
   totalSpent: number;
   totalSpentToday: number;
   billsDue: number;
-  upcomingBills: ScheduledPayment[];
+  incomeByAccount: AccountBreakdown[];
+  expenseByAccount: AccountBreakdown[];
+  billsDueDetails: BillsDueDetails;
   topCategories: Array<{ categoryId: number; name: string; total: number; color: string; icon: string }>;
   budgetUsage: Array<{ categoryId: number; categoryName: string; spent: number; budget: number; percentage: number }>;
   creditCardSpending: Array<{

@@ -2245,9 +2245,119 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const incomeByAccount = new Map<number, { accountId: number; accountName: string; bankName: string; amount: number }>();
+      for (const t of monthTransactions.filter(t => t.type === 'credit')) {
+        if (t.accountId && t.account) {
+          const existing = incomeByAccount.get(t.accountId) || {
+            accountId: t.accountId,
+            accountName: t.account.name,
+            bankName: t.account.bankName || '',
+            amount: 0,
+          };
+          existing.amount += parseFloat(t.amount);
+          incomeByAccount.set(t.accountId, existing);
+        }
+      }
+
+      const expenseByAccount = new Map<number, { accountId: number; accountName: string; bankName: string; amount: number }>();
+      for (const t of monthTransactions.filter(t => t.type === 'debit')) {
+        if (t.accountId && t.account) {
+          const existing = expenseByAccount.get(t.accountId) || {
+            accountId: t.accountId,
+            accountName: t.account.name,
+            bankName: t.account.bankName || '',
+            amount: 0,
+          };
+          existing.amount += parseFloat(t.amount);
+          expenseByAccount.set(t.accountId, existing);
+        }
+      }
+
+      const scheduledPaymentsBills = [];
+      const creditCardBills = [];
+      for (const p of activePayments) {
+        if (!isPaymentDueThisMonth(p)) continue;
+        const occurrences = await storage.getPaymentOccurrences({
+          scheduledPaymentId: p.id,
+          month: currentMonth,
+          year: currentYear,
+        });
+        const occurrence = occurrences.length > 0 ? occurrences[0] : null;
+        const isPaid = occurrence?.status === 'paid';
+        const paidAmount = occurrence?.paidAmount ? parseFloat(occurrence.paidAmount) : 0;
+
+        const billItem = {
+          id: p.id,
+          name: p.name,
+          amount: parseFloat(p.amount || '0'),
+          dueDate: p.dueDate,
+          dueDateType: p.dueDateType || 'fixed_day',
+          frequency: p.frequency || 'monthly',
+          isPaid,
+          paidAmount,
+          status: isPaid ? 'paid' : (p.dueDate && p.dueDate < today ? 'overdue' : 'pending'),
+        };
+
+        if (p.paymentType === 'credit_card_bill') {
+          creditCardBills.push(billItem);
+        } else {
+          scheduledPaymentsBills.push(billItem);
+        }
+      }
+
       const loans = await storage.getAllLoans(userId);
       const activeLoans = loans.filter(l => l.status === 'active');
       const totalEMI = activeLoans.reduce((sum, l) => sum + parseFloat(l.emiAmount || '0'), 0);
+
+      const loanBills = [];
+      for (const loan of activeLoans) {
+        const installments = await storage.getLoanInstallments(loan.id);
+        const currentInstallment = installments.find(inst => {
+          const d = new Date(inst.dueDate);
+          return d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
+        });
+        loanBills.push({
+          id: loan.id,
+          name: loan.name,
+          loanType: loan.type,
+          amount: currentInstallment ? parseFloat(currentInstallment.emiAmount) : parseFloat(loan.emiAmount || '0'),
+          dueDate: loan.emiDay,
+          isPaid: currentInstallment?.status === 'paid',
+          paidAmount: currentInstallment?.paidAmount ? parseFloat(currentInstallment.paidAmount) : 0,
+          status: currentInstallment?.status || (loan.emiDay && loan.emiDay < today ? 'overdue' : 'pending'),
+          lenderName: loan.lenderName || '',
+        });
+      }
+
+      const allInsurances = await storage.getAllInsurances(userId);
+      const activeInsurances = allInsurances.filter(i => i.status === 'active');
+      const insuranceBills = [];
+      for (const ins of activeInsurances) {
+        const premiums = ins.premiums || [];
+        const currentPremium = premiums.find((p: any) => {
+          const d = new Date(p.dueDate);
+          return d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
+        });
+        if (currentPremium) {
+          insuranceBills.push({
+            id: ins.id,
+            name: ins.name,
+            insuranceType: ins.type,
+            providerName: ins.providerName || '',
+            amount: parseFloat(currentPremium.amount),
+            dueDate: new Date(currentPremium.dueDate).getDate(),
+            isPaid: currentPremium.status === 'paid',
+            paidAmount: currentPremium.paidAmount ? parseFloat(currentPremium.paidAmount) : 0,
+            status: currentPremium.status || 'pending',
+          });
+        }
+      }
+
+      const totalBillsDue =
+        scheduledPaymentsBills.filter(b => !b.isPaid).reduce((s, b) => s + b.amount, 0) +
+        creditCardBills.filter(b => !b.isPaid).reduce((s, b) => s + b.amount, 0) +
+        loanBills.filter(b => !b.isPaid).reduce((s, b) => s + b.amount, 0) +
+        insuranceBills.filter(b => !b.isPaid).reduce((s, b) => s + b.amount, 0);
 
       const lastTransactions = await storage.getAllTransactions({ userId, limit: 5 });
 
@@ -2258,8 +2368,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalIncome,
         totalSpent,
         totalSpentToday,
-        billsDue,
-        upcomingBills,
+        billsDue: totalBillsDue,
+        incomeByAccount: Array.from(incomeByAccount.values()).sort((a, b) => b.amount - a.amount),
+        expenseByAccount: Array.from(expenseByAccount.values()).sort((a, b) => b.amount - a.amount),
+        billsDueDetails: {
+          scheduledPayments: scheduledPaymentsBills.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
+          creditCardBills: creditCardBills.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
+          loans: loanBills.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
+          insurance: insuranceBills.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
+        },
         topCategories,
         budgetUsage,
         creditCardSpending,
