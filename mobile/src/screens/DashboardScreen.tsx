@@ -22,7 +22,7 @@ type NavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList>
 >;
 
-type ActiveTab = 'income' | 'expense' | 'bills' | null;
+type ActiveTab = 'income' | 'expense' | 'bills';
 type BillsAccordion = 'scheduled' | 'creditCard' | 'loans' | 'insurance' | null;
 
 export default function DashboardScreen() {
@@ -32,8 +32,9 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const { resolvedTheme } = useTheme();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
-  const [activeTab, setActiveTab] = useState<ActiveTab>(null);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('income');
   const [billsAccordion, setBillsAccordion] = useState<BillsAccordion>(null);
+  const [hideBalance, setHideBalance] = useState(true);
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['/api/dashboard-summary'],
@@ -46,9 +47,9 @@ export default function DashboardScreen() {
     setRefreshing(false);
   }, [queryClient]);
 
-  const toggleTab = useCallback((tab: ActiveTab) => {
+  const switchTab = useCallback((tab: ActiveTab) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setActiveTab(prev => prev === tab ? null : tab);
+    setActiveTab(tab);
     if (tab !== 'bills') setBillsAccordion(null);
   }, []);
 
@@ -69,6 +70,17 @@ export default function DashboardScreen() {
   }
 
   const netBalance = summary.totalIncome - summary.totalSpent;
+  const spendRatio = summary.totalIncome > 0 ? summary.totalSpent / summary.totalIncome : 0;
+
+  const getOrdinalSuffix = (day: number) => {
+    if (day >= 11 && day <= 13) return 'th';
+    switch (day % 10) {
+      case 1: return 'st';
+      case 2: return 'nd';
+      case 3: return 'rd';
+      default: return 'th';
+    }
+  };
 
   const getLoanTypeLabel = (type?: string) => {
     switch (type) {
@@ -92,50 +104,41 @@ export default function DashboardScreen() {
     }
   };
 
+  const maskValue = (val: string) => hideBalance ? '\u2022\u2022\u2022\u2022\u2022\u2022' : val;
+
   const renderBillItem = (bill: BillItem, showSubLabel?: string) => {
     const statusColor = bill.isPaid ? '#10b981' : bill.status === 'overdue' ? '#ef4444' : '#f59e0b';
-    const statusIcon = bill.isPaid ? 'checkmark-circle' : bill.status === 'overdue' ? 'alert-circle' : 'time';
+    const statusIcon: keyof typeof Ionicons.glyphMap = bill.isPaid ? 'checkmark-circle' : bill.status === 'overdue' ? 'alert-circle' : 'time';
 
     return (
-      <View key={`bill-${bill.id}-${showSubLabel}`} style={[styles.billDetailRow, { borderBottomColor: colors.border }]} data-testid={`row-bill-${bill.id}`}>
-        <View style={[styles.billStatusIcon, { backgroundColor: statusColor + '15' }]}>
-          <Ionicons name={statusIcon} size={18} color={statusColor} />
-        </View>
+      <View key={`bill-${bill.id}-${showSubLabel}`} style={[styles.billDetailRow, { borderBottomColor: colors.border }]}>
+        <View style={[styles.billStatusDot, { backgroundColor: statusColor }]} />
         <View style={styles.billDetailInfo}>
           <Text style={[styles.billDetailName, { color: colors.text }]} numberOfLines={1}>{bill.name}</Text>
           <View style={styles.billMetaRow}>
             {showSubLabel ? (
               <Text style={[styles.billSubLabel, { color: colors.textMuted }]}>{showSubLabel}</Text>
             ) : null}
-            <Text style={[styles.billDueText, { color: colors.textMuted }]}>
-              {bill.dueDate ? `Due: ${bill.dueDate}${getOrdinalSuffix(bill.dueDate)}` : ''}
-            </Text>
+            {bill.dueDate ? (
+              <Text style={[styles.billDueText, { color: colors.textMuted }]}>
+                Due: {bill.dueDate}{getOrdinalSuffix(bill.dueDate)}
+              </Text>
+            ) : null}
           </View>
         </View>
         <View style={styles.billDetailRight}>
-          <Text style={[styles.billDetailAmt, { color: bill.isPaid ? '#10b981' : colors.text }]}>
+          <Text style={[styles.billDetailAmt, { color: colors.text }]}>
             {formatCurrency(bill.amount)}
           </Text>
-          {bill.isPaid ? (
-            <Text style={[styles.billPaidLabel, { color: '#10b981' }]}>Paid</Text>
-          ) : bill.status === 'overdue' ? (
-            <Text style={[styles.billPaidLabel, { color: '#ef4444' }]}>Overdue</Text>
-          ) : (
-            <Text style={[styles.billPaidLabel, { color: '#f59e0b' }]}>Pending</Text>
-          )}
+          <View style={[styles.statusBadge, { backgroundColor: statusColor + '18' }]}>
+            <Ionicons name={statusIcon} size={10} color={statusColor} />
+            <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+              {bill.isPaid ? 'Paid' : bill.status === 'overdue' ? 'Overdue' : 'Pending'}
+            </Text>
+          </View>
         </View>
       </View>
     );
-  };
-
-  const getOrdinalSuffix = (day: number) => {
-    if (day >= 11 && day <= 13) return 'th';
-    switch (day % 10) {
-      case 1: return 'st';
-      case 2: return 'nd';
-      case 3: return 'rd';
-      default: return 'th';
-    }
   };
 
   const renderAccordionSection = (
@@ -159,29 +162,23 @@ export default function DashboardScreen() {
           style={[styles.accordionHeader, { borderBottomColor: colors.border }]}
           onPress={() => toggleBillsAccordion(sectionKey)}
           activeOpacity={0.7}
-          data-testid={`button-accordion-${sectionKey}`}
         >
           <View style={[styles.accordionIconWrap, { backgroundColor: iconColor + '15' }]}>
-            <Ionicons name={icon} size={18} color={iconColor} />
+            <Ionicons name={icon} size={16} color={iconColor} />
           </View>
           <View style={styles.accordionTitleArea}>
             <Text style={[styles.accordionTitle, { color: colors.text }]}>{title}</Text>
             <Text style={[styles.accordionSubtitle, { color: colors.textMuted }]}>
-              {paidCount}/{items.length} paid
-              {pendingAmount > 0 ? ` \u00B7 ${formatCurrency(pendingAmount)} pending` : ''}
+              {paidCount}/{items.length} paid{pendingAmount > 0 ? ` \u00B7 ${formatCurrency(pendingAmount)} pending` : ''}
             </Text>
           </View>
           <View style={styles.accordionRight}>
             <Text style={[styles.accordionTotal, { color: colors.text }]}>{formatCurrency(totalAmount)}</Text>
-            <Ionicons
-              name={isOpen ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color={colors.textMuted}
-            />
+            <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
           </View>
         </TouchableOpacity>
         {isOpen && (
-          <View style={[styles.accordionContent, { backgroundColor: colors.background }]}>
+          <View style={styles.accordionContent}>
             {items.map(item => renderBillItem(item, subLabelFn ? subLabelFn(item) : undefined))}
           </View>
         )}
@@ -208,242 +205,198 @@ export default function DashboardScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={[styles.header, { backgroundColor: colors.card }]}>
-          <View>
-            <Text style={[styles.greeting, { color: colors.textMuted }]}>Welcome back,</Text>
-            <Text style={[styles.username, { color: colors.text }]}>{username || 'User'}</Text>
+        {/* ===== MAIN CARD ===== */}
+        <View style={[styles.mainCard, { backgroundColor: colors.card }]}>
+          {/* Main Card Header: Welcome + cycle badge + settings */}
+          <View style={styles.mainCardHeader}>
+            <View style={styles.mainCardHeaderLeft}>
+              <Text style={[styles.greeting, { color: colors.textMuted }]}>Welcome back,</Text>
+              <Text style={[styles.username, { color: colors.text }]}>{username || 'User'}</Text>
+            </View>
+            <View style={styles.mainCardHeaderRight}>
+              <View style={[styles.cycleBadge, { backgroundColor: colors.primary + '18' }]}>
+                <Text style={[styles.cycleBadgeText, { color: colors.primary }]}>{summary.monthLabel}</Text>
+              </View>
+              <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={styles.settingsBtn} data-testid="button-settings">
+                <Ionicons name="settings-outline" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={styles.headerRight}>
-            <Text style={[styles.monthBadge, { color: colors.primary, backgroundColor: colors.primary + '15' }]}>
-              {summary.monthLabel}
-            </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Settings')} data-testid="button-settings">
-              <Ionicons name="settings-outline" size={22} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-        </View>
 
-        {/* ===== INCOME / EXPENSE / BILLS DUE - Expandable Tab Cards ===== */}
-        <View style={styles.tabCardsContainer}>
-          {/* Income Tab */}
-          <TouchableOpacity
-            style={[
-              styles.tabCard,
-              { backgroundColor: colors.card },
-              activeTab === 'income' && { borderColor: '#10b981', borderWidth: 1.5 },
-            ]}
-            onPress={() => toggleTab('income')}
-            activeOpacity={0.8}
-            data-testid="button-tab-income"
-          >
-            <View style={[styles.tabIconWrap, { backgroundColor: '#10b981' + '18' }]}>
-              <Ionicons name="arrow-down-outline" size={18} color="#10b981" />
+          {/* Net Balance with eye toggle */}
+          <View style={styles.netBalanceSection}>
+            <View style={styles.netBalanceLabelRow}>
+              <Text style={[styles.netBalanceLabel, { color: colors.textMuted }]}>Net Balance</Text>
+              <TouchableOpacity onPress={() => setHideBalance(!hideBalance)} style={styles.eyeBtn} data-testid="button-toggle-balance">
+                <Ionicons name={hideBalance ? 'eye-off' : 'eye'} size={18} color={colors.textMuted} />
+              </TouchableOpacity>
             </View>
-            <Text style={[styles.tabLabel, { color: colors.textMuted }]}>Income</Text>
-            <Text style={[styles.tabValue, { color: '#10b981' }]} numberOfLines={1} data-testid="text-income">
-              {formatCurrency(summary.totalIncome)}
+            <Text style={[styles.netBalanceValue, { color: netBalance >= 0 ? '#10b981' : '#ef4444' }]} data-testid="text-net-balance">
+              {hideBalance ? '\u2022\u2022\u2022\u2022\u2022\u2022' : `${netBalance >= 0 ? '+' : ''}${formatCurrency(netBalance)}`}
             </Text>
-            <Ionicons
-              name={activeTab === 'income' ? 'chevron-up' : 'chevron-down'}
-              size={14}
-              color={colors.textMuted}
-              style={styles.tabChevron}
-            />
-          </TouchableOpacity>
-
-          {/* Expense Tab */}
-          <TouchableOpacity
-            style={[
-              styles.tabCard,
-              { backgroundColor: colors.card },
-              activeTab === 'expense' && { borderColor: '#ef4444', borderWidth: 1.5 },
-            ]}
-            onPress={() => toggleTab('expense')}
-            activeOpacity={0.8}
-            data-testid="button-tab-expense"
-          >
-            <View style={[styles.tabIconWrap, { backgroundColor: '#ef4444' + '18' }]}>
-              <Ionicons name="arrow-up-outline" size={18} color="#ef4444" />
-            </View>
-            <Text style={[styles.tabLabel, { color: colors.textMuted }]}>Spent</Text>
-            <Text style={[styles.tabValue, { color: '#ef4444' }]} numberOfLines={1} data-testid="text-spent">
-              {formatCurrency(summary.totalSpent)}
-            </Text>
-            <Ionicons
-              name={activeTab === 'expense' ? 'chevron-up' : 'chevron-down'}
-              size={14}
-              color={colors.textMuted}
-              style={styles.tabChevron}
-            />
-          </TouchableOpacity>
-
-          {/* Bills Due Tab */}
-          <TouchableOpacity
-            style={[
-              styles.tabCard,
-              { backgroundColor: colors.card },
-              activeTab === 'bills' && { borderColor: '#f59e0b', borderWidth: 1.5 },
-            ]}
-            onPress={() => toggleTab('bills')}
-            activeOpacity={0.8}
-            data-testid="button-tab-bills"
-          >
-            <View style={[styles.tabIconWrap, { backgroundColor: '#f59e0b' + '18' }]}>
-              <Ionicons name="receipt-outline" size={18} color="#f59e0b" />
-            </View>
-            <Text style={[styles.tabLabel, { color: colors.textMuted }]}>Bills Due</Text>
-            <Text style={[styles.tabValue, { color: '#f59e0b' }]} numberOfLines={1} data-testid="text-bills-due">
-              {formatCurrency(summary.billsDue)}
-            </Text>
-            <Ionicons
-              name={activeTab === 'bills' ? 'chevron-up' : 'chevron-down'}
-              size={14}
-              color={colors.textMuted}
-              style={styles.tabChevron}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* ===== Expanded Detail Card ===== */}
-        {activeTab === 'income' && (
-          <View style={[styles.detailCard, { backgroundColor: colors.card, borderColor: '#10b981', borderWidth: 1 }]}>
-            <View style={styles.detailCardHeader}>
-              <Text style={[styles.detailCardTitle, { color: '#10b981' }]}>Income Breakdown</Text>
-              <Text style={[styles.detailCardSub, { color: colors.textMuted }]}>{summary.monthLabel}</Text>
-            </View>
-            {summary.incomeByAccount && summary.incomeByAccount.length > 0 ? (
-              summary.incomeByAccount.map((acc) => (
-                <View key={acc.accountId} style={[styles.accountRow, { borderBottomColor: colors.border }]} data-testid={`row-income-account-${acc.accountId}`}>
-                  <View style={[styles.accountIcon, { backgroundColor: '#10b981' + '15' }]}>
-                    <Ionicons name="wallet-outline" size={18} color="#10b981" />
-                  </View>
-                  <View style={styles.accountInfo}>
-                    <Text style={[styles.accountName, { color: colors.text }]}>{acc.accountName}</Text>
-                    {acc.bankName ? <Text style={[styles.accountBank, { color: colors.textMuted }]}>{acc.bankName}</Text> : null}
-                  </View>
-                  <Text style={[styles.accountAmt, { color: '#10b981' }]}>+{formatCurrency(acc.amount)}</Text>
+            {!hideBalance && summary.totalIncome > 0 && (
+              <View style={styles.spendBarWrap}>
+                <View style={[styles.spendBarBg, { backgroundColor: colors.border }]}>
+                  <View
+                    style={[
+                      styles.spendBarFill,
+                      {
+                        width: `${Math.min(spendRatio * 100, 100)}%`,
+                        backgroundColor: spendRatio > 0.8 ? '#ef4444' : spendRatio > 0.6 ? '#f59e0b' : '#10b981',
+                      },
+                    ]}
+                  />
                 </View>
-              ))
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons name="information-circle-outline" size={24} color={colors.textMuted} />
-                <Text style={[styles.emptyText, { color: colors.textMuted }]}>No income recorded this month</Text>
+                <Text style={[styles.spendBarLabel, { color: colors.textMuted }]}>
+                  {Math.round(spendRatio * 100)}% spent \u00B7 Today: {formatCurrency(summary.totalSpentToday)}
+                </Text>
               </View>
             )}
           </View>
-        )}
 
-        {activeTab === 'expense' && (
-          <View style={[styles.detailCard, { backgroundColor: colors.card, borderColor: '#ef4444', borderWidth: 1 }]}>
-            <View style={styles.detailCardHeader}>
-              <Text style={[styles.detailCardTitle, { color: '#ef4444' }]}>Expense Breakdown</Text>
-              <Text style={[styles.detailCardSub, { color: colors.textMuted }]}>{summary.monthLabel}</Text>
+          {/* ===== SUB CARD with TABS ===== */}
+          <View style={[styles.subCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            {/* Tab Bar */}
+            <View style={[styles.tabContainer, { borderBottomColor: colors.border }]}>
+              <TouchableOpacity
+                style={[styles.tab, activeTab === 'income' && styles.activeTab]}
+                onPress={() => switchTab('income')}
+                data-testid="button-tab-income"
+              >
+                <Text style={[styles.tabText, { color: activeTab === 'income' ? colors.text : colors.textMuted }, activeTab === 'income' && styles.activeTabText]}>
+                  Income
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tab, activeTab === 'expense' && styles.activeTab]}
+                onPress={() => switchTab('expense')}
+                data-testid="button-tab-expense"
+              >
+                <Text style={[styles.tabText, { color: activeTab === 'expense' ? colors.text : colors.textMuted }, activeTab === 'expense' && styles.activeTabText]}>
+                  Expense
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tab, activeTab === 'bills' && styles.activeTab]}
+                onPress={() => switchTab('bills')}
+                data-testid="button-tab-bills"
+              >
+                <Text style={[styles.tabText, { color: activeTab === 'bills' ? colors.text : colors.textMuted }, activeTab === 'bills' && styles.activeTabText]}>
+                  Bills
+                </Text>
+              </TouchableOpacity>
             </View>
-            {summary.expenseByAccount && summary.expenseByAccount.length > 0 ? (
-              summary.expenseByAccount.map((acc) => (
-                <View key={acc.accountId} style={[styles.accountRow, { borderBottomColor: colors.border }]} data-testid={`row-expense-account-${acc.accountId}`}>
-                  <View style={[styles.accountIcon, { backgroundColor: '#ef4444' + '15' }]}>
-                    <Ionicons name="card-outline" size={18} color="#ef4444" />
+
+            {/* Tab Content */}
+            <View style={styles.tabContent}>
+              {activeTab === 'income' && (
+                <View style={styles.tabInner}>
+                  <View style={styles.tabSummaryRow}>
+                    <Text style={[styles.tabSummaryLabel, { color: colors.textMuted }]}>Total Income</Text>
+                    <Text style={[styles.tabSummaryValue, { color: '#10b981' }]} data-testid="text-income">
+                      {maskValue(`+${formatCurrency(summary.totalIncome)}`)}
+                    </Text>
                   </View>
-                  <View style={styles.accountInfo}>
-                    <Text style={[styles.accountName, { color: colors.text }]}>{acc.accountName}</Text>
-                    {acc.bankName ? <Text style={[styles.accountBank, { color: colors.textMuted }]}>{acc.bankName}</Text> : null}
-                  </View>
-                  <Text style={[styles.accountAmt, { color: '#ef4444' }]}>-{formatCurrency(acc.amount)}</Text>
+                  {summary.incomeByAccount && summary.incomeByAccount.length > 0 ? (
+                    summary.incomeByAccount.map((acc) => (
+                      <View key={acc.accountId} style={[styles.accountRow, { borderBottomColor: colors.border }]}>
+                        <View style={[styles.accountDot, { backgroundColor: '#10b981' }]} />
+                        <View style={styles.accountInfo}>
+                          <Text style={[styles.accountName, { color: colors.text }]}>{acc.accountName}</Text>
+                          {acc.bankName ? <Text style={[styles.accountBank, { color: colors.textMuted }]}>{acc.bankName}</Text> : null}
+                        </View>
+                        <Text style={[styles.accountAmt, { color: '#10b981' }]}>
+                          {maskValue(`+${formatCurrency(acc.amount)}`)}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={styles.emptyState}>
+                      <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
+                      <Text style={[styles.emptyText, { color: colors.textMuted }]}>No income this month</Text>
+                    </View>
+                  )}
                 </View>
-              ))
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons name="information-circle-outline" size={24} color={colors.textMuted} />
-                <Text style={[styles.emptyText, { color: colors.textMuted }]}>No expenses recorded this month</Text>
-              </View>
-            )}
-          </View>
-        )}
+              )}
 
-        {activeTab === 'bills' && (
-          <View style={[styles.detailCard, { backgroundColor: colors.card, borderColor: '#f59e0b', borderWidth: 1 }]}>
-            <View style={styles.detailCardHeader}>
-              <Text style={[styles.detailCardTitle, { color: '#f59e0b' }]}>Bills Due Report</Text>
-              <Text style={[styles.detailCardSub, { color: colors.textMuted }]}>
-                {totalPaidCount}/{totalBillsCount} paid
-              </Text>
+              {activeTab === 'expense' && (
+                <View style={styles.tabInner}>
+                  <View style={styles.tabSummaryRow}>
+                    <Text style={[styles.tabSummaryLabel, { color: colors.textMuted }]}>Total Spent</Text>
+                    <Text style={[styles.tabSummaryValue, { color: '#ef4444' }]} data-testid="text-spent">
+                      {maskValue(`-${formatCurrency(summary.totalSpent)}`)}
+                    </Text>
+                  </View>
+                  {summary.expenseByAccount && summary.expenseByAccount.length > 0 ? (
+                    summary.expenseByAccount.map((acc) => (
+                      <View key={acc.accountId} style={[styles.accountRow, { borderBottomColor: colors.border }]}>
+                        <View style={[styles.accountDot, { backgroundColor: '#ef4444' }]} />
+                        <View style={styles.accountInfo}>
+                          <Text style={[styles.accountName, { color: colors.text }]}>{acc.accountName}</Text>
+                          {acc.bankName ? <Text style={[styles.accountBank, { color: colors.textMuted }]}>{acc.bankName}</Text> : null}
+                        </View>
+                        <Text style={[styles.accountAmt, { color: '#ef4444' }]}>
+                          {maskValue(`-${formatCurrency(acc.amount)}`)}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={styles.emptyState}>
+                      <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
+                      <Text style={[styles.emptyText, { color: colors.textMuted }]}>No expenses this month</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {activeTab === 'bills' && (
+                <View style={styles.tabInner}>
+                  <View style={styles.tabSummaryRow}>
+                    <Text style={[styles.tabSummaryLabel, { color: colors.textMuted }]}>Bills Due</Text>
+                    <Text style={[styles.tabSummaryValue, { color: '#f59e0b' }]} data-testid="text-bills-due">
+                      {maskValue(formatCurrency(summary.billsDue))}
+                    </Text>
+                  </View>
+                  {totalBillsCount > 0 && (
+                    <Text style={[styles.billsSummaryMeta, { color: colors.textMuted }]}>
+                      {totalPaidCount}/{totalBillsCount} paid
+                    </Text>
+                  )}
+                  {totalBillsCount === 0 ? (
+                    <View style={styles.emptyState}>
+                      <Ionicons name="checkmark-circle-outline" size={24} color="#10b981" />
+                      <Text style={[styles.emptyText, { color: colors.textMuted }]}>No bills due this month</Text>
+                    </View>
+                  ) : (
+                    <>
+                      {renderAccordionSection(
+                        'Scheduled Payments', 'repeat-outline', '#6366f1', 'scheduled',
+                        billsDueDetails?.scheduledPayments || [],
+                        (item) => item.frequency === 'monthly' ? 'Monthly' : item.frequency === 'quarterly' ? 'Quarterly' : item.frequency === 'half_yearly' ? 'Half Yearly' : item.frequency === 'yearly' ? 'Yearly' : item.frequency === 'custom' ? 'Custom' : '',
+                      )}
+                      {renderAccordionSection(
+                        'Credit Card Bills', 'card-outline', '#ec4899', 'creditCard',
+                        billsDueDetails?.creditCardBills || [],
+                      )}
+                      {renderAccordionSection(
+                        'Loan EMIs', 'cash-outline', '#f59e0b', 'loans',
+                        billsDueDetails?.loans || [],
+                        (item) => `${getLoanTypeLabel(item.loanType)}${item.lenderName ? ` \u00B7 ${item.lenderName}` : ''}`,
+                      )}
+                      {renderAccordionSection(
+                        'Insurance Premiums', 'shield-checkmark-outline', '#8b5cf6', 'insurance',
+                        billsDueDetails?.insurance || [],
+                        (item) => `${getInsuranceTypeLabel(item.insuranceType)}${item.providerName ? ` \u00B7 ${item.providerName}` : ''}`,
+                      )}
+                    </>
+                  )}
+                </View>
+              )}
             </View>
-
-            {totalBillsCount === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="checkmark-circle-outline" size={32} color="#10b981" />
-                <Text style={[styles.emptyText, { color: colors.textMuted }]}>No bills due this month</Text>
-              </View>
-            ) : (
-              <>
-                {renderAccordionSection(
-                  'Scheduled Payments',
-                  'repeat-outline',
-                  '#6366f1',
-                  'scheduled',
-                  billsDueDetails?.scheduledPayments || [],
-                  (item) => item.frequency === 'monthly' ? 'Monthly' :
-                    item.frequency === 'quarterly' ? 'Quarterly' :
-                    item.frequency === 'half_yearly' ? 'Half Yearly' :
-                    item.frequency === 'yearly' ? 'Yearly' :
-                    item.frequency === 'custom' ? 'Custom' : '',
-                )}
-                {renderAccordionSection(
-                  'Credit Card Bills',
-                  'card-outline',
-                  '#ec4899',
-                  'creditCard',
-                  billsDueDetails?.creditCardBills || [],
-                )}
-                {renderAccordionSection(
-                  'Loan EMIs',
-                  'cash-outline',
-                  '#f59e0b',
-                  'loans',
-                  billsDueDetails?.loans || [],
-                  (item) => `${getLoanTypeLabel(item.loanType)}${item.lenderName ? ` \u00B7 ${item.lenderName}` : ''}`,
-                )}
-                {renderAccordionSection(
-                  'Insurance Premiums',
-                  'shield-checkmark-outline',
-                  '#8b5cf6',
-                  'insurance',
-                  billsDueDetails?.insurance || [],
-                  (item) => `${getInsuranceTypeLabel(item.insuranceType)}${item.providerName ? ` \u00B7 ${item.providerName}` : ''}`,
-                )}
-              </>
-            )}
           </View>
-        )}
-
-        {/* Net Balance Bar */}
-        <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <View style={styles.netRow}>
-            <Text style={[styles.netLabel, { color: colors.textMuted }]}>Net Balance</Text>
-            <Text style={[styles.netValue, { color: netBalance >= 0 ? '#10b981' : '#ef4444' }]} data-testid="text-net-balance">
-              {netBalance >= 0 ? '+' : ''}{formatCurrency(netBalance)}
-            </Text>
-          </View>
-          {summary.totalIncome > 0 && (
-            <View style={[styles.netProgressBg, { backgroundColor: colors.border }]}>
-              <View
-                style={[
-                  styles.netProgressFill,
-                  {
-                    width: `${Math.min((summary.totalSpent / summary.totalIncome) * 100, 100)}%`,
-                    backgroundColor: summary.totalSpent / summary.totalIncome > 0.8 ? '#ef4444' :
-                      summary.totalSpent / summary.totalIncome > 0.6 ? '#f59e0b' : '#10b981',
-                  },
-                ]}
-              />
-            </View>
-          )}
-          <Text style={[styles.todaySpent, { color: colors.textMuted }]}>
-            Today: {formatCurrency(summary.totalSpentToday)}
-          </Text>
         </View>
+
+        {/* ===== Remaining Cards below main card ===== */}
 
         {/* Top Spending Categories */}
         {summary.topCategories.length > 0 && (
@@ -457,7 +410,7 @@ export default function DashboardScreen() {
             {summary.topCategories.map((cat) => {
               const pct = summary.totalSpent > 0 ? Math.round((cat.total / summary.totalSpent) * 100) : 0;
               return (
-                <View key={cat.categoryId} style={styles.categoryRow} data-testid={`row-category-${cat.categoryId}`}>
+                <View key={cat.categoryId} style={styles.categoryRow}>
                   <View style={[styles.categoryIcon, { backgroundColor: cat.color + '20' }]}>
                     <Ionicons name={(cat.icon as any) || 'ellipsis-horizontal'} size={16} color={cat.color} />
                   </View>
@@ -485,7 +438,7 @@ export default function DashboardScreen() {
               <Ionicons name="pie-chart-outline" size={18} color={colors.primary} />
             </View>
             {summary.budgetUsage.map((budget) => (
-              <View key={budget.categoryId} style={styles.budgetItem} data-testid={`row-budget-${budget.categoryId}`}>
+              <View key={budget.categoryId} style={styles.budgetItem}>
                 <View style={styles.budgetHeader}>
                   <Text style={[styles.budgetName, { color: colors.text }]}>{budget.categoryName}</Text>
                   <Text style={[styles.budgetAmount, { color: colors.textMuted }]}>
@@ -498,9 +451,8 @@ export default function DashboardScreen() {
                       styles.progressFill,
                       {
                         width: `${Math.min(budget.percentage, 100)}%`,
-                        backgroundColor: budget.percentage >= 100 ? '#ef4444' :
-                          budget.percentage >= 80 ? '#f59e0b' : colors.primary
-                      }
+                        backgroundColor: budget.percentage >= 100 ? '#ef4444' : budget.percentage >= 80 ? '#f59e0b' : colors.primary,
+                      },
                     ]}
                   />
                 </View>
@@ -521,7 +473,7 @@ export default function DashboardScreen() {
             {summary.creditCardSpending.map((card) => {
               const hasLimit = card.limit !== null && card.limit > 0;
               return (
-                <View key={card.accountId} style={styles.ccRow} data-testid={`row-cc-${card.accountId}`}>
+                <View key={card.accountId} style={[styles.ccRow, { borderBottomColor: colors.border }]}>
                   <View style={styles.ccInfo}>
                     <Text style={[styles.ccName, { color: colors.text }]} numberOfLines={1}>{card.accountName}</Text>
                     {card.bankName ? <Text style={[styles.ccBank, { color: colors.textMuted }]}>{card.bankName}</Text> : null}
@@ -530,9 +482,7 @@ export default function DashboardScreen() {
                     <Text style={[styles.ccSpent, { color: card.percentage >= 100 ? '#ef4444' : card.percentage >= 80 ? '#f59e0b' : colors.text }]}>
                       {formatCurrency(card.spent)}
                     </Text>
-                    {hasLimit && (
-                      <Text style={[styles.ccLimit, { color: colors.textMuted }]}>/ {formatCurrency(card.limit!)}</Text>
-                    )}
+                    {hasLimit && <Text style={[styles.ccLimit, { color: colors.textMuted }]}>/ {formatCurrency(card.limit!)}</Text>}
                   </View>
                 </View>
               );
@@ -573,7 +523,7 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             </View>
             {summary.lastTransactions.map((txn: any) => (
-              <View key={txn.id} style={styles.txnRow} data-testid={`row-txn-${txn.id}`}>
+              <View key={txn.id} style={styles.txnRow}>
                 <View style={[styles.txnIcon, { backgroundColor: txn.type === 'credit' ? '#10b981' + '18' : '#ef4444' + '18' }]}>
                   <Ionicons
                     name={txn.type === 'credit' ? 'arrow-down-outline' : 'arrow-up-outline'}
@@ -661,86 +611,137 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
   },
-  header: {
+
+  mainCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  mainCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
+    alignItems: 'flex-start',
     marginBottom: 16,
   },
+  mainCardHeaderLeft: {
+    flex: 1,
+  },
   greeting: {
-    fontSize: 13,
+    fontSize: 12,
     marginBottom: 2,
   },
   username: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
   },
-  headerRight: {
+  mainCardHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
-  monthBadge: {
-    fontSize: 12,
-    fontWeight: '600',
+  cycleBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
-    overflow: 'hidden',
   },
-
-  tabCardsContainer: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
-  },
-  tabCard: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  tabIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tabLabel: {
+  cycleBadgeText: {
     fontSize: 11,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  tabValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  tabChevron: {
-    marginTop: 2,
+  settingsBtn: {
+    padding: 4,
   },
 
-  detailCard: {
+  netBalanceSection: {
+    marginBottom: 16,
+  },
+  netBalanceLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  netBalanceLabel: {
+    fontSize: 12,
+  },
+  eyeBtn: {
+    padding: 4,
+  },
+  netBalanceValue: {
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  spendBarWrap: {
+    marginTop: 10,
+  },
+  spendBarBg: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  spendBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  spendBarLabel: {
+    fontSize: 11,
+  },
+
+  subCard: {
     borderRadius: 12,
     padding: 16,
+    borderWidth: 1,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
     marginBottom: 12,
   },
-  detailCardHeader: {
+  tab: {
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginRight: 24,
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#10b981',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  activeTabText: {
+    fontWeight: '600',
+  },
+  tabContent: {
+    minHeight: 60,
+  },
+  tabInner: {
+    gap: 4,
+  },
+  tabSummaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 8,
   },
-  detailCardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  detailCardSub: {
+  tabSummaryLabel: {
     fontSize: 12,
+  },
+  tabSummaryValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  billsSummaryMeta: {
+    fontSize: 11,
+    marginBottom: 8,
   },
 
   accountRow: {
@@ -748,34 +749,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 12,
+    gap: 10,
   },
-  accountIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
+  accountDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   accountInfo: {
     flex: 1,
   },
   accountName: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   accountBank: {
     fontSize: 11,
-    marginTop: 2,
+    marginTop: 1,
   },
   accountAmt: {
-    fontSize: 15,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '700',
   },
 
   emptyState: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 20,
+    justifyContent: 'center',
+    paddingVertical: 16,
     gap: 8,
   },
   emptyText: {
@@ -785,14 +786,14 @@ const styles = StyleSheet.create({
   accordionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 10,
+    gap: 8,
   },
   accordionIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -800,41 +801,38 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   accordionTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   accordionSubtitle: {
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 10,
+    marginTop: 1,
   },
   accordionRight: {
     alignItems: 'flex-end',
     gap: 2,
   },
   accordionTotal: {
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 13,
+    fontWeight: '700',
   },
   accordionContent: {
-    paddingLeft: 8,
-    borderRadius: 8,
-    marginTop: 4,
+    paddingLeft: 6,
+    marginTop: 2,
     marginBottom: 4,
   },
 
   billDetailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 10,
+    gap: 8,
   },
-  billStatusIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+  billStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   billDetailInfo: {
     flex: 1,
@@ -847,7 +845,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 2,
+    marginTop: 1,
   },
   billSubLabel: {
     fontSize: 10,
@@ -858,21 +856,34 @@ const styles = StyleSheet.create({
   },
   billDetailRight: {
     alignItems: 'flex-end',
+    gap: 2,
   },
   billDetailAmt: {
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 13,
+    fontWeight: '700',
   },
-  billPaidLabel: {
-    fontSize: 10,
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    gap: 3,
+  },
+  statusBadgeText: {
+    fontSize: 9,
     fontWeight: '600',
-    marginTop: 2,
   },
 
   card: {
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -882,39 +893,13 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   viewAll: {
     fontSize: 13,
     fontWeight: '600',
   },
-  netRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  netLabel: {
-    fontSize: 13,
-  },
-  netValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  netProgressBg: {
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 6,
-  },
-  netProgressFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  todaySpent: {
-    fontSize: 12,
-    textAlign: 'right',
-  },
+
   categoryRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -990,7 +975,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb20',
   },
   ccInfo: {
     flex: 1,
