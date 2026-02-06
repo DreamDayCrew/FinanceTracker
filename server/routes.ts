@@ -2075,6 +2075,204 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/dashboard-summary", authenticateToken, async (req, res) => {
+    try {
+      const userId = req.user!.userId;
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      const monthTransactions = await storage.getAllTransactions({
+        userId,
+        startDate: startOfMonth,
+        endDate: endOfMonth,
+      });
+
+      const totalIncome = monthTransactions
+        .filter(t => t.type === 'credit')
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+      const totalSpent = monthTransactions
+        .filter(t => t.type === 'debit')
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+      const todayTransactions = monthTransactions
+        .filter(t => new Date(t.transactionDate) >= startOfToday);
+      const totalSpentToday = todayTransactions
+        .filter(t => t.type === 'debit')
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+      const allPayments = await storage.getAllScheduledPayments(userId);
+      const activePayments = allPayments.filter(p => p.status === 'active');
+      const today = now.getDate();
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+
+      const isPaymentDueThisMonth = (payment: any): boolean => {
+        const frequency = payment.frequency || 'monthly';
+        const startMonth = payment.startMonth;
+
+        switch (frequency) {
+          case 'monthly': return true;
+          case 'quarterly': {
+            if (startMonth) {
+              const quarterMonths = [startMonth];
+              for (let i = 1; i < 4; i++) {
+                quarterMonths.push(((startMonth - 1 + i * 3) % 12) + 1);
+              }
+              return quarterMonths.includes(currentMonth);
+            }
+            return [1, 4, 7, 10].includes(currentMonth);
+          }
+          case 'half_yearly': {
+            if (startMonth) {
+              return currentMonth === startMonth || currentMonth === ((startMonth + 5) % 12) + 1;
+            }
+            return currentMonth === 1 || currentMonth === 7;
+          }
+          case 'yearly':
+            return startMonth ? currentMonth === startMonth : currentMonth === 1;
+          case 'custom': {
+            if (payment.customIntervalMonths && payment.customIntervalMonths > 0) {
+              const interval = payment.customIntervalMonths;
+              const refMonth = startMonth || ((payment.createdAt instanceof Date ? payment.createdAt : new Date(payment.createdAt)).getMonth() + 1);
+              const refYear = (payment.createdAt instanceof Date ? payment.createdAt : new Date(payment.createdAt)).getFullYear();
+              const totalMonthsDiff = (currentYear - refYear) * 12 + (currentMonth - refMonth);
+              return totalMonthsDiff >= 0 && totalMonthsDiff % interval === 0;
+            }
+            return true;
+          }
+          case 'one_time': {
+            if (startMonth && startMonth === currentMonth) {
+              const createdYear = (payment.createdAt instanceof Date ? payment.createdAt : new Date(payment.createdAt)).getFullYear();
+              return createdYear === currentYear || !payment.createdAt;
+            }
+            return false;
+          }
+          default: return true;
+        }
+      };
+
+      const dueThisMonth = activePayments.filter(p =>
+        p.paymentType !== 'credit_card_bill' && isPaymentDueThisMonth(p)
+      );
+
+      const billsDue = dueThisMonth
+        .filter(p => (p.dueDate || 0) >= today)
+        .reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
+
+      const upcomingBills = dueThisMonth
+        .filter(p => {
+          const dueDay = p.dueDate || 0;
+          return dueDay >= today && dueDay <= today + 7;
+        })
+        .sort((a, b) => (a.dueDate || 0) - (b.dueDate || 0))
+        .slice(0, 5);
+
+      const categoryTotals = new Map<number, { name: string; total: number; color: string; icon: string }>();
+      for (const t of monthTransactions.filter(t => t.type === 'debit')) {
+        if (t.categoryId && t.category) {
+          const existing = categoryTotals.get(t.categoryId) || { name: t.category.name, total: 0, color: t.category.color || '#9E9E9E', icon: t.category.icon || 'ellipsis-horizontal' };
+          existing.total += parseFloat(t.amount);
+          categoryTotals.set(t.categoryId, existing);
+        }
+      }
+      const topCategories = Array.from(categoryTotals.entries())
+        .map(([categoryId, data]) => ({ categoryId, ...data }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5);
+
+      const monthBudgets = await storage.getAllBudgets({ userId, month: now.getMonth() + 1, year: now.getFullYear() });
+      const allCategories = await storage.getAllCategories();
+      const budgetUsage = monthBudgets.map(b => {
+        const category = allCategories.find(c => c.id === b.categoryId);
+        const spent = categoryTotals.get(b.categoryId!)?.total || 0;
+        const budgetAmount = parseFloat(b.amount);
+        return {
+          categoryId: b.categoryId!,
+          categoryName: category?.name || 'Unknown',
+          spent,
+          budget: budgetAmount,
+          percentage: budgetAmount > 0 ? Math.round((spent / budgetAmount) * 100) : 0,
+        };
+      }).sort((a, b) => b.percentage - a.percentage).slice(0, 3);
+
+      const creditCardAccounts = await storage.getAllAccounts(userId);
+      const creditCards = creditCardAccounts.filter(a => a.type === 'credit_card' && a.isActive);
+      const creditCardSpending = [];
+      for (const card of creditCards) {
+        let cycleStartDate: Date;
+        let cycleEndDate: Date;
+        if (card.billingDate) {
+          const billingDay = card.billingDate;
+          const currentDay = now.getDate();
+          if (currentDay >= billingDay) {
+            cycleStartDate = new Date(now.getFullYear(), now.getMonth(), billingDay);
+            cycleEndDate = new Date(now.getFullYear(), now.getMonth() + 1, billingDay - 1, 23, 59, 59);
+          } else {
+            cycleStartDate = new Date(now.getFullYear(), now.getMonth() - 1, billingDay);
+            cycleEndDate = new Date(now.getFullYear(), now.getMonth(), billingDay - 1, 23, 59, 59);
+          }
+        } else {
+          cycleStartDate = startOfMonth;
+          cycleEndDate = endOfMonth;
+        }
+        const cycleTransactions = await storage.getAllTransactions({
+          userId,
+          accountId: card.id,
+          startDate: cycleStartDate,
+          endDate: cycleEndDate,
+        });
+        const spent = cycleTransactions
+          .filter(t => t.type === 'debit')
+          .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+        const limit = card.monthlySpendingLimit ? parseFloat(card.monthlySpendingLimit) : null;
+        const percentage = limit && limit > 0 ? Math.round((spent / limit) * 100) : 0;
+        let color = '#22c55e';
+        if (limit) {
+          if (percentage >= 100) color = '#ef4444';
+          else if (percentage >= 80) color = '#eab308';
+        }
+        creditCardSpending.push({
+          accountId: card.id,
+          accountName: card.name,
+          bankName: card.bankName || '',
+          spent,
+          limit,
+          percentage,
+          color,
+        });
+      }
+
+      const loans = await storage.getAllLoans(userId);
+      const activeLoans = loans.filter(l => l.status === 'active');
+      const totalEMI = activeLoans.reduce((sum, l) => sum + parseFloat(l.emiAmount || '0'), 0);
+
+      const lastTransactions = await storage.getAllTransactions({ userId, limit: 5 });
+
+      const monthName = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][now.getMonth()];
+
+      res.json({
+        monthLabel: `${monthName} ${now.getFullYear()}`,
+        totalIncome,
+        totalSpent,
+        totalSpentToday,
+        billsDue,
+        upcomingBills,
+        topCategories,
+        budgetUsage,
+        creditCardSpending,
+        totalEMI,
+        activeLoansCount: activeLoans.length,
+        lastTransactions,
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard summary:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard summary" });
+    }
+  });
+
   // Get credit card billing cycle spending
   app.get("/api/credit-card-spending", authenticateToken, async (req, res) => {
     try {

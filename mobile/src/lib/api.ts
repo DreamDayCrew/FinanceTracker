@@ -1,6 +1,6 @@
 import type { 
   Account, Category, Transaction, Budget, ScheduledPayment, 
-  User, DashboardData, InsertAccount, InsertTransaction, 
+  User, DashboardData, DashboardSummary, InsertAccount, InsertTransaction, 
   InsertBudget, InsertScheduledPayment, PaymentOccurrence,
   SavingsGoal, SavingsContribution, InsertSavingsGoal, InsertSavingsContribution,
   SalaryProfile, SalaryCycle, InsertSalaryProfile,
@@ -145,11 +145,7 @@ async function apiRequest<T>(
     '/api/auth/verify-otp',
     '/api/auth/refresh-token',
     '/api/auth/send-otp',
-<<<<<<< Updated upstream
-    '/api/auth/request-otp',
-=======
     '/api/auth/request-otp'
->>>>>>> Stashed changes
   ];
 
   const isPublicEndpoint = publicEndpoints.some(path => endpoint.startsWith(path));
@@ -264,6 +260,7 @@ async function apiRequest<T>(
 
 export const api = {
   getDashboard: () => apiRequest<DashboardData>('/api/dashboard'),
+  getDashboardSummary: () => apiRequest<DashboardSummary>('/api/dashboard-summary'),
   
   getAccounts: () => apiRequest<Account[]>('/api/accounts'),
   createAccount: (data: InsertAccount) => 

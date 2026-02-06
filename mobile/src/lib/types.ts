@@ -118,6 +118,29 @@ export interface DashboardData {
   upcomingBills: ScheduledPayment[];
 }
 
+export interface DashboardSummary {
+  monthLabel: string;
+  totalIncome: number;
+  totalSpent: number;
+  totalSpentToday: number;
+  billsDue: number;
+  upcomingBills: ScheduledPayment[];
+  topCategories: Array<{ categoryId: number; name: string; total: number; color: string; icon: string }>;
+  budgetUsage: Array<{ categoryId: number; categoryName: string; spent: number; budget: number; percentage: number }>;
+  creditCardSpending: Array<{
+    accountId: number;
+    accountName: string;
+    bankName?: string;
+    spent: number;
+    limit: number | null;
+    percentage: number;
+    color: string;
+  }>;
+  totalEMI: number;
+  activeLoansCount: number;
+  lastTransactions: Transaction[];
+}
+
 export interface InsertAccount {
   name: string;
   type: 'bank' | 'credit_card' | 'debit_card';
