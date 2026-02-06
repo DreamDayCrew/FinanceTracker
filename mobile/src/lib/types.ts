@@ -179,6 +179,7 @@ export interface NextMonthForecastItem {
   amount: number;
   dueDate: number | null;
   subLabel?: string;
+  creditLimit?: number | null;
 }
 
 export interface NextMonthForecast {
@@ -194,9 +195,14 @@ export interface NextMonthForecast {
   scheduledPayments: NextMonthForecastItem[];
   loans: NextMonthForecastItem[];
   insurance: NextMonthForecastItem[];
+  creditCardBills: NextMonthForecastItem[];
   totalIncome: number;
   totalOutflow: number;
   net: number;
+  totalScheduled: number;
+  totalLoans: number;
+  totalInsurance: number;
+  totalCreditCardBills: number;
 }
 
 export interface InsertAccount {

@@ -24,6 +24,7 @@ type NavigationProp = CompositeNavigationProp<
 
 type ActiveTab = 'income' | 'expense' | 'bills';
 type BillsAccordion = 'scheduled' | 'creditCard' | 'loans' | 'insurance' | null;
+type ForecastAccordion = 'scheduled' | 'insurance' | 'loans' | 'creditCard' | null;
 
 export default function DashboardScreen() {
   const navigation = useNavigation<NavigationProp>();
@@ -34,6 +35,7 @@ export default function DashboardScreen() {
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('income');
   const [billsAccordion, setBillsAccordion] = useState<BillsAccordion>(null);
+  const [forecastAccordion, setForecastAccordion] = useState<ForecastAccordion>(null);
   const [hideBalance, setHideBalance] = useState(true);
 
   const { data: summary, isLoading } = useQuery({
@@ -64,6 +66,11 @@ export default function DashboardScreen() {
   const toggleBillsAccordion = useCallback((section: BillsAccordion) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setBillsAccordion(prev => prev === section ? null : section);
+  }, []);
+
+  const toggleForecastAccordion = useCallback((section: ForecastAccordion) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setForecastAccordion(prev => prev === section ? null : section);
   }, []);
 
   if (isLoading || !summary) {
@@ -404,130 +411,230 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* ===== Next Month Plan ===== */}
+        {/* ===== Next Month Plan (Main Card → Sub Card → Tabs) ===== */}
         {forecast && (
-          <View style={[styles.card, { backgroundColor: colors.card }]}>
-            <View style={styles.cardHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={[styles.forecastIconWrap, { backgroundColor: '#3b82f6' + '15' }]}>
-                  <Ionicons name="calendar-outline" size={16} color="#3b82f6" />
+          <View style={[styles.mainCard, { backgroundColor: colors.card }]}>
+            <View style={styles.mainCardHeader}>
+              <View style={styles.mainCardHeaderLeft}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <View style={[styles.forecastIconWrap, { backgroundColor: '#3b82f6' + '15' }]}>
+                    <Ionicons name="calendar-outline" size={16} color="#3b82f6" />
+                  </View>
+                  <Text style={[styles.username, { color: colors.text }]}>{forecast.monthLabel} Plan</Text>
                 </View>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>{forecast.monthLabel} Plan</Text>
+              </View>
+              <View style={[styles.cycleBadge, { backgroundColor: colors.primary + '18' }]}>
+                <Text style={[styles.cycleBadgeText, { color: colors.primary }]}>{forecast.monthLabel}</Text>
+              </View>
+            </View>
+
+            <View style={styles.forecastSummaryRow}>
+              <View style={styles.forecastSummaryStat}>
+                <Text style={[styles.forecastStatLabel, { color: colors.textMuted }]}>Income</Text>
+                <Text style={[styles.forecastStatValue, { color: '#10b981' }]}>+{formatCurrency(forecast.totalIncome)}</Text>
+              </View>
+              <View style={[styles.loanDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.forecastSummaryStat}>
+                <Text style={[styles.forecastStatLabel, { color: colors.textMuted }]}>Outflow</Text>
+                <Text style={[styles.forecastStatValue, { color: '#ef4444' }]}>-{formatCurrency(forecast.totalOutflow)}</Text>
+              </View>
+              <View style={[styles.loanDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.forecastSummaryStat}>
+                <Text style={[styles.forecastStatLabel, { color: colors.textMuted }]}>Balance</Text>
+                <Text style={[styles.forecastStatValueSmall, { color: colors.text }]}>
+                  {forecast.net >= 0 ? '+' : ''}{formatCurrency(forecast.net)}
+                </Text>
               </View>
             </View>
 
             {forecast.salary.length > 0 && (
-              <View style={styles.forecastSection}>
-                <View style={styles.forecastSectionHeader}>
-                  <Ionicons name="wallet-outline" size={14} color="#10b981" />
-                  <Text style={[styles.forecastSectionTitle, { color: '#10b981' }]}>Salary Income</Text>
-                </View>
-                {forecast.salary.map((s) => (
-                  <View key={s.profileId} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
-                    <View style={[styles.forecastDot, { backgroundColor: '#10b981' }]} />
-                    <View style={styles.forecastRowInfo}>
-                      <Text style={[styles.forecastRowName, { color: colors.text }]}>{s.accountName}</Text>
-                      <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
-                        {s.bankName ? `${s.bankName} · ` : ''}Credit: {s.creditDay}{getOrdinalSuffix(s.creditDay)} {forecast.monthLabel.split(' ')[0]}
-                      </Text>
+              <View style={styles.forecastMsgRow}>
+                <Ionicons name="information-circle-outline" size={13} color={colors.textMuted} />
+                <Text style={[styles.forecastMsgText, { color: colors.textMuted }]}>
+                  Salary on {forecast.salary[0].creditDay}{getOrdinalSuffix(forecast.salary[0].creditDay)} {forecast.monthLabel.split(' ')[0]}
+                  {forecast.salary[0].bankName ? ` via ${forecast.salary[0].bankName}` : ''}
+                </Text>
+              </View>
+            )}
+
+            {/* Sub Card with expandable sections */}
+            <View style={[styles.subCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+              {forecast.scheduledPayments.length > 0 && (
+                <View>
+                  <TouchableOpacity
+                    style={[styles.accordionHeader, { borderBottomColor: colors.border }]}
+                    onPress={() => toggleForecastAccordion('scheduled')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.accordionIconWrap, { backgroundColor: '#6366f1' + '15' }]}>
+                      <Ionicons name="repeat-outline" size={16} color="#6366f1" />
                     </View>
-                    <Text style={[styles.forecastRowAmt, { color: '#10b981' }]}>+{formatCurrency(s.amount)}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {forecast.scheduledPayments.length > 0 && (
-              <View style={styles.forecastSection}>
-                <View style={styles.forecastSectionHeader}>
-                  <Ionicons name="repeat-outline" size={14} color="#6366f1" />
-                  <Text style={[styles.forecastSectionTitle, { color: '#6366f1' }]}>Scheduled Payments</Text>
-                  <Text style={[styles.forecastSectionCount, { color: colors.textMuted }]}>({forecast.scheduledPayments.length})</Text>
-                </View>
-                {forecast.scheduledPayments.map((item) => (
-                  <View key={`sp-${item.id}`} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
-                    <View style={[styles.forecastDot, { backgroundColor: '#6366f1' }]} />
-                    <View style={styles.forecastRowInfo}>
-                      <Text style={[styles.forecastRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                      <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
-                        {item.subLabel}{item.dueDate ? ` · Due: ${item.dueDate}${getOrdinalSuffix(item.dueDate)}` : ''}
-                      </Text>
+                    <View style={styles.accordionTitleArea}>
+                      <Text style={[styles.accordionTitle, { color: colors.text }]}>Scheduled Payments</Text>
+                      <Text style={[styles.accordionSubtitle, { color: colors.textMuted }]}>{forecast.scheduledPayments.length} payment{forecast.scheduledPayments.length > 1 ? 's' : ''}</Text>
                     </View>
-                    <Text style={[styles.forecastRowAmt, { color: '#ef4444' }]}>-{formatCurrency(item.amount)}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {forecast.loans.length > 0 && (
-              <View style={styles.forecastSection}>
-                <View style={styles.forecastSectionHeader}>
-                  <Ionicons name="cash-outline" size={14} color="#f59e0b" />
-                  <Text style={[styles.forecastSectionTitle, { color: '#f59e0b' }]}>Loan EMIs</Text>
-                  <Text style={[styles.forecastSectionCount, { color: colors.textMuted }]}>({forecast.loans.length})</Text>
-                </View>
-                {forecast.loans.map((item) => (
-                  <View key={`loan-${item.id}`} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
-                    <View style={[styles.forecastDot, { backgroundColor: '#f59e0b' }]} />
-                    <View style={styles.forecastRowInfo}>
-                      <Text style={[styles.forecastRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                      <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
-                        {item.subLabel}{item.dueDate ? ` · Due: ${item.dueDate}${getOrdinalSuffix(item.dueDate)}` : ''}
-                      </Text>
+                    <View style={styles.accordionRight}>
+                      <Text style={[styles.accordionTotal, { color: colors.text }]}>{formatCurrency(forecast.totalScheduled)}</Text>
+                      <Ionicons name={forecastAccordion === 'scheduled' ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
                     </View>
-                    <Text style={[styles.forecastRowAmt, { color: '#ef4444' }]}>-{formatCurrency(item.amount)}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {forecast.insurance.length > 0 && (
-              <View style={styles.forecastSection}>
-                <View style={styles.forecastSectionHeader}>
-                  <Ionicons name="shield-checkmark-outline" size={14} color="#8b5cf6" />
-                  <Text style={[styles.forecastSectionTitle, { color: '#8b5cf6' }]}>Insurance Premiums</Text>
-                  <Text style={[styles.forecastSectionCount, { color: colors.textMuted }]}>({forecast.insurance.length})</Text>
-                </View>
-                {forecast.insurance.map((item) => (
-                  <View key={`ins-${item.id}`} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
-                    <View style={[styles.forecastDot, { backgroundColor: '#8b5cf6' }]} />
-                    <View style={styles.forecastRowInfo}>
-                      <Text style={[styles.forecastRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                      <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
-                        {item.subLabel}{item.dueDate ? ` · Due: ${item.dueDate}${getOrdinalSuffix(item.dueDate)}` : ''}
-                      </Text>
+                  </TouchableOpacity>
+                  {forecastAccordion === 'scheduled' && (
+                    <View style={styles.accordionContent}>
+                      {forecast.scheduledPayments.map((item) => (
+                        <View key={`fsp-${item.id}`} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
+                          <View style={[styles.forecastDot, { backgroundColor: '#6366f1' }]} />
+                          <View style={styles.forecastRowInfo}>
+                            <Text style={[styles.forecastRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                            <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
+                              {item.subLabel}{item.dueDate ? ` · Due: ${item.dueDate}${getOrdinalSuffix(item.dueDate)}` : ''}
+                            </Text>
+                          </View>
+                          <Text style={[styles.forecastRowAmt, { color: '#ef4444' }]}>-{formatCurrency(item.amount)}</Text>
+                        </View>
+                      ))}
+                      <View style={styles.forecastTabTotal}>
+                        <Text style={[styles.forecastTabTotalLabel, { color: colors.textMuted }]}>Total</Text>
+                        <Text style={[styles.forecastTabTotalValue, { color: '#ef4444' }]}>-{formatCurrency(forecast.totalScheduled)}</Text>
+                      </View>
                     </View>
-                    <Text style={[styles.forecastRowAmt, { color: '#ef4444' }]}>-{formatCurrency(item.amount)}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
+                  )}
+                </View>
+              )}
 
-            {forecast.salary.length === 0 && forecast.scheduledPayments.length === 0 && forecast.loans.length === 0 && forecast.insurance.length === 0 && (
-              <View style={styles.emptyState}>
-                <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
-                <Text style={[styles.emptyText, { color: colors.textMuted }]}>No planned items for {forecast.monthLabel}</Text>
-              </View>
-            )}
+              {forecast.insurance.length > 0 && (
+                <View>
+                  <TouchableOpacity
+                    style={[styles.accordionHeader, { borderBottomColor: colors.border }]}
+                    onPress={() => toggleForecastAccordion('insurance')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.accordionIconWrap, { backgroundColor: '#8b5cf6' + '15' }]}>
+                      <Ionicons name="shield-checkmark-outline" size={16} color="#8b5cf6" />
+                    </View>
+                    <View style={styles.accordionTitleArea}>
+                      <Text style={[styles.accordionTitle, { color: colors.text }]}>Insurance</Text>
+                      <Text style={[styles.accordionSubtitle, { color: colors.textMuted }]}>{forecast.insurance.length} premium{forecast.insurance.length > 1 ? 's' : ''}</Text>
+                    </View>
+                    <View style={styles.accordionRight}>
+                      <Text style={[styles.accordionTotal, { color: colors.text }]}>{formatCurrency(forecast.totalInsurance)}</Text>
+                      <Ionicons name={forecastAccordion === 'insurance' ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
+                    </View>
+                  </TouchableOpacity>
+                  {forecastAccordion === 'insurance' && (
+                    <View style={styles.accordionContent}>
+                      {forecast.insurance.map((item) => (
+                        <View key={`fins-${item.id}`} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
+                          <View style={[styles.forecastDot, { backgroundColor: '#8b5cf6' }]} />
+                          <View style={styles.forecastRowInfo}>
+                            <Text style={[styles.forecastRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                            <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
+                              {item.subLabel}{item.dueDate ? ` · Due: ${item.dueDate}${getOrdinalSuffix(item.dueDate)}` : ''}
+                            </Text>
+                          </View>
+                          <Text style={[styles.forecastRowAmt, { color: '#ef4444' }]}>-{formatCurrency(item.amount)}</Text>
+                        </View>
+                      ))}
+                      <View style={styles.forecastTabTotal}>
+                        <Text style={[styles.forecastTabTotalLabel, { color: colors.textMuted }]}>Total</Text>
+                        <Text style={[styles.forecastTabTotalValue, { color: '#ef4444' }]}>-{formatCurrency(forecast.totalInsurance)}</Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
 
-            {(forecast.totalIncome > 0 || forecast.totalOutflow > 0) && (
-              <View style={[styles.forecastFooter, { borderTopColor: colors.border }]}>
-                <View style={styles.forecastFooterRow}>
-                  <Text style={[styles.forecastFooterLabel, { color: colors.textMuted }]}>Projected Income</Text>
-                  <Text style={[styles.forecastFooterValue, { color: '#10b981' }]}>+{formatCurrency(forecast.totalIncome)}</Text>
+              {forecast.loans.length > 0 && (
+                <View>
+                  <TouchableOpacity
+                    style={[styles.accordionHeader, { borderBottomColor: colors.border }]}
+                    onPress={() => toggleForecastAccordion('loans')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.accordionIconWrap, { backgroundColor: '#f59e0b' + '15' }]}>
+                      <Ionicons name="cash-outline" size={16} color="#f59e0b" />
+                    </View>
+                    <View style={styles.accordionTitleArea}>
+                      <Text style={[styles.accordionTitle, { color: colors.text }]}>Loan EMIs</Text>
+                      <Text style={[styles.accordionSubtitle, { color: colors.textMuted }]}>{forecast.loans.length} EMI{forecast.loans.length > 1 ? 's' : ''}</Text>
+                    </View>
+                    <View style={styles.accordionRight}>
+                      <Text style={[styles.accordionTotal, { color: colors.text }]}>{formatCurrency(forecast.totalLoans)}</Text>
+                      <Ionicons name={forecastAccordion === 'loans' ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
+                    </View>
+                  </TouchableOpacity>
+                  {forecastAccordion === 'loans' && (
+                    <View style={styles.accordionContent}>
+                      {forecast.loans.map((item) => (
+                        <View key={`floan-${item.id}`} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
+                          <View style={[styles.forecastDot, { backgroundColor: '#f59e0b' }]} />
+                          <View style={styles.forecastRowInfo}>
+                            <Text style={[styles.forecastRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                            <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
+                              {item.subLabel}{item.dueDate ? ` · Due: ${item.dueDate}${getOrdinalSuffix(item.dueDate)}` : ''}
+                            </Text>
+                          </View>
+                          <Text style={[styles.forecastRowAmt, { color: '#ef4444' }]}>-{formatCurrency(item.amount)}</Text>
+                        </View>
+                      ))}
+                      <View style={styles.forecastTabTotal}>
+                        <Text style={[styles.forecastTabTotalLabel, { color: colors.textMuted }]}>Total</Text>
+                        <Text style={[styles.forecastTabTotalValue, { color: '#ef4444' }]}>-{formatCurrency(forecast.totalLoans)}</Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
-                <View style={styles.forecastFooterRow}>
-                  <Text style={[styles.forecastFooterLabel, { color: colors.textMuted }]}>Projected Outflow</Text>
-                  <Text style={[styles.forecastFooterValue, { color: '#ef4444' }]}>-{formatCurrency(forecast.totalOutflow)}</Text>
+              )}
+
+              {forecast.creditCardBills.length > 0 && (
+                <View>
+                  <TouchableOpacity
+                    style={[styles.accordionHeader, { borderBottomColor: colors.border }]}
+                    onPress={() => toggleForecastAccordion('creditCard')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.accordionIconWrap, { backgroundColor: '#ec4899' + '15' }]}>
+                      <Ionicons name="card-outline" size={16} color="#ec4899" />
+                    </View>
+                    <View style={styles.accordionTitleArea}>
+                      <Text style={[styles.accordionTitle, { color: colors.text }]}>Credit Card Bills</Text>
+                      <Text style={[styles.accordionSubtitle, { color: colors.textMuted }]}>{forecast.creditCardBills.length} bill{forecast.creditCardBills.length > 1 ? 's' : ''}</Text>
+                    </View>
+                    <View style={styles.accordionRight}>
+                      <Text style={[styles.accordionTotal, { color: colors.text }]}>{formatCurrency(forecast.totalCreditCardBills)}</Text>
+                      <Ionicons name={forecastAccordion === 'creditCard' ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
+                    </View>
+                  </TouchableOpacity>
+                  {forecastAccordion === 'creditCard' && (
+                    <View style={styles.accordionContent}>
+                      {forecast.creditCardBills.map((item) => (
+                        <View key={`fcc-${item.id}`} style={[styles.forecastRow, { borderBottomColor: colors.border }]}>
+                          <View style={[styles.forecastDot, { backgroundColor: '#ec4899' }]} />
+                          <View style={styles.forecastRowInfo}>
+                            <Text style={[styles.forecastRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                            <Text style={[styles.forecastRowMeta, { color: colors.textMuted }]}>
+                              {item.dueDate ? `Due: ${item.dueDate}${getOrdinalSuffix(item.dueDate)}` : ''}
+                              {item.creditLimit ? ` · Limit: ${formatCurrency(item.creditLimit)}` : ''}
+                            </Text>
+                          </View>
+                          <Text style={[styles.forecastRowAmt, { color: '#ef4444' }]}>-{formatCurrency(item.amount)}</Text>
+                        </View>
+                      ))}
+                      <View style={styles.forecastTabTotal}>
+                        <Text style={[styles.forecastTabTotalLabel, { color: colors.textMuted }]}>Total</Text>
+                        <Text style={[styles.forecastTabTotalValue, { color: '#ef4444' }]}>-{formatCurrency(forecast.totalCreditCardBills)}</Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
-                <View style={[styles.forecastFooterRow, styles.forecastNetRow]}>
-                  <Text style={[styles.forecastNetLabel, { color: colors.text }]}>Estimated Balance</Text>
-                  <Text style={[styles.forecastNetValue, { color: forecast.net >= 0 ? '#10b981' : '#ef4444' }]}>
-                    {forecast.net >= 0 ? '+' : ''}{formatCurrency(forecast.net)}
-                  </Text>
+              )}
+
+              {forecast.scheduledPayments.length === 0 && forecast.loans.length === 0 && forecast.insurance.length === 0 && forecast.creditCardBills.length === 0 && (
+                <View style={styles.emptyState}>
+                  <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
+                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>No outflow planned for {forecast.monthLabel}</Text>
                 </View>
-              </View>
-            )}
+              )}
+            </View>
           </View>
         )}
 
@@ -1208,23 +1315,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  forecastSection: {
+  forecastSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 12,
   },
-  forecastSectionHeader: {
+  forecastSummaryStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  forecastStatLabel: {
+    fontSize: 11,
+    marginBottom: 3,
+  },
+  forecastStatValue: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  forecastStatValueSmall: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  forecastMsgRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 6,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
-  forecastSectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  forecastSectionCount: {
+  forecastMsgText: {
     fontSize: 11,
+    flex: 1,
   },
   forecastRow: {
     flexDirection: 'row',
@@ -1254,34 +1375,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  forecastFooter: {
-    borderTopWidth: 1,
-    paddingTop: 12,
-    marginTop: 4,
-    gap: 6,
-  },
-  forecastFooterRow: {
+  forecastTabTotal: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: 8,
+    marginTop: 4,
   },
-  forecastFooterLabel: {
+  forecastTabTotalLabel: {
     fontSize: 12,
-  },
-  forecastFooterValue: {
-    fontSize: 13,
     fontWeight: '600',
   },
-  forecastNetRow: {
-    marginTop: 4,
-    paddingTop: 8,
-  },
-  forecastNetLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  forecastNetValue: {
-    fontSize: 16,
+  forecastTabTotalValue: {
+    fontSize: 13,
     fontWeight: '700',
   },
 });

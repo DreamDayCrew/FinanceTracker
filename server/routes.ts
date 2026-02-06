@@ -2550,7 +2550,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const totalOutflow = totalScheduled + totalLoans + totalInsurance;
+      const creditCardBillItems: any[] = [];
+      let totalCreditCardBills = 0;
+      for (const p of activePayments) {
+        if (p.paymentType !== 'credit_card_bill') continue;
+        if (!isPaymentDueNextMonth(p)) continue;
+        const amount = parseFloat(p.amount || '0');
+        let creditLimit: number | null = null;
+        if (p.linkedAccountId) {
+          const accounts = await storage.getAllAccounts(userId);
+          const linkedCard = accounts.find(a => a.id === p.linkedAccountId);
+          if (linkedCard && linkedCard.creditLimit) {
+            creditLimit = parseFloat(linkedCard.creditLimit);
+          }
+        }
+        creditCardBillItems.push({
+          id: p.id,
+          name: p.name,
+          amount,
+          dueDate: p.dueDate,
+          subLabel: 'Monthly',
+          creditLimit,
+        });
+        totalCreditCardBills += amount;
+      }
+
+      const totalOutflow = totalScheduled + totalLoans + totalInsurance + totalCreditCardBills;
 
       res.json({
         monthLabel,
@@ -2558,9 +2583,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         scheduledPayments: scheduledPaymentItems.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
         loans: loanItems.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
         insurance: insuranceItems.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
+        creditCardBills: creditCardBillItems.sort((a, b) => (a.dueDate || 99) - (b.dueDate || 99)),
         totalIncome,
         totalOutflow,
         net: totalIncome - totalOutflow,
+        totalScheduled,
+        totalLoans,
+        totalInsurance,
+        totalCreditCardBills,
       });
     } catch (error) {
       console.error("Error fetching next month forecast:", error);
