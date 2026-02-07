@@ -4408,6 +4408,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/users/delete-account", authenticateToken, async (req, res) => {
+    try {
+      const userId = req.user!.userId;
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      await db.execute(sql`DELETE FROM loan_payments WHERE loan_id IN (SELECT id FROM loans WHERE user_id = ${userId})`);
+      await db.execute(sql`DELETE FROM loan_installments WHERE loan_id IN (SELECT id FROM loans WHERE user_id = ${userId})`);
+      await db.execute(sql`DELETE FROM loan_components WHERE loan_id IN (SELECT id FROM loans WHERE user_id = ${userId})`);
+      await db.execute(sql`DELETE FROM loan_terms WHERE loan_id IN (SELECT id FROM loans WHERE user_id = ${userId})`);
+      await db.execute(sql`DELETE FROM loan_bt_allocations WHERE source_loan_id IN (SELECT id FROM loans WHERE user_id = ${userId}) OR target_loan_id IN (SELECT id FROM loans WHERE user_id = ${userId})`);
+      await db.execute(sql`DELETE FROM loans WHERE user_id = ${userId}`);
+
+      await db.execute(sql`DELETE FROM insurance_premiums WHERE insurance_id IN (SELECT id FROM insurances WHERE user_id = ${userId})`);
+      await db.execute(sql`DELETE FROM insurances WHERE user_id = ${userId}`);
+
+      await db.execute(sql`DELETE FROM card_details WHERE account_id IN (SELECT id FROM accounts WHERE user_id = ${userId})`);
+      await db.execute(sql`DELETE FROM credit_card_statements WHERE account_id IN (SELECT id FROM accounts WHERE user_id = ${userId})`);
+
+      await db.execute(sql`DELETE FROM payment_occurrences WHERE scheduled_payment_id IN (SELECT id FROM scheduled_payments WHERE user_id = ${userId})`);
+      await db.execute(sql`DELETE FROM scheduled_payments WHERE user_id = ${userId}`);
+
+      await db.execute(sql`DELETE FROM savings_contributions WHERE savings_goal_id IN (SELECT id FROM savings_goals WHERE user_id = ${userId})`);
+      await db.execute(sql`DELETE FROM savings_goals WHERE user_id = ${userId}`);
+
+      await db.execute(sql`DELETE FROM salary_cycles WHERE salary_profile_id IN (SELECT id FROM salary_profiles WHERE user_id = ${userId})`);
+      await db.execute(sql`DELETE FROM salary_profiles WHERE user_id = ${userId}`);
+
+      await db.execute(sql`DELETE FROM sms_logs WHERE user_id = ${userId}`);
+      await db.execute(sql`DELETE FROM budgets WHERE user_id = ${userId}`);
+      await db.execute(sql`DELETE FROM transactions WHERE user_id = ${userId}`);
+      await db.execute(sql`DELETE FROM accounts WHERE user_id = ${userId}`);
+      await db.execute(sql`DELETE FROM categories WHERE user_id = ${userId}`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${userId}`);
+
+      res.json({ message: "Account and all data deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting user account:", error);
+      res.status(500).json({ error: "Failed to delete account" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
