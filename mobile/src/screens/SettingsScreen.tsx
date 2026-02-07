@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, Alert, TextInput, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Switch, Alert, TextInput, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,6 +13,7 @@ export default function SettingsScreen() {
   const queryClient = useQueryClient();
   const [showPinModal, setShowPinModal] = useState(false);
   const [pin, setPin] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const { theme, setTheme, resolvedTheme } = useTheme();
   const { checkPinRequired, user: authUser, logout } = useAuth();
   const colors = useMemo(() => getThemedColors(resolvedTheme), [resolvedTheme]);
@@ -491,13 +492,16 @@ export default function SettingsScreen() {
                           text: 'Yes, delete permanently', 
                           style: 'destructive', 
                           onPress: async () => {
+                            setIsDeletingAccount(true);
                             try {
                               await api.deleteUserAccount();
                               await AsyncStorage.clear();
                               queryClient.clear();
+                              setIsDeletingAccount(false);
                               await logout();
                               Alert.alert('Done', 'Your account and all data have been deleted.');
                             } catch (error: any) {
+                              setIsDeletingAccount(false);
                               Alert.alert('Error', error.message || 'Failed to delete account. Please try again.');
                             }
                           }
@@ -560,6 +564,16 @@ export default function SettingsScreen() {
       </Modal>
 
       <View style={{ height: 40 }} />
+
+      <Modal visible={isDeletingAccount} transparent animationType="fade">
+        <View style={styles.loadingOverlay}>
+          <View style={[styles.loadingContent, { backgroundColor: colors.card }]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.text }]}>Deleting account...</Text>
+            <Text style={[styles.loadingSubtext, { color: colors.textMuted }]}>Please wait while we remove all your data</Text>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -697,5 +711,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: '#ffffff',
+  },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContent: {
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    width: '75%',
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  loadingSubtext: {
+    fontSize: 13,
+    marginTop: 6,
+    textAlign: 'center',
   },
 });
