@@ -26,7 +26,7 @@ import {
 import { suggestCategory, parseSmsMessage, fallbackCategorization, parseStatementPDF, ExtractedTransaction } from "./openai";
 import multer from "multer";
 import { PDFParse } from "pdf-parse";
-import { getPaydayForMonth, getNextPaydays, getPastPaydays, getCurrentCycleDates } from "./salaryUtils";
+import { getPaydayForMonth, getNextPaydays, getPastPaydays, getCurrentCycleDates, getNextCycleDates, getCyclePrimaryMonth } from "./salaryUtils";
 import { generateOTP, storeOTP, verifyOTP, sendOTP } from "./emailService";
 import { generateTokenPair, generateAccessToken } from "./jwtService";
 import { authenticateToken } from "./authMiddleware";
@@ -2093,7 +2093,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Calculate cycle dates based on salary profile
-      const { cycleStart, cycleEnd, cycleLabel } = getCurrentCycleDates(salaryProfile, lastSalaryCycle, now);
+      const { cycleStart, cycleEnd } = getCurrentCycleDates(salaryProfile, lastSalaryCycle, now);
       const startOfMonth = cycleStart;
       const endOfMonth = cycleEnd;
 
@@ -2421,8 +2421,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const lastTransactions = await storage.getAllTransactions({ userId, limit: 5 });
 
+      const cycleDatesObj = getCurrentCycleDates(salaryProfile, lastSalaryCycle, now);
+
       res.json({
-        monthLabel: cycleLabel,
+        monthLabel: cycleDatesObj.cycleLabel,
         totalIncome,
         totalSpent,
         totalSpentToday,
@@ -2441,6 +2443,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalEMI,
         activeLoansCount: activeLoans.length,
         lastTransactions,
+        cycleInfo: {
+          cycleStartFormatted: cycleDatesObj.cycleStartFormatted,
+          cycleEndFormatted: cycleDatesObj.cycleEndFormatted,
+          isSalaryCycle: cycleDatesObj.isSalaryCycle,
+        },
       });
     } catch (error) {
       console.error("Error fetching dashboard summary:", error);
@@ -2452,17 +2459,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.userId;
       const now = new Date();
-      let nextMonth = now.getMonth() + 2;
-      let nextYear = now.getFullYear();
-      if (nextMonth > 12) {
-        nextMonth = 1;
-        nextYear++;
-      }
-
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const monthLabel = `${monthNames[nextMonth - 1]} ${nextYear}`;
 
       const salaryProfile = await storage.getSalaryProfile(userId);
+      let lastSalaryCycle = null;
+      if (salaryProfile) {
+        const recentCycles = await storage.getSalaryCycles(salaryProfile.id, 1);
+        if (recentCycles.length > 0) {
+          lastSalaryCycle = recentCycles[0];
+        }
+      }
+
+      const nextCycle = getNextCycleDates(salaryProfile, lastSalaryCycle, now);
+      const { month: nextMonth, year: nextYear } = getCyclePrimaryMonth(nextCycle.cycleStart, nextCycle.cycleEnd);
+      const monthLabel = nextCycle.cycleLabel;
+
       const salaryItems: any[] = [];
       let totalIncome = 0;
 
@@ -2688,6 +2698,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalLoans,
         totalInsurance,
         totalCreditCardBills,
+        cycleInfo: {
+          cycleStartFormatted: nextCycle.cycleStartFormatted,
+          cycleEndFormatted: nextCycle.cycleEndFormatted,
+          isSalaryCycle: nextCycle.isSalaryCycle,
+        },
       });
     } catch (error) {
       console.error("Error fetching next month forecast:", error);

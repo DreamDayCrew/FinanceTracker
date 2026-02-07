@@ -24,7 +24,7 @@ The application is built as a PWA and a React Native mobile app, supported by an
     - **Transaction Management:** Add income/expense, AI-powered category suggestions, SMS parsing, search, filter, and account linking.
     - **Budget Tracking:** Monthly category budgets with visual progress indicators and color-coded alerts.
     - **Scheduled Payments:** Recurring payment reminders with due dates and status toggles.
-    - **Dashboard & Insights:** Daily/monthly spending summaries, category breakdowns, upcoming payments, and Next Month Financial Plan showing projected salary income, scheduled bills, loan EMIs, and insurance premiums.
+    - **Dashboard & Insights:** Salary cycle-based month boundaries for all dashboard calculations. Daily/monthly spending summaries, category breakdowns, upcoming payments, Next Month Financial Plan showing projected salary income, scheduled bills, loan EMIs, and insurance premiums. Info icon explaining cycle calculation logic. Auto-refresh on screen focus (no manual refresh needed).
     - **Security Features:** 4-digit PIN lock and biometric authentication.
     - **Data Export:** Transactions exportable to CSV and JSON.
     - **Insurance Tracking:** Manage multiple insurance policies, track premium payments, and auto-generate installments.

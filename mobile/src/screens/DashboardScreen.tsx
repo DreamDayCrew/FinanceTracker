@@ -1,6 +1,6 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, LayoutAnimation, Platform, UIManager, Modal } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigation, CompositeNavigationProp } from '@react-navigation/native';
+import { useNavigation, CompositeNavigationProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +37,7 @@ export default function DashboardScreen() {
   const [billsAccordion, setBillsAccordion] = useState<BillsAccordion>(null);
   const [forecastAccordion, setForecastAccordion] = useState<ForecastAccordion>(null);
   const [hideBalance, setHideBalance] = useState(true);
+  const [showCycleInfoModal, setShowCycleInfoModal] = useState(false);
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['/api/dashboard-summary'],
@@ -52,6 +53,14 @@ export default function DashboardScreen() {
     queryKey: ['/api/salary-profile'],
     queryFn: api.getSalaryProfile,
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/next-month-forecast'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/salary-profile'] });
+    }, [queryClient])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -235,9 +244,15 @@ export default function DashboardScreen() {
               <Text style={[styles.username, { color: colors.text }]}>{username || 'User'}</Text>
             </View>
             <View style={styles.mainCardHeaderRight}>
-              <View style={[styles.cycleBadge, { backgroundColor: colors.primary + '18' }]}>
+              <TouchableOpacity
+                onPress={() => setShowCycleInfoModal(true)}
+                style={[styles.cycleBadge, { backgroundColor: colors.primary + '18' }]}
+                activeOpacity={0.7}
+                data-testid="button-cycle-info"
+              >
                 <Text style={[styles.cycleBadgeText, { color: colors.primary }]}>{summary.monthLabel}</Text>
-              </View>
+                <Ionicons name="information-circle-outline" size={14} color={colors.primary} style={{ marginLeft: 4 }} />
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={styles.settingsBtn} data-testid="button-settings">
                 <Ionicons name="settings-outline" size={20} color={colors.textMuted} />
               </TouchableOpacity>
@@ -860,6 +875,74 @@ export default function DashboardScreen() {
       </ScrollView>
 
       <FABButton onPress={() => navigation.navigate('AddTransaction')} />
+
+      <Modal
+        visible={showCycleInfoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCycleInfoModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowCycleInfoModal(false)}
+        >
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>How We Calculate Your Month</Text>
+              <TouchableOpacity onPress={() => setShowCycleInfoModal(false)} data-testid="button-close-cycle-info">
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {summary?.cycleInfo?.isSalaryCycle ? (
+              <View style={styles.modalBody}>
+                <View style={[styles.infoRow, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
+                  <Ionicons name="calendar" size={18} color={colors.primary} />
+                  <View style={styles.infoRowText}>
+                    <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Current Cycle</Text>
+                    <Text style={[styles.infoValue, { color: colors.text }]}>
+                      {summary.cycleInfo.cycleStartFormatted} {'\u2192'} {summary.cycleInfo.cycleEndFormatted}
+                    </Text>
+                  </View>
+                </View>
+
+                {forecast?.cycleInfo && (
+                  <View style={[styles.infoRow, { backgroundColor: '#8b5cf610', borderColor: '#8b5cf630' }]}>
+                    <Ionicons name="calendar-outline" size={18} color="#8b5cf6" />
+                    <View style={styles.infoRowText}>
+                      <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Next Cycle</Text>
+                      <Text style={[styles.infoValue, { color: colors.text }]}>
+                        {forecast.cycleInfo.cycleStartFormatted} {'\u2192'} {forecast.cycleInfo.cycleEndFormatted}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                <Text style={[styles.modalExplain, { color: colors.textMuted }]}>
+                  Your financial month is based on your salary cycle, not the calendar month. It starts from your last salary credit date and ends just before the next expected salary date.
+                </Text>
+                <Text style={[styles.modalExplain, { color: colors.textMuted, marginTop: 6 }]}>
+                  All income, expenses, and bill calculations on this dashboard use these cycle dates for accurate tracking.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.modalBody}>
+                <View style={[styles.infoRow, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
+                  <Ionicons name="calendar" size={18} color={colors.primary} />
+                  <View style={styles.infoRowText}>
+                    <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Current Period</Text>
+                    <Text style={[styles.infoValue, { color: colors.text }]}>Calendar Month ({summary?.monthLabel})</Text>
+                  </View>
+                </View>
+                <Text style={[styles.modalExplain, { color: colors.textMuted }]}>
+                  Your dashboard currently uses the standard calendar month. Set up a salary profile to switch to salary cycle-based tracking for more accurate financial planning.
+                </Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -948,6 +1031,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   cycleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -1450,5 +1535,58 @@ const styles = StyleSheet.create({
   forecastTabTotalValue: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 20,
+    maxWidth: 400,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+  },
+  modalBody: {
+    gap: 12,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 10,
+  },
+  infoRowText: {
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  infoValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  modalExplain: {
+    fontSize: 13,
+    lineHeight: 19,
   },
 });

@@ -151,6 +151,12 @@ export interface BillsDueDetails {
   insurance: BillItem[];
 }
 
+export interface CycleInfo {
+  cycleStartFormatted: string;
+  cycleEndFormatted: string;
+  isSalaryCycle: boolean;
+}
+
 export interface DashboardSummary {
   monthLabel: string;
   totalIncome: number;
@@ -174,6 +180,7 @@ export interface DashboardSummary {
   totalEMI: number;
   activeLoansCount: number;
   lastTransactions: Transaction[];
+  cycleInfo?: CycleInfo;
 }
 
 export interface NextMonthForecastItem {
@@ -206,6 +213,7 @@ export interface NextMonthForecast {
   totalLoans: number;
   totalInsurance: number;
   totalCreditCardBills: number;
+  cycleInfo?: CycleInfo;
 }
 
 export interface InsertAccount {
