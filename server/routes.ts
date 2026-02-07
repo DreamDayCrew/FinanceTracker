@@ -4452,7 +4452,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await db.execute(sql`DELETE FROM budgets WHERE user_id = ${userId}`);
       await db.execute(sql`DELETE FROM transactions WHERE user_id = ${userId}`);
       await db.execute(sql`DELETE FROM accounts WHERE user_id = ${userId}`);
-      await db.execute(sql`DELETE FROM categories WHERE user_id = ${userId}`);
       await db.execute(sql`DELETE FROM users WHERE id = ${userId}`);
 
       res.json({ message: "Account and all data deleted successfully" });
