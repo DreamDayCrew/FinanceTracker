@@ -468,6 +468,59 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
+      <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Danger Zone</Text>
+      <View style={[styles.section, { backgroundColor: colors.card }]}>
+        <TouchableOpacity 
+          style={styles.settingRowButton}
+          onPress={() => {
+            Alert.alert(
+              'Delete Account',
+              'This will permanently delete your account and ALL your data including accounts, transactions, budgets, loans, insurance, savings goals, and scheduled payments. This action cannot be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'Delete Everything', 
+                  style: 'destructive', 
+                  onPress: () => {
+                    Alert.alert(
+                      'Are you absolutely sure?',
+                      'Type "DELETE" mentally and confirm. All your financial data will be permanently erased.',
+                      [
+                        { text: 'No, keep my data', style: 'cancel' },
+                        { 
+                          text: 'Yes, delete permanently', 
+                          style: 'destructive', 
+                          onPress: async () => {
+                            try {
+                              await api.deleteUserAccount();
+                              await AsyncStorage.clear();
+                              queryClient.clear();
+                              await logout();
+                              Alert.alert('Done', 'Your account and all data have been deleted.');
+                            } catch (error: any) {
+                              Alert.alert('Error', error.message || 'Failed to delete account. Please try again.');
+                            }
+                          }
+                        },
+                      ]
+                    );
+                  }
+                },
+              ]
+            );
+          }}
+        >
+          <View style={styles.settingInfo}>
+            <Ionicons name="trash-outline" size={22} color="#EF4444" />
+            <View>
+              <Text style={[styles.settingTitle, { color: '#EF4444' }]}>Delete Account</Text>
+              <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>Permanently delete all your data</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+
       <Modal
         visible={showPinModal}
         animationType="slide"
