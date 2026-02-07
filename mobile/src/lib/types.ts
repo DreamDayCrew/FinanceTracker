@@ -5,6 +5,8 @@ export interface Account {
   type: 'bank' | 'credit_card' | 'debit_card';
   bankName: string | null;
   accountNumber: string | null;
+  bankAccountNumber?: string | null;
+  ifscCode?: string | null;
   balance: string;
   creditLimit: string | null;
   monthlySpendingLimit: string | null;

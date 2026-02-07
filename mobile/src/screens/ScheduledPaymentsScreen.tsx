@@ -71,6 +71,9 @@ export default function ScheduledPaymentsScreen() {
   const [paymentCreateTransaction, setPaymentCreateTransaction] = useState(true);
   const [paymentAffectBalance, setPaymentAffectBalance] = useState(true);
   const [paymentAmount, setPaymentAmount] = useState('');
+  
+  // Store calculated billing amounts for credit card bills
+  const [billingAmounts, setBillingAmounts] = useState<Record<number, { amount: string; cycleLabel: string }>>({});
 
   const { data: payments, isLoading, refetch: refetchPayments } = useQuery({
     queryKey: ['/api/scheduled-payments'],
@@ -99,6 +102,37 @@ export default function ScheduledPaymentsScreen() {
       refetchOccurrences();
     }, [refetchPayments, refetchOccurrences])
   );
+
+  // Fetch billing amounts for credit card bills IN THIS MONTH ONLY (checklist tab)
+  useEffect(() => {
+    // Clear old billing amounts immediately when occurrences change
+    setBillingAmounts({});
+    
+    if (!occurrences || occurrences.length === 0) return;
+    
+    const fetchBillingAmounts = async () => {
+      const amounts: Record<number, { amount: string; cycleLabel: string }> = {};
+      
+      for (const occurrence of occurrences) {
+        const payment = occurrence.scheduledPayment;
+        if (payment && payment.paymentType === 'credit_card_bill') {
+          try {
+            const data = await api.getScheduledPaymentBillingAmount(payment.id);
+            amounts[payment.id] = {
+              amount: data.calculatedAmount,
+              cycleLabel: data.cycleLabel
+            };
+          } catch (error) {
+            console.error(`Error fetching billing amount for payment ${payment.id}:`, error);
+          }
+        }
+      }
+      
+      setBillingAmounts(amounts);
+    };
+    
+    fetchBillingAmounts();
+  }, [occurrences, currentMonth, currentYear]);
 
   const generateOccurrencesMutation = useMutation({
     mutationFn: () => api.generatePaymentOccurrences(currentMonth, currentYear),
@@ -410,7 +444,7 @@ export default function ScheduledPaymentsScreen() {
         <View style={styles.paymentRight}>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={[styles.paymentAmount, { color: colors.text }, !isActive && { color: colors.textMuted }]}>
-              {payment.amount ? formatCurrency(parseFloat(payment.amount)) : '—'}
+              {payment.paymentType === 'credit_card_bill' ? formatCurrency(0) : (payment.amount ? formatCurrency(parseFloat(payment.amount)) : '—')}
             </Text>
             {payment.paymentType === 'credit_card_bill' && !payment.amount && (
               <View style={[styles.autoCalcBadge, { backgroundColor: `${colors.primary}15` }]}>
@@ -552,8 +586,18 @@ export default function ScheduledPaymentsScreen() {
   
   const paidOccurrences = occurrences.filter(o => o.status === 'paid');
   const pendingOccurrences = occurrences.filter(o => o.status === 'pending');
-  const totalPaid = paidOccurrences.reduce((sum, o) => sum + parseFloat(o.scheduledPayment?.amount || '0'), 0);
-  const totalPending = pendingOccurrences.reduce((sum, o) => sum + parseFloat(o.scheduledPayment?.amount || '0'), 0);
+  const totalPaid = paidOccurrences.reduce((sum, o) => {
+    if (o.scheduledPayment?.paymentType === 'credit_card_bill' && billingAmounts[o.scheduledPayment?.id]) {
+      return sum + parseFloat(billingAmounts[o.scheduledPayment.id].amount);
+    }
+    return sum + parseFloat(o.scheduledPayment?.amount || '0');
+  }, 0);
+  const totalPending = pendingOccurrences.reduce((sum, o) => {
+    if (o.scheduledPayment?.paymentType === 'credit_card_bill' && billingAmounts[o.scheduledPayment?.id]) {
+      return sum + parseFloat(billingAmounts[o.scheduledPayment.id].amount);
+    }
+    return sum + parseFloat(o.scheduledPayment?.amount || '0');
+  }, 0);
 
   if (isLoading) {
     return (
@@ -714,12 +758,27 @@ export default function ScheduledPaymentsScreen() {
                         )}
                       </View>
                     </View>
-                    <Text style={[
-                      styles.checklistAmount, 
-                      { color: isPaid ? colors.textMuted : '#ef4444' }
-                    ]}>
-                      {formatCurrency(parseFloat(occurrence.paidAmount || payment?.amount || '0'))}
-                    </Text>
+                    <View style={styles.amountContainer}>
+                      <Text style={[
+                        styles.checklistAmount, 
+                        { color: isPaid ? colors.textMuted : '#ef4444' }
+                      ]}>
+                        {formatCurrency(parseFloat(
+                          (occurrence.paidAmount && parseFloat(occurrence.paidAmount) > 0) 
+                            ? occurrence.paidAmount 
+                            : (payment?.paymentType === 'credit_card_bill' && billingAmounts[payment?.id]?.amount 
+                              ? billingAmounts[payment?.id].amount 
+                              : payment?.amount || '0')
+                        ))}
+                      </Text>
+                      {payment?.paymentType === 'credit_card_bill' && billingAmounts[payment?.id]?.cycleLabel && (
+                        <View style={[styles.cycleBadge, { backgroundColor: colors.primary + '15' }]}>
+                          <Text style={[styles.cycleBadgeText, { color: colors.primary }]}>
+                            {billingAmounts[payment.id].cycleLabel}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                 );
               })
@@ -1142,6 +1201,19 @@ const styles = StyleSheet.create({
   checklistAmount: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  amountContainer: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  cycleBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  cycleBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
   },
   totalCard: {
     backgroundColor: '#f97316',

@@ -31,6 +31,10 @@ export default function AddAccountScreen() {
   const [billingDate, setBillingDate] = useState('');
   const [isDefault, setIsDefault] = useState(false);
   
+  // Bank account details (for bank type)
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [ifscCode, setIfscCode] = useState('');
+  
   // Card details (for credit_card and debit_card)
   const [cardNumber, setCardNumber] = useState('');
   const [fullCardNumber, setFullCardNumber] = useState(''); // Store full card number for edit mode
@@ -41,12 +45,27 @@ export default function AddAccountScreen() {
   const [cardType, setCardType] = useState<'visa' | 'mastercard' | 'rupay' | 'amex' | 'other'>('visa');
   const [linkedAccountId, setLinkedAccountId] = useState<number | undefined>();
   const [showLinkedAccountPicker, setShowLinkedAccountPicker] = useState(false);
+  
+  // Scheduled payment for credit card
+  const [createScheduledPayment, setCreateScheduledPayment] = useState(false);
 
   // Always fetch accounts - needed for editing and for linking debit cards to bank accounts
   const { data: accounts } = useQuery({
     queryKey: ['/api/accounts'],
     queryFn: api.getAccounts,
   });
+
+  // Fetch categories to find bills category
+  const { data: categories = [] } = useQuery({
+    queryKey: ['/api/categories'],
+    queryFn: api.getCategories,
+  });
+
+  // Find bills category ID
+  const billsCategoryId = useMemo(() => {
+    const billsCategory = categories.find((c: any) => c.name?.toLowerCase() === 'bills');
+    return billsCategory?.id || null;
+  }, [categories]);
 
   // Get bank accounts for linking debit cards
   const bankAccounts = useMemo(() => {
@@ -85,6 +104,15 @@ export default function AddAccountScreen() {
         if (account.linkedAccountId) {
           setLinkedAccountId(account.linkedAccountId);
         }
+        // Load bank account details if bank type
+        if (account.type === 'bank') {
+          if (account.bankAccountNumber) {
+            setBankAccountNumber(account.bankAccountNumber);
+          }
+          if (account.ifscCode) {
+            setIfscCode(account.ifscCode);
+          }
+        }
         // Load card details if available
         if (account.cardDetails) {
           // Store full card number if available
@@ -101,16 +129,53 @@ export default function AddAccountScreen() {
     }
   }, [isEditMode, accounts, accountId]);
 
+  const createScheduledPaymentMutation = useMutation({
+    mutationFn: api.createScheduledPayment,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/scheduled-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+    },
+    onError: (error) => {
+      console.error('Failed to create scheduled payment:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Warning',
+        text2: 'Account created but scheduled payment setup failed',
+        position: 'bottom',
+      });
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: api.createAccount,
-    onSuccess: () => {
+    onSuccess: async (newAccount) => {
       queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+      
+      // Create scheduled payment if enabled
+      if (type === 'credit_card' && createScheduledPayment && billingDate && newAccount.id && billsCategoryId) {
+        const paymentData = {
+          name: `${name} Bill Pay`,
+          amount: '0',
+          dueDateType: 'fixed_day' as const,
+          dueDate: parseInt(billingDate),
+          frequency: 'monthly' as const,
+          paymentType: 'credit_card_bill' as const,
+          creditCardAccountId: newAccount.id,
+          accountId: linkedAccountId || undefined,
+          categoryId: billsCategoryId,
+          affectTransaction: true,
+          affectAccountBalance: true,
+        };
+        
+        await createScheduledPaymentMutation.mutateAsync(paymentData);
+      }
+      
       navigation.goBack();
       Toast.show({
         type: 'success',
         text1: 'Account Created',
-        text2: 'Account has been added successfully',
+        text2: createScheduledPayment ? 'Account and bill payment reminder created' : 'Account has been added successfully',
         position: 'bottom',
       });
     },
@@ -209,6 +274,16 @@ export default function AddAccountScreen() {
       accountData.accountNumber = accountNumber.trim();
     }
 
+    // Bank account details
+    if (type === 'bank') {
+      if (bankAccountNumber.trim()) {
+        accountData.bankAccountNumber = bankAccountNumber.trim();
+      }
+      if (ifscCode.trim()) {
+        accountData.ifscCode = ifscCode.trim().toUpperCase();
+      }
+    }
+
     if ((type === 'debit_card' || type === 'credit_card') && linkedAccountId) {
       accountData.linkedAccountId = linkedAccountId;
     }
@@ -231,7 +306,7 @@ export default function AddAccountScreen() {
     }
   };
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending = createMutation.isPending || updateMutation.isPending || createScheduledPaymentMutation.isPending || !billsCategoryId;
 
   // Display card number based on visibility toggle
   const displayCardNumber = useMemo(() => {
@@ -402,6 +477,35 @@ export default function AddAccountScreen() {
           onChangeText={setAccountNumber}
         />
       </View>
+
+      {type === 'bank' && (
+        <>
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.textMuted }]}>Account Number (optional)</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              placeholder="e.g., 1234567890"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              value={bankAccountNumber}
+              onChangeText={setBankAccountNumber}
+            />
+            <Text style={[styles.hint, { color: colors.textMuted }]}>Full bank account number</Text>
+          </View>
+
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.textMuted }]}>IFSC Code (optional)</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              placeholder="e.g., HDFC0001234"
+              placeholderTextColor={colors.textMuted}
+              value={ifscCode}
+              onChangeText={setIfscCode}
+            />
+            <Text style={[styles.hint, { color: colors.textMuted }]}>Indian Financial System Code</Text>
+          </View>
+        </>
+      )}
 
       {(type === 'debit_card' || type === 'credit_card') && bankAccounts.length > 0 && (
         <View style={styles.field}>
@@ -574,6 +678,30 @@ export default function AddAccountScreen() {
             </View>
           </View>
         </TouchableOpacity>
+      )}
+
+      {type === 'credit_card' && !isEditMode && (
+        <>
+          <View style={[styles.sectionHeader, { borderTopColor: colors.border }]}>
+          </View>
+
+          <TouchableOpacity 
+            style={[styles.defaultToggle, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setCreateScheduledPayment(!createScheduledPayment)}
+          >
+            <View style={styles.defaultToggleContent}>
+              <View>
+                <Text style={[styles.defaultToggleTitle, { color: colors.text }]}>Bill Payment Tracking</Text>
+                <Text style={[styles.defaultToggleDesc, { color: colors.textMuted }]}>
+                  Track monthly credit card bill payments
+                </Text>
+              </View>
+              <View style={[styles.switch, { backgroundColor: createScheduledPayment ? colors.primary : colors.border }]}>
+                <View style={[styles.switchThumb, { transform: [{ translateX: createScheduledPayment ? 20 : 2 }] }]} />
+              </View>
+            </View>
+          </TouchableOpacity>
+        </>
       )}
 
       <TouchableOpacity 

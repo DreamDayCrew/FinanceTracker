@@ -172,7 +172,7 @@ export default function CategoriesScreen() {
                       end={{ x: 1, y: 1 }}
                       style={styles.iconContainer}
                     >
-                      <Ionicons name={getValidIconName(category.icon || getCategoryIcon(category.name)) as any} size={24} color="#fff" />
+                      <Ionicons name={(category.icon || getCategoryIcon(category.name)) as any} size={24} color="#fff" />
                     </LinearGradient>
                     <View style={styles.categoryInfo}>
                       <View style={styles.categoryNameRow}>

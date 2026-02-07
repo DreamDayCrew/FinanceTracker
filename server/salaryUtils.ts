@@ -351,3 +351,41 @@ export function getCyclePrimaryMonth(cycleStart: Date, cycleEnd: Date): { month:
   const midpoint = new Date((cycleStart.getTime() + cycleEnd.getTime()) / 2);
   return { month: midpoint.getMonth() + 1, year: midpoint.getFullYear() };
 }
+
+/**
+ * Calculate credit card billing cycle dates based on billing date
+ * Billing cycle runs from billingDate of previous month to billingDate-1 of current month
+ * Example: billingDate=17 means cycle from Jan 17 to Feb 16
+ */
+export function getCreditCardBillingCycle(
+  referenceDate: Date = new Date(),
+  billingDate: number
+): {
+  cycleStart: Date;
+  cycleEnd: Date;
+  cycleLabel: string;
+} {
+  const now = new Date(referenceDate);
+  const currentDay = now.getDate();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  let cycleStart: Date;
+  let cycleEnd: Date;
+
+  if (currentDay >= billingDate) {
+    // We're in the current billing cycle
+    // Cycle starts on billingDate of this month and ends on billingDate-1 of next month
+    cycleStart = new Date(currentYear, currentMonth, billingDate, 0, 0, 0);
+    cycleEnd = new Date(currentYear, currentMonth + 1, billingDate - 1, 23, 59, 59);
+  } else {
+    // We're in the previous billing cycle (before this month's billingDate)
+    // Cycle starts on billingDate of previous month and ends on billingDate-1 of this month
+    cycleStart = new Date(currentYear, currentMonth - 1, billingDate, 0, 0, 0);
+    cycleEnd = new Date(currentYear, currentMonth, billingDate - 1, 23, 59, 59);
+  }
+
+  const cycleLabel = `${cycleStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${cycleEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+  return { cycleStart, cycleEnd, cycleLabel };
+}

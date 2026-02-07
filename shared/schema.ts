@@ -36,6 +36,8 @@ export const accounts = pgTable("accounts", {
   type: varchar("type", { length: 20 }).notNull(), // 'bank', 'credit_card', 'debit_card'
   bankName: varchar("bank_name", { length: 100 }),
   accountNumber: varchar("account_number", { length: 50 }),
+  bankAccountNumber: varchar("bank_account_number", { length: 50 }), // full account number for bank accounts
+  ifscCode: varchar("ifsc_code", { length: 50 }), // IFSC code for bank accounts
   balance: decimal("balance", { precision: 12, scale: 2 }).default("0"),
   creditLimit: decimal("credit_limit", { precision: 12, scale: 2 }), // only for credit cards
   monthlySpendingLimit: decimal("monthly_spending_limit", { precision: 12, scale: 2 }), // monthly spending limit for credit cards
@@ -68,6 +70,8 @@ export const insertAccountSchema = createInsertSchema(accounts).omit({
   linkedAccountId: z.number().optional(),
   userId: z.number().optional(),
   isDefault: z.boolean().optional(),
+  bankAccountNumber: z.string().optional(),
+  ifscCode: z.string().optional(),
 });
 
 export type InsertAccount = z.infer<typeof insertAccountSchema>;
@@ -246,8 +250,16 @@ export const insertScheduledPaymentSchema = createInsertSchema(scheduledPayments
     if (data.paymentType !== 'credit_card_bill' && !data.amount) {
       return false;
     }
-    // If amount is provided, it must be a valid positive number
-    if (data.amount && (isNaN(Number(data.amount)) || Number(data.amount) <= 0)) {
+    // If amount is provided, it must be a valid number
+    if (data.amount && isNaN(Number(data.amount))) {
+      return false;
+    }
+    // For regular payments, amount must be positive (> 0)
+    if (data.paymentType !== 'credit_card_bill' && data.amount && Number(data.amount) <= 0) {
+      return false;
+    }
+    // For credit card bills, amount can be 0 (auto-calculated) or positive
+    if (data.paymentType === 'credit_card_bill' && data.amount && Number(data.amount) < 0) {
       return false;
     }
     return true;

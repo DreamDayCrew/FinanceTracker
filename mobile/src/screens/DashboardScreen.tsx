@@ -304,7 +304,7 @@ export default function DashboardScreen() {
                   />
                 </View>
                 <Text style={[styles.spendBarLabel, { color: colors.textMuted }]}>
-                  {Math.round(spendRatio * 100)}% spent \u00B7 Today: {formatCurrency(summary.totalSpentToday)}
+                  {Math.round(spendRatio * 100)}% spent - Today: {formatCurrency(summary.totalSpentToday)}
                 </Text>
               </View>
             )}
@@ -462,7 +462,7 @@ export default function DashboardScreen() {
                   <View style={[styles.forecastIconWrap, { backgroundColor: '#3b82f6' + '15' }]}>
                     <Ionicons name="calendar-outline" size={16} color="#3b82f6" />
                   </View>
-                  <Text style={[styles.username, { color: colors.text }]}>{forecast.monthLabel} Plan</Text>
+                  <Text style={[styles.username, { color: colors.text }]}>Next Cycle Plan</Text>
                 </View>
               </View>
               <View style={[styles.cycleBadge, { backgroundColor: colors.primary + '18' }]}>
@@ -1061,7 +1061,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   netBalanceValue: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     letterSpacing: -0.5,
   },

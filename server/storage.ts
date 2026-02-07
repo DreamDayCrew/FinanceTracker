@@ -279,8 +279,70 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAccount(id: number): Promise<boolean> {
-    const result = await db.delete(accounts).where(eq(accounts.id, id)).returning();
-    return result.length > 0;
+    try {
+      // Delete all related records in order of dependencies
+      
+      // 1. Delete payment occurrences linked to scheduled payments of this account
+      const scheduledPaymentsForAccount = await db.select().from(scheduledPayments).where(
+        or(
+          eq(scheduledPayments.accountId, id),
+          eq(scheduledPayments.creditCardAccountId, id)
+        )
+      );
+      
+      for (const payment of scheduledPaymentsForAccount) {
+        await db.delete(paymentOccurrences).where(eq(paymentOccurrences.scheduledPaymentId, payment.id));
+      }
+      
+      // 2. Delete scheduled payments
+      await db.delete(scheduledPayments).where(
+        or(
+          eq(scheduledPayments.accountId, id),
+          eq(scheduledPayments.creditCardAccountId, id)
+        )
+      );
+      
+      // 3. Delete credit card statements
+      await db.delete(creditCardStatements).where(eq(creditCardStatements.accountId, id));
+      
+      // 4. Delete card details
+      await db.delete(cardDetails).where(eq(cardDetails.accountId, id));
+      
+      // 5. Delete transactions
+      await db.delete(transactions).where(
+        or(
+          eq(transactions.accountId, id),
+          eq(transactions.toAccountId, id)
+        )
+      );
+      
+      // 6. Delete savings contributions
+      await db.delete(savingsContributions).where(eq(savingsContributions.accountId, id));
+      
+      // 7. Delete savings goals
+      await db.delete(savingsGoals).where(
+        or(
+          eq(savingsGoals.accountId, id),
+          eq(savingsGoals.toAccountId, id)
+        )
+      );
+      
+      // 8. Delete loans
+      await db.delete(loans).where(eq(loans.accountId, id));
+      
+      // 9. Delete salary profiles
+      await db.delete(salaryProfiles).where(eq(salaryProfiles.accountId, id));
+      
+      // 10. Delete insurances
+      await db.delete(insurances).where(eq(insurances.accountId, id));
+      
+      // 11. Finally, delete the account
+      const result = await db.delete(accounts).where(eq(accounts.id, id)).returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      throw error;
+    }
   }
 
   async updateAccountBalance(id: number, amount: string, type: 'add' | 'subtract'): Promise<Account | undefined> {

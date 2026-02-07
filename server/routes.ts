@@ -1023,6 +1023,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Calculate billing cycle amount for credit card bills
+  app.get("/api/scheduled-payments/:id/billing-amount", authenticateToken, async (req, res) => {
+    try {
+      const userId = req.user!.userId;
+      const paymentId = parseInt(req.params.id);
+      const payment = await storage.getScheduledPayment(paymentId);
+
+      if (!payment || payment.userId !== userId) {
+        return res.status(404).json({ error: "Scheduled payment not found" });
+      }
+
+      if (payment.paymentType !== 'credit_card_bill' || !payment.creditCardAccountId) {
+        return res.status(400).json({ error: "Not a credit card bill scheduled payment" });
+      }
+
+      // Get the credit card account
+      const creditCardAccount = await storage.getAccount(payment.creditCardAccountId);
+      if (!creditCardAccount || !creditCardAccount.billingDate) {
+        return res.status(400).json({ error: "Credit card account not found or has no billing date" });
+      }
+
+      // Import the getCreditCardBillingCycle function
+      const { getCreditCardBillingCycle } = await import('./salaryUtils');
+      const { cycleStart, cycleEnd, cycleLabel } = getCreditCardBillingCycle(new Date(), creditCardAccount.billingDate);
+
+      // Get all transactions for the credit card in this billing cycle
+      const transactions = await storage.getAllTransactions({
+        accountId: payment.creditCardAccountId,
+        startDate: cycleStart,
+        endDate: cycleEnd,
+      });
+
+      // Sum debit transactions (spending)
+      const calculatedAmount = transactions
+        .filter(t => t.type === 'debit')
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+      res.json({
+        calculatedAmount: calculatedAmount.toFixed(2),
+        cycleStart: cycleStart.toISOString(),
+        cycleEnd: cycleEnd.toISOString(),
+        cycleLabel,
+        transactionCount: transactions.length,
+      });
+    } catch (error) {
+      console.error("Error calculating billing amount:", error);
+      res.status(500).json({ error: "Failed to calculate billing amount" });
+    }
+  });
+
   app.post("/api/scheduled-payments", authenticateToken, async (req, res) => {
     try {
       const userId = req.user!.userId;
@@ -2300,10 +2350,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const isPaid = occurrence?.status === 'paid';
         const paidAmount = occurrence?.paidAmount ? parseFloat(occurrence.paidAmount) : 0;
 
+        let amount = parseFloat(p.amount || '0');
+        
+        // If amount is 0 for credit card bill (auto-calculate), fetch the actual billing cycle amount
+        if (amount === 0 && p.paymentType === 'credit_card_bill' && p.creditCardAccountId) {
+          const creditCardAccount = await storage.getAccount(p.creditCardAccountId);
+          if (creditCardAccount && creditCardAccount.billingDate) {
+            const { getCreditCardBillingCycle } = await import('./salaryUtils');
+            const { cycleStart, cycleEnd } = getCreditCardBillingCycle(now, creditCardAccount.billingDate);
+            const cycleTransactions = await storage.getAllTransactions({
+              accountId: creditCardAccount.id,
+              startDate: cycleStart,
+              endDate: cycleEnd,
+            });
+            amount = cycleTransactions
+              .filter(t => t.type === 'debit')
+              .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+          }
+        }
+
         const billItem = {
           id: p.id,
           name: p.name,
-          amount: parseFloat(p.amount || '0'),
+          amount,
           dueDate: p.dueDate,
           dueDateType: p.dueDateType || 'fixed_day',
           frequency: p.frequency || 'monthly',
@@ -2664,7 +2733,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (p.paymentType !== 'credit_card_bill') continue;
         if (!isPaymentDueNextMonth(p)) continue;
         if (manualCCIds.has(p.creditCardAccountId)) {
-          const amount = parseFloat(p.amount || '0');
+          let amount = parseFloat(p.amount || '0');
+          
+          // If amount is 0 (auto-calculate), fetch the actual billing cycle amount
+          if (amount === 0 && p.creditCardAccountId) {
+            const creditCardAccount = await storage.getAccount(p.creditCardAccountId);
+            if (creditCardAccount && creditCardAccount.billingDate) {
+              const { getCreditCardBillingCycle } = await import('./salaryUtils');
+              const { cycleStart, cycleEnd } = getCreditCardBillingCycle(now, creditCardAccount.billingDate);
+              const cycleTransactions = await storage.getAllTransactions({
+                accountId: creditCardAccount.id,
+                startDate: cycleStart,
+                endDate: cycleEnd,
+              });
+              amount = cycleTransactions
+                .filter(t => t.type === 'debit')
+                .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+            }
+          }
+          
           let creditLimit: number | null = null;
           const linkedCard = allAccounts.find(a => a.id === p.creditCardAccountId);
           if (linkedCard && linkedCard.creditLimit) {
@@ -3777,6 +3864,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const loanId = parseInt(req.params.loanId);
       const installmentId = parseInt(req.params.id);
       
+      // Convert to explicit booleans (handle string/undefined values)
+      const shouldCreateTransaction = createTransaction === true || createTransaction === 'true';
+      const shouldAffectBalance = affectBalance === true || affectBalance === 'true';
+      
       const payment = await storage.createLoanPayment({
         loanId,
         installmentId,
@@ -3787,8 +3878,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes: notes || null
       });
       
-      // Create transaction if requested
-      if (createTransaction && accountId) {
+      // Mark the installment as paid
+      await storage.markInstallmentPaid(installmentId, paidAmount, payment.id);
+      
+      // Create transaction ONLY if explicitly requested
+      if (shouldCreateTransaction && accountId) {
         const loan = await storage.getLoan(loanId);
         const allCategories = await storage.getAllCategories();
         let loanCategory = allCategories.find((c: { name: string }) => c.name === 'Loan' || c.name === 'EMI');
@@ -3813,8 +3907,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Update account balance if requested
-      if (affectBalance && accountId) {
+      // Update account balance ONLY if explicitly requested
+      if (shouldAffectBalance && accountId) {
         const account = await storage.getAccount(accountId);
         if (account && account.balance) {
           const newBalance = parseFloat(account.balance) - parseFloat(paidAmount);

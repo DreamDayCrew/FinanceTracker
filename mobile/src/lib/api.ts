@@ -312,6 +312,8 @@ export const api = {
     apiRequest<ScheduledPayment>(`/api/scheduled-payments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteScheduledPayment: (id: number) => 
     apiRequest<void>(`/api/scheduled-payments/${id}`, { method: 'DELETE' }),
+  getScheduledPaymentBillingAmount: (id: number) => 
+    apiRequest<{ calculatedAmount: string; cycleStart: string; cycleEnd: string; cycleLabel: string; transactionCount: number }>(`/api/scheduled-payments/${id}/billing-amount`),
   
   getPaymentOccurrences: (month: number, year: number) => 
     apiRequest<any[]>(`/api/payment-occurrences?month=${month}&year=${year}`),

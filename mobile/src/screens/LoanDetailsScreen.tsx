@@ -678,6 +678,9 @@ export default function LoanDetailsScreen() {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Outstanding Card */}
         <View style={[styles.outstandingCard, { backgroundColor: '#1e293b' }]}>
+          {/* Loan Name */}
+          <Text style={[styles.outstandingLoanName, { color: '#fff' }]}>{loan.name}</Text>
+          
           <View style={styles.outstandingContent}>
             <View>
               <Text style={styles.outstandingLabel}>Outstanding</Text>
@@ -892,8 +895,8 @@ export default function LoanDetailsScreen() {
               Upcoming
             </Text>
           </TouchableOpacity>
-          {/* Only show Payments tab for non-existing loans */}
-          {!loan.isExistingLoan && (
+          {/* Show Payments tab for all loans that have paid installments or payments */}
+          {(paidInstallments.length > 0 || payments.length > 0) && (
             <TouchableOpacity
               style={[
                 styles.tab,
@@ -902,7 +905,7 @@ export default function LoanDetailsScreen() {
               onPress={() => setActiveTab('payments')}
             >
               <Text style={[styles.tabText, { color: activeTab === 'payments' ? colors.primary : colors.textMuted }]}>
-                Payments
+                Paid
               </Text>
             </TouchableOpacity>
           )}
@@ -999,8 +1002,8 @@ export default function LoanDetailsScreen() {
                             ]}
                             onPress={() => {
                               setSelectedInstallment(installment);
-                              setPayEmiCreateTransaction(loan?.createTransaction || false);
-                              setPayEmiAffectBalance(loan?.affectBalance || false);
+                              setPayEmiCreateTransaction(false);
+                              setPayEmiAffectBalance(false);
                               setPayEmiModalVisible(true);
                             }}
                             disabled={processingInstallmentId !== null}
@@ -1441,7 +1444,7 @@ export default function LoanDetailsScreen() {
                 {markPaidMutation.isPending ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={styles.confirmButtonText}>Confirm Payment</Text>
+                  <Text style={styles.confirmButtonText}>Confirm</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -2382,6 +2385,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 28,
     fontWeight: 'bold',
+  },
+  outstandingLoanName: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 12,
   },
   typeBadge: {
     paddingHorizontal: 12,
