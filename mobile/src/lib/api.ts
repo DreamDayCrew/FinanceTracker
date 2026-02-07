@@ -685,4 +685,6 @@ export const api = {
       method: 'POST', 
       body: JSON.stringify({ userId, enabled }) 
     }),
+  deleteUserAccount: () => 
+    apiRequest<{ message: string }>('/api/users/delete-account', { method: 'DELETE' }),
 };
