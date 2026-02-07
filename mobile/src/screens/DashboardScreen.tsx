@@ -48,6 +48,11 @@ export default function DashboardScreen() {
     queryFn: api.getNextMonthForecast,
   });
 
+  const { data: salaryProfile } = useQuery({
+    queryKey: ['/api/salary-profile'],
+    queryFn: api.getSalaryProfile,
+  });
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([
@@ -238,6 +243,26 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {!salaryProfile && (
+            <TouchableOpacity
+              style={[styles.salaryBanner, { backgroundColor: '#f59e0b18', borderColor: '#f59e0b40' }]}
+              onPress={() => navigation.navigate('More' as any, { screen: 'Salary' })}
+              activeOpacity={0.7}
+              data-testid="button-setup-salary"
+            >
+              <View style={styles.salaryBannerLeft}>
+                <View style={[styles.salaryBannerIcon, { backgroundColor: '#f59e0b25' }]}>
+                  <Ionicons name="wallet-outline" size={20} color="#f59e0b" />
+                </View>
+                <View style={styles.salaryBannerText}>
+                  <Text style={[styles.salaryBannerTitle, { color: colors.text }]}>Set up Salary Profile</Text>
+                  <Text style={[styles.salaryBannerSub, { color: colors.textMuted }]}>Track your income and plan finances better</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#f59e0b" />
+            </TouchableOpacity>
+          )}
 
           {/* Net Balance with eye toggle */}
           <View style={styles.netBalanceSection}>
@@ -865,6 +890,40 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
+  },
+  salaryBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 14,
+    gap: 8,
+  },
+  salaryBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 10,
+  },
+  salaryBannerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  salaryBannerText: {
+    flex: 1,
+  },
+  salaryBannerTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  salaryBannerSub: {
+    fontSize: 12,
+    marginTop: 1,
   },
   mainCardHeader: {
     flexDirection: 'row',
