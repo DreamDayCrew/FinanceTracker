@@ -26,7 +26,7 @@ import {
 import { suggestCategory, parseSmsMessage, fallbackCategorization, parseStatementPDF, ExtractedTransaction } from "./openai";
 import multer from "multer";
 import { PDFParse } from "pdf-parse";
-import { getPaydayForMonth, getNextPaydays, getPastPaydays } from "./salaryUtils";
+import { getPaydayForMonth, getNextPaydays, getPastPaydays, getCurrentCycleDates } from "./salaryUtils";
 import { generateOTP, storeOTP, verifyOTP, sendOTP } from "./emailService";
 import { generateTokenPair, generateAccessToken } from "./jwtService";
 import { authenticateToken } from "./authMiddleware";
@@ -2079,9 +2079,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.userId;
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      // Get salary profile to determine cycle dates
+      const salaryProfile = await storage.getSalaryProfile(userId);
+      let lastSalaryCycle = null;
+      
+      if (salaryProfile) {
+        const recentCycles = await storage.getSalaryCycles(salaryProfile.id, 1);
+        if (recentCycles.length > 0) {
+          lastSalaryCycle = recentCycles[0];
+        }
+      }
+      
+      // Calculate cycle dates based on salary profile
+      const { cycleStart, cycleEnd, cycleLabel } = getCurrentCycleDates(salaryProfile, lastSalaryCycle, now);
+      const startOfMonth = cycleStart;
+      const endOfMonth = cycleEnd;
 
       const monthTransactions = await storage.getAllTransactions({
         userId,
@@ -2407,10 +2421,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const lastTransactions = await storage.getAllTransactions({ userId, limit: 5 });
 
-      const monthName = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][now.getMonth()];
-
       res.json({
-        monthLabel: `${monthName} ${now.getFullYear()}`,
+        monthLabel: cycleLabel,
         totalIncome,
         totalSpent,
         totalSpentToday,

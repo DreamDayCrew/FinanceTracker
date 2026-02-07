@@ -126,3 +126,163 @@ export function getPastPaydays(
   
   return results;
 }
+
+/**
+ * Calculate current month cycle dates based on salary profile settings
+ * Returns { cycleStart, cycleEnd, cycleLabel }
+ */
+export function getCurrentCycleDates(
+  salaryProfile: any,
+  lastSalaryCycle: any | null,
+  now: Date = new Date()
+): { cycleStart: Date; cycleEnd: Date; cycleLabel: string } {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  // Default to calendar month if no salary profile or using fixed day
+  const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const defaultEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const defaultLabel = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+  
+  if (!salaryProfile || !salaryProfile.isActive) {
+    return { cycleStart: defaultStart, cycleEnd: defaultEnd, cycleLabel: defaultLabel };
+  }
+  
+  const monthCycleStartRule = salaryProfile.monthCycleStartRule || 'salary_day';
+  
+  if (monthCycleStartRule === 'fixed_day' && salaryProfile.monthCycleStartDay) {
+    // Use fixed day for cycle calculation
+    const fixedDay = salaryProfile.monthCycleStartDay;
+    const currentDay = now.getDate();
+    
+    let cycleStart: Date;
+    let cycleEnd: Date;
+    
+    if (currentDay >= fixedDay) {
+      // Current cycle: fixedDay of this month to (fixedDay-1) of next month
+      cycleStart = new Date(now.getFullYear(), now.getMonth(), fixedDay, 0, 0, 0);
+      const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, fixedDay);
+      cycleEnd = new Date(nextMonth.getTime() - 1000); // One second before next cycle starts
+    } else {
+      // Current cycle: fixedDay of last month to (fixedDay-1) of this month
+      cycleStart = new Date(now.getFullYear(), now.getMonth() - 1, fixedDay, 0, 0, 0);
+      const thisMonth = new Date(now.getFullYear(), now.getMonth(), fixedDay);
+      cycleEnd = new Date(thisMonth.getTime() - 1000);
+    }
+    
+    const startMonthName = monthNames[cycleStart.getMonth()];
+    const endMonthName = monthNames[cycleEnd.getMonth()];
+    const cycleLabel = cycleStart.getMonth() === cycleEnd.getMonth() 
+      ? `${startMonthName} ${cycleStart.getFullYear()}`
+      : `${startMonthName} ${cycleStart.getDate()} - ${endMonthName} ${cycleEnd.getDate()}`;
+    
+    return { cycleStart, cycleEnd, cycleLabel };
+  }
+  
+  // Use salary day - need to find last and next salary dates
+  if (monthCycleStartRule === 'salary_day') {
+    // If we have actual salary cycle data, use that
+    if (lastSalaryCycle && lastSalaryCycle.actualPayDate) {
+      const lastPayDate = new Date(lastSalaryCycle.actualPayDate);
+      
+      // Calculate next expected pay date
+      const nextPayDate = getPaydayForMonth(
+        now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear(),
+        now.getMonth() === 11 ? 1 : now.getMonth() + 2, // next month (getMonth is 0-indexed)
+        salaryProfile.paydayRule || 'last_working_day',
+        salaryProfile.fixedDay,
+        salaryProfile.weekdayPreference
+      );
+      
+      // Check if we're still in the cycle of lastPayDate or already in the next one
+      if (now >= lastPayDate && now < nextPayDate) {
+        // We're in the cycle starting from lastPayDate
+        const cycleStart = new Date(lastPayDate);
+        cycleStart.setHours(0, 0, 0, 0);
+        const cycleEnd = new Date(nextPayDate.getTime() - 1000); // One second before next salary
+        
+        const startMonthName = monthNames[cycleStart.getMonth()];
+        const endMonthName = monthNames[cycleEnd.getMonth()];
+        const cycleLabel = cycleStart.getMonth() === cycleEnd.getMonth()
+          ? `${startMonthName} ${cycleStart.getFullYear()}`
+          : `${startMonthName} ${cycleStart.getDate()} - ${endMonthName} ${cycleEnd.getDate()}`;
+        
+        return { cycleStart, cycleEnd, cycleLabel };
+      }
+      
+      // Otherwise we might be in a cycle we haven't recorded yet
+      // Calculate previous expected pay date
+      const prevPayDate = getPaydayForMonth(
+        lastPayDate.getMonth() === 0 ? lastPayDate.getFullYear() - 1 : lastPayDate.getFullYear(),
+        lastPayDate.getMonth() === 0 ? 12 : lastPayDate.getMonth(),
+        salaryProfile.paydayRule || 'last_working_day',
+        salaryProfile.fixedDay,
+        salaryProfile.weekdayPreference
+      );
+      
+      if (now >= prevPayDate && now < lastPayDate) {
+        const cycleStart = new Date(prevPayDate);
+        cycleStart.setHours(0, 0, 0, 0);
+        const cycleEnd = new Date(lastPayDate.getTime() - 1000);
+        
+        const startMonthName = monthNames[cycleStart.getMonth()];
+        const endMonthName = monthNames[cycleEnd.getMonth()];
+        const cycleLabel = cycleStart.getMonth() === cycleEnd.getMonth()
+          ? `${startMonthName} ${cycleStart.getFullYear()}`
+          : `${startMonthName} ${cycleStart.getDate()} - ${endMonthName} ${cycleEnd.getDate()}`;
+        
+        return { cycleStart, cycleEnd, cycleLabel };
+      }
+    }
+    
+    // Fallback: calculate based on current and previous expected pay dates
+    const currentMonthPayday = getPaydayForMonth(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      salaryProfile.paydayRule || 'last_working_day',
+      salaryProfile.fixedDay,
+      salaryProfile.weekdayPreference
+    );
+    
+    const prevMonthPayday = getPaydayForMonth(
+      now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear(),
+      now.getMonth() === 0 ? 12 : now.getMonth(),
+      salaryProfile.paydayRule || 'last_working_day',
+      salaryProfile.fixedDay,
+      salaryProfile.weekdayPreference
+    );
+    
+    const nextMonthPayday = getPaydayForMonth(
+      now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear(),
+      now.getMonth() === 11 ? 1 : now.getMonth() + 2,
+      salaryProfile.paydayRule || 'last_working_day',
+      salaryProfile.fixedDay,
+      salaryProfile.weekdayPreference
+    );
+    
+    let cycleStart: Date;
+    let cycleEnd: Date;
+    
+    if (now >= currentMonthPayday) {
+      // We're after the current month's payday, cycle is currentMonth to nextMonth
+      cycleStart = new Date(currentMonthPayday);
+      cycleStart.setHours(0, 0, 0, 0);
+      cycleEnd = new Date(nextMonthPayday.getTime() - 1000);
+    } else {
+      // We're before the current month's payday, cycle is prevMonth to currentMonth
+      cycleStart = new Date(prevMonthPayday);
+      cycleStart.setHours(0, 0, 0, 0);
+      cycleEnd = new Date(currentMonthPayday.getTime() - 1000);
+    }
+    
+    const startMonthName = monthNames[cycleStart.getMonth()];
+    const endMonthName = monthNames[cycleEnd.getMonth()];
+    const cycleLabel = cycleStart.getMonth() === cycleEnd.getMonth()
+      ? `${startMonthName} ${cycleStart.getFullYear()}`
+      : `${startMonthName} ${cycleStart.getDate()} - ${endMonthName} ${cycleEnd.getDate()}`;
+    
+    return { cycleStart, cycleEnd, cycleLabel };
+  }
+  
+  // Default to calendar month
+  return { cycleStart: defaultStart, cycleEnd: defaultEnd, cycleLabel: defaultLabel };
+}
