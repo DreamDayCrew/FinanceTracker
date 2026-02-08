@@ -362,12 +362,14 @@ export const savingsGoals = pgTable("savings_goals", {
   name: varchar("name", { length: 200 }).notNull(),
   targetAmount: decimal("target_amount", { precision: 12, scale: 2 }).notNull(),
   currentAmount: decimal("current_amount", { precision: 12, scale: 2 }).default("0"),
-  targetDate: timestamp("target_date"),
+  monthlyExpectedAmount: decimal("monthly_expected_amount", { precision: 12, scale: 2 }),
+  startDate: timestamp("start_date").notNull(),
+  targetDate: timestamp("target_date").notNull(),
   accountId: integer("account_id").references(() => accounts.id), // from account
   toAccountId: integer("to_account_id").references(() => accounts.id), // to account (optional)
   icon: varchar("icon", { length: 50 }),
   color: varchar("color", { length: 20 }),
-  status: varchar("status", { length: 20 }).default("active"), // 'active', 'completed', 'paused'
+  status: varchar("status", { length: 20 }).default("active"), // 'active', 'completed', 'paused', 'inactive'
   affectTransaction: boolean("affect_transaction").default(true), // whether to create transaction history
   affectAccountBalance: boolean("affect_account_balance").default(true), // whether to affect account balance
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -392,13 +394,31 @@ export const insertSavingsGoalSchema = createInsertSchema(savingsGoals).omit({
       message: "Target amount must be a valid positive number"
     }),
   currentAmount: z.union([z.string(), z.null()]).optional(),
+  monthlyExpectedAmount: z.union([z.string(), z.null()]).optional(),
   accountId: z.union([z.number(), z.null()]).optional(),
   toAccountId: z.union([z.number(), z.null()]).optional(),
-  status: z.enum(["active", "completed", "paused"]).optional(),
+  status: z.enum(["active", "completed", "paused", "inactive", "cancelled"]).optional(),
   affectTransaction: z.union([z.boolean(), z.null()]).optional(),
   affectAccountBalance: z.union([z.boolean(), z.null()]).optional(),
   description: z.union([z.string(), z.null()]).optional(),
-  targetDate: z.union([z.string(), z.null()]).optional(),
+  startDate: z.string().min(1, "Start date is required"),
+  targetDate: z.string().min(1, "Target date is required")
+    .refine((val) => {
+      const date = new Date(val);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return date >= today;
+    }, {
+      message: "Target date cannot be in the past"
+    }),
+}).refine((data) => {
+  if (data.startDate && data.targetDate) {
+    return new Date(data.startDate) < new Date(data.targetDate);
+  }
+  return true;
+}, {
+  message: "Start date must be before target date",
+  path: ["targetDate"],
 });
 
 export type InsertSavingsGoal = z.infer<typeof insertSavingsGoalSchema>;

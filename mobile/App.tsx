@@ -75,7 +75,7 @@ const queryClient = new QueryClient({
 export type MoreStackParamList = {
   MoreMenu: undefined;
   Budgets: undefined;
-  AddBudget: { budgetId?: number } | undefined;
+  AddBudget: { budgetId?: number; month?: number; year?: number } | undefined;
   CategoryTransactions: { categoryId: number; categoryName: string; month: number; year: number } | undefined;
   ScheduledPayments: undefined;
   AddScheduledPayment: { paymentId?: number } | undefined;
@@ -155,7 +155,10 @@ function MoreStackNavigator() {
       <MoreStack.Screen 
         name="CategoryTransactions" 
         component={CategoryTransactionsScreen}
-        options={{ headerShown: false }}
+        options={({ route }) => ({ 
+          title: route.params?.categoryName || 'Transactions',
+          headerBackTitle: 'Back'
+        })}
       />
       <MoreStack.Screen 
         name="ScheduledPayments" 

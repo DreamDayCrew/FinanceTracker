@@ -289,12 +289,14 @@ export interface SavingsGoal {
   name: string;
   targetAmount: string;
   currentAmount: string;
-  targetDate: string | null;
+  monthlyExpectedAmount: string | null;
+  startDate: string;
+  targetDate: string;
   accountId: number | null;
   toAccountId: number | null;
   icon: string | null;
   color: string | null;
-  status: 'active' | 'completed' | 'cancelled';
+  status: 'active' | 'completed' | 'cancelled' | 'paused' | 'inactive';
   affectTransaction: boolean;
   affectAccountBalance: boolean;
   createdAt: string;

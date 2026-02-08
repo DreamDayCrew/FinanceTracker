@@ -45,12 +45,12 @@ export default function BudgetsScreen() {
   );
 
   const { data: budgets, isLoading } = useQuery({
-    queryKey: ['budgets', month, year],
+    queryKey: ['/api/budgets', month, year],
     queryFn: () => api.getBudgets(month, year),
   });
 
   const { data: transactions = [] } = useQuery({
-    queryKey: ['transactions', month, year],
+    queryKey: ['/api/transactions'],
     queryFn: api.getTransactions,
   });
 
@@ -73,7 +73,10 @@ export default function BudgetsScreen() {
   const deleteMutation = useMutation({
     mutationFn: api.deleteBudget,
     onSuccess: () => {
+      // Invalidate all budget queries
       queryClient.invalidateQueries({ queryKey: ['/api/budgets'] });
+      // Invalidate the specific month/year query to ensure immediate update
+      queryClient.invalidateQueries({ queryKey: ['/api/budgets', month, year] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       setIsDeleteModalOpen(false);
       setBudgetToDelete(null);
@@ -101,7 +104,7 @@ export default function BudgetsScreen() {
       swipeableRefs.current.get(currentOpenSwipeable.current)?.close();
       currentOpenSwipeable.current = null;
     }
-    navigation.navigate('AddBudget', { budgetId: budget.id });
+    navigation.navigate('AddBudget', { budgetId: budget.id, month, year });
   };
 
   const handleDelete = (budget: Budget) => {
@@ -330,7 +333,7 @@ export default function BudgetsScreen() {
 
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: colors.primary }]}
-        onPress={() => navigation.navigate('AddBudget')}
+        onPress={() => navigation.navigate('AddBudget', { month, year })}
         activeOpacity={0.8}
         accessibilityLabel="Add new budget"
         accessibilityRole="button"

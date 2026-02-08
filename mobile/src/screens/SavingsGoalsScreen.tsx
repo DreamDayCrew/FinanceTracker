@@ -43,11 +43,17 @@ export default function SavingsGoalsScreen() {
     accountId: null as number | null,
     toAccountId: null as number | null,
     affectTransaction: true,
-    affectAccountBalance: true
+    affectAccountBalance: true,
+    startDate: new Date(),
+    targetDate: new Date(new Date().setMonth(new Date().getMonth() + 1)) // 1 month from today
   });
   const [contributionAmount, setContributionAmount] = useState('');
   const [contributionDate, setContributionDate] = useState(new Date());
   const [showContributionDatePicker, setShowContributionDatePicker] = useState(false);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showTargetDatePicker, setShowTargetDatePicker] = useState(false);
+  const [showEditStartDatePicker, setShowEditStartDatePicker] = useState(false);
+  const [showEditTargetDatePicker, setShowEditTargetDatePicker] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [goalToDelete, setGoalToDelete] = useState<SavingsGoal | null>(null);
   const [contributeCreateTransaction, setContributeCreateTransaction] = useState(true);
@@ -93,13 +99,38 @@ export default function SavingsGoalsScreen() {
   );
 
   const createGoalMutation = useMutation({
-    mutationFn: (data: { name: string; targetAmount: string; icon: string; color: string; accountId?: number | null; toAccountId?: number | null; affectTransaction: boolean; affectAccountBalance: boolean }) =>
-      api.createSavingsGoal(data),
+    mutationFn: (data: { 
+      name: string; 
+      targetAmount: string; 
+      icon: string; 
+      color: string; 
+      accountId?: number | null; 
+      toAccountId?: number | null; 
+      affectTransaction: boolean; 
+      affectAccountBalance: boolean;
+      startDate: string;
+      targetDate: string;
+      monthlyExpectedAmount?: string;
+      status?: 'active' | 'completed' | 'cancelled';
+    }) => api.createSavingsGoal(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       setIsAddModalOpen(false);
-      setNewGoal({ name: '', targetAmount: '', icon: 'flag', color: '#4CAF50', accountId: null, toAccountId: null, affectTransaction: true, affectAccountBalance: true });
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      setNewGoal({ 
+        name: '', 
+        targetAmount: '', 
+        icon: 'flag', 
+        color: '#4CAF50', 
+        accountId: null, 
+        toAccountId: null, 
+        affectTransaction: true, 
+        affectAccountBalance: true,
+        startDate: new Date(),
+        targetDate: new Date(new Date().setMonth(new Date().getMonth() + 1))
+      });
       Toast.show({
         type: 'success',
         text1: 'Goal Created',
@@ -118,7 +149,7 @@ export default function SavingsGoalsScreen() {
   });
 
   const updateGoalMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<{ name: string; targetAmount: string; icon: string; color: string; accountId?: number | null; toAccountId?: number | null; affectTransaction?: boolean; affectAccountBalance?: boolean }> }) =>
+    mutationFn: ({ id, data }: { id: number; data: Partial<{ name: string; targetAmount: string; startDate: string; targetDate: string; icon: string; color: string; accountId?: number | null; toAccountId?: number | null; affectTransaction?: boolean; affectAccountBalance?: boolean; status?: 'active' | 'completed' | 'cancelled' }> }) =>
       api.updateSavingsGoal(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
@@ -145,7 +176,42 @@ export default function SavingsGoalsScreen() {
   const addContributionMutation = useMutation({
     mutationFn: ({ goalId, amount, contributedAt, createTransaction, affectBalance }: { goalId: number; amount: string; contributedAt?: string; createTransaction: boolean; affectBalance: boolean }) =>
       api.addContribution(goalId, { amount, contributedAt, createTransaction, affectBalance }),
-    onSuccess: () => {
+    onSuccess: async (_, variables) => {
+      // Refetch the updated goal to get new current amount
+      await queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
+      
+      // Get the updated goal and recalculate monthly expected amount
+      const updatedGoals = await queryClient.fetchQuery({ queryKey: ['/api/savings-goals'] });
+      const updatedGoal = (updatedGoals as any[])?.find(g => g.id === variables.goalId);
+      
+      if (updatedGoal && updatedGoal.targetDate) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const targetDate = new Date(updatedGoal.targetDate);
+        targetDate.setHours(0, 0, 0, 0);
+        
+        // Calculate remaining amount
+        const remainingAmount = parseFloat(updatedGoal.targetAmount) - parseFloat(updatedGoal.currentAmount || '0');
+        
+        // Calculate remaining months from today to target date
+        const monthsDiff = (targetDate.getFullYear() - today.getFullYear()) * 12 + 
+                           (targetDate.getMonth() - today.getMonth());
+        
+        if (monthsDiff > 0 && remainingAmount > 0) {
+          const newMonthlyAmount = (remainingAmount / monthsDiff).toFixed(2);
+          
+          // Update the goal with new monthly expected amount
+          await api.updateSavingsGoal(updatedGoal.id, { 
+            monthlyExpectedAmount: newMonthlyAmount 
+          });
+        } else if (remainingAmount <= 0) {
+          // Goal is completed, set monthly to 0
+          await api.updateSavingsGoal(updatedGoal.id, { 
+            monthlyExpectedAmount: "0" 
+          });
+        }
+      }
+      
       queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
@@ -287,6 +353,22 @@ export default function SavingsGoalsScreen() {
     return Math.min((currentNum / targetNum) * 100, 100);
   };
 
+  const calculateMonthlyExpectedAmount = (startDate: Date, targetDate: Date, targetAmount: string): string => {
+    const start = new Date(startDate);
+    const end = new Date(targetDate);
+    
+    // Calculate months difference
+    const monthsDiff = (end.getFullYear() - start.getFullYear()) * 12 + 
+                       (end.getMonth() - start.getMonth());
+    
+    if (monthsDiff <= 0) return "0";
+    
+    const amount = parseFloat(targetAmount);
+    const monthlyAmount = amount / monthsDiff;
+    
+    return monthlyAmount.toFixed(2);
+  };
+
   const handleEdit = (goal: SavingsGoal) => {
     // Close the swipeable before opening modal
     if (currentOpenSwipeable.current !== null) {
@@ -328,6 +410,18 @@ export default function SavingsGoalsScreen() {
   
   const totalTarget = activeGoals.reduce((sum, g) => sum + parseFloat(g.targetAmount), 0);
   const totalSaved = activeGoals.reduce((sum, g) => sum + parseFloat(g.currentAmount || '0'), 0);
+  const totalExpectedMonthly = activeGoals.reduce((sum, g) => {
+    // Use stored value if available, otherwise calculate on-the-fly
+    let monthlyAmount = parseFloat(g.monthlyExpectedAmount || '0');
+    if (monthlyAmount === 0 && g.startDate && g.targetDate) {
+      monthlyAmount = parseFloat(calculateMonthlyExpectedAmount(
+        new Date(g.startDate),
+        new Date(g.targetDate),
+        g.targetAmount
+      ));
+    }
+    return sum + monthlyAmount;
+  }, 0);
 
   if (isLoading) {
     return (
@@ -368,6 +462,14 @@ export default function SavingsGoalsScreen() {
               <Text style={styles.totalLabel}>Total Saved from {activeGoals.length} active goals</Text>
               <Text style={styles.totalValue}>{formatCurrency(totalSaved)}</Text>
               <Text style={[styles.totalSubtitle]}>of {formatCurrency(totalTarget)} target</Text>
+              {totalExpectedMonthly > 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, gap: 6 }}>
+                  <Ionicons name="calendar-outline" size={14} color={colors.primary} />
+                  <Text style={[styles.totalSubtitle, { color: colors.primary, fontWeight: '600' }]}>
+                    ₹{totalExpectedMonthly.toFixed(2)}/month expected
+                  </Text>
+                </View>
+              )}
               <View style={styles.totalProgressBar}>
                 <View 
                   style={[
@@ -455,6 +557,21 @@ export default function SavingsGoalsScreen() {
                             {progress.toFixed(0)}%
                           </Text>
                         </View>
+                        {/* Date Range */}
+                        <View style={styles.dateRangeContainer}>
+                          <View style={styles.dateItem}>
+                            <Text style={[styles.dateLabel, { color: colors.textMuted }]}>From:</Text>
+                            <Text style={[styles.dateValue, { color: colors.text }]}>
+                              {goal.startDate ? new Date(goal.startDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}
+                            </Text>
+                          </View>
+                          <View style={styles.dateItem}>
+                            <Text style={[styles.dateLabel, { color: colors.textMuted }]}>To:</Text>
+                            <Text style={[styles.dateValue, { color: colors.text }]}>
+                              {goal.targetDate ? new Date(goal.targetDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}
+                            </Text>
+                          </View>
+                        </View>
                       </View>
                     </View>
                     <View style={styles.goalActions}>
@@ -479,7 +596,7 @@ export default function SavingsGoalsScreen() {
                         }}
                       >
                         <Text style={[styles.viewButtonText, { color: colors.text }]}>
-                          View Contributions
+                          Contributions
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -547,6 +664,21 @@ export default function SavingsGoalsScreen() {
                               { backgroundColor: colors.primary, width: `${progress}%` }
                             ]} 
                           />
+                        </View>
+                        {/* Date Range */}
+                        <View style={styles.dateRangeContainer}>
+                          <View style={styles.dateItem}>
+                            <Text style={[styles.dateLabel, { color: colors.textMuted }]}>From:</Text>
+                            <Text style={[styles.dateValue, { color: colors.text }]}>
+                              {goal.startDate ? new Date(goal.startDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}
+                            </Text>
+                          </View>
+                          <View style={styles.dateItem}>
+                            <Text style={[styles.dateLabel, { color: colors.textMuted }]}>To:</Text>
+                            <Text style={[styles.dateValue, { color: colors.text }]}>
+                              {goal.targetDate ? new Date(goal.targetDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}
+                            </Text>
+                          </View>
                         </View>
                       </View>
                       <View style={styles.manageActions}>
@@ -677,6 +809,92 @@ export default function SavingsGoalsScreen() {
                 value={newGoal.targetAmount}
                 onChangeText={(text) => setNewGoal({ ...newGoal, targetAmount: text })}
               />
+
+              {/* Show monthly expected amount */}
+              {newGoal.targetAmount && parseFloat(newGoal.targetAmount) > 0 && (() => {
+                const monthlyAmount = calculateMonthlyExpectedAmount(newGoal.startDate, newGoal.targetDate, newGoal.targetAmount);
+                if (parseFloat(monthlyAmount) > 0) {
+                  return (
+                    <View style={[styles.infoBox, { backgroundColor: colors.primary + '15', borderColor: colors.primary, marginTop: 8 }]}>
+                      <Ionicons name="calculator-outline" size={16} color={colors.primary} />
+                      <Text style={[styles.infoText, { color: colors.primary }]}>Monthly savings needed: ₹{monthlyAmount}</Text>
+                    </View>
+                  );
+                }
+                return null;
+              })()}
+
+              <Text style={[styles.label, { color: colors.text }]}>Start Date *</Text>
+              <TouchableOpacity
+                style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                onPress={() => setShowStartDatePicker(true)}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+                  <Text style={{ color: colors.text }}>
+                    {newGoal.startDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+              {(() => {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const selectedDate = new Date(newGoal.startDate);
+                selectedDate.setHours(0, 0, 0, 0);
+                if (selectedDate > today) {
+                  return (
+                    <View style={[styles.infoBox, { backgroundColor: colors.primary + '15', borderColor: colors.primary }]}>
+                      <Ionicons name="information-circle" size={16} color={colors.primary} />
+                      <Text style={[styles.infoText, { color: colors.primary }]}>
+                        You need to manually activate the goal on this day
+                      </Text>
+                    </View>
+                  );
+                }
+                return null;
+              })()}
+              {showStartDatePicker && (
+                <DateTimePicker
+                  value={newGoal.startDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, selectedDate) => {
+                    setShowStartDatePicker(Platform.OS === 'ios');
+                    if (selectedDate) {
+                      setNewGoal({ ...newGoal, startDate: selectedDate });
+                    }
+                  }}
+                />
+              )}
+
+              <Text style={[styles.label, { color: colors.text }]}>Target Date *</Text>
+              <TouchableOpacity
+                style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                onPress={() => setShowTargetDatePicker(true)}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+                  <Text style={{ color: colors.text }}>
+                    {newGoal.targetDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+              {showTargetDatePicker && (
+                <DateTimePicker
+                  value={newGoal.targetDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  minimumDate={new Date()} // Cannot select past dates
+                  onChange={(event, selectedDate) => {
+                    setShowTargetDatePicker(Platform.OS === 'ios');
+                    if (selectedDate) {
+                      setNewGoal({ ...newGoal, targetDate: selectedDate });
+                    }
+                  }}
+                />
+              )}
 
               <Text style={[styles.label, { color: colors.text }]}>From Account *</Text>
               <TouchableOpacity
@@ -829,7 +1047,56 @@ export default function SavingsGoalsScreen() {
                 ]}
                 onPress={() => {
                   if (newGoal.name && newGoal.targetAmount && newGoal.accountId && !createGoalMutation.isPending) {
-                    createGoalMutation.mutate(newGoal);
+                    // Validate dates
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const startDate = new Date(newGoal.startDate);
+                    startDate.setHours(0, 0, 0, 0);
+                    const targetDate = new Date(newGoal.targetDate);
+                    targetDate.setHours(0, 0, 0, 0);
+
+                    // Check if target date is in the past
+                    if (targetDate < today) {
+                      Toast.show({
+                        type: 'error',
+                        text1: 'Invalid Date',
+                        text2: 'Target date cannot be in the past',
+                        position: 'bottom',
+                      });
+                      return;
+                    }
+
+                    // Check if start date is before target date
+                    if (startDate >= targetDate) {
+                      Toast.show({
+                        type: 'error',
+                        text1: 'Invalid Date',
+                        text2: 'Start date must be before target date',
+                        position: 'bottom',
+                      });
+                      return;
+                    }
+
+                    // Calculate monthly expected amount
+                    const monthlyExpectedAmount = calculateMonthlyExpectedAmount(
+                      newGoal.startDate,
+                      newGoal.targetDate,
+                      newGoal.targetAmount
+                    );
+
+                    // Determine status based on start date (reuse already declared variables)
+                    const initialStatus = startDate > today ? 'inactive' : 'active';
+
+                    // Create goal with dates
+                    const goalData = {
+                      ...newGoal,
+                      startDate: newGoal.startDate.toISOString(),
+                      targetDate: newGoal.targetDate.toISOString(),
+                      monthlyExpectedAmount,
+                      status: initialStatus as const
+                    };
+
+                    createGoalMutation.mutate(goalData);
                   }
                 }}
                 disabled={!newGoal.name || !newGoal.targetAmount || !newGoal.accountId || createGoalMutation.isPending}
@@ -886,6 +1153,97 @@ export default function SavingsGoalsScreen() {
                 value={goalToEdit?.targetAmount || ''}
                 onChangeText={(text) => goalToEdit && setGoalToEdit({ ...goalToEdit, targetAmount: text })}
               />
+
+              <Text style={[styles.label, { color: colors.text }]}>Start Date *</Text>
+              <TouchableOpacity
+                style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                onPress={() => setShowEditStartDatePicker(true)}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+                  <Text style={{ color: colors.text }}>
+                    {goalToEdit?.startDate ? new Date(goalToEdit.startDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Select date'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+              {(() => {
+                if (!goalToEdit?.startDate) return null;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const selectedDate = new Date(goalToEdit.startDate);
+                selectedDate.setHours(0, 0, 0, 0);
+                if (selectedDate > today) {
+                  return (
+                    <View style={[styles.infoBox, { backgroundColor: colors.primary + '15', borderColor: colors.primary }]}>
+                      <Ionicons name="information-circle" size={16} color={colors.primary} />
+                      <Text style={[styles.infoText, { color: colors.primary }]}>
+                        You need to manually activate the goal on this day
+                      </Text>
+                    </View>
+                  );
+                }
+                return null;
+              })()}
+              {goalToEdit && showEditStartDatePicker && (
+                <DateTimePicker
+                  value={goalToEdit.startDate ? new Date(goalToEdit.startDate) : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, selectedDate) => {
+                    setShowEditStartDatePicker(Platform.OS === 'ios');
+                    if (selectedDate && goalToEdit) {
+                      setGoalToEdit({ ...goalToEdit, startDate: selectedDate.toISOString() });
+                    }
+                  }}
+                />
+              )}
+
+              <Text style={[styles.label, { color: colors.text }]}>Target Date *</Text>
+              <TouchableOpacity
+                style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                onPress={() => setShowEditTargetDatePicker(true)}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+                  <Text style={{ color: colors.text }}>
+                    {goalToEdit?.targetDate ? new Date(goalToEdit.targetDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Select date'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+              {goalToEdit && showEditTargetDatePicker && (
+                <DateTimePicker
+                  value={goalToEdit.targetDate ? new Date(goalToEdit.targetDate) : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  minimumDate={new Date()}
+                  onChange={(event, selectedDate) => {
+                    setShowEditTargetDatePicker(Platform.OS === 'ios');
+                    if (selectedDate && goalToEdit) {
+                      setGoalToEdit({ ...goalToEdit, targetDate: selectedDate.toISOString() });
+                    }
+                  }}
+                />
+              )}
+
+              {/* Show monthly expected amount in Edit mode */}
+              {goalToEdit?.targetAmount && parseFloat(goalToEdit.targetAmount) > 0 && goalToEdit?.startDate && goalToEdit?.targetDate && (() => {
+                const monthlyAmount = calculateMonthlyExpectedAmount(
+                  new Date(goalToEdit.startDate),
+                  new Date(goalToEdit.targetDate),
+                  goalToEdit.targetAmount
+                );
+                if (parseFloat(monthlyAmount) > 0) {
+                  return (
+                    <View style={[styles.infoBox, { backgroundColor: colors.primary + '15', borderColor: colors.primary, marginTop: 8 }]}>
+                      <Ionicons name="calculator-outline" size={16} color={colors.primary} />
+                      <Text style={[styles.infoText, { color: colors.primary }]}>Monthly savings needed: ₹{monthlyAmount}</Text>
+                    </View>
+                  );
+                }
+                return null;
+              })()}
 
               <Text style={[styles.label, { color: colors.text }]}>From Account (Cannot be changed)</Text>
               <View style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', opacity: 0.7 }]}>
@@ -1034,17 +1392,84 @@ export default function SavingsGoalsScreen() {
                 ]}
                 onPress={() => {
                   if (goalToEdit && goalToEdit.name && goalToEdit.targetAmount && goalToEdit.accountId && !updateGoalMutation.isPending) {
+                    // Validate dates
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const startDate = goalToEdit.startDate ? new Date(goalToEdit.startDate) : null;
+                    const targetDate = goalToEdit.targetDate ? new Date(goalToEdit.targetDate) : null;
+
+                    if (!startDate || !targetDate) {
+                      Toast.show({
+                        type: 'error',
+                        text1: 'Missing Dates',
+                        text2: 'Both start date and target date are required',
+                        position: 'bottom',
+                      });
+                      return;
+                    }
+
+                    startDate.setHours(0, 0, 0, 0);
+                    targetDate.setHours(0, 0, 0, 0);
+
+                    // Check if target date is in the past
+                    if (targetDate < today) {
+                      Toast.show({
+                        type: 'error',
+                        text1: 'Invalid Date',
+                        text2: 'Target date cannot be in the past',
+                        position: 'bottom',
+                      });
+                      return;
+                    }
+
+                    // Check if start date is before target date
+                    if (startDate >= targetDate) {
+                      Toast.show({
+                        type: 'error',
+                        text1: 'Invalid Date',
+                        text2: 'Start date must be before target date',
+                        position: 'bottom',
+                      });
+                      return;
+                    }
+
+                    // Determine status based on start date - only use valid API status values
+                    let status: 'active' | 'completed' | 'cancelled' | 'inactive' = 'active';
+                    if (goalToEdit.status === 'completed') {
+                      status = 'completed';
+                    } else if (goalToEdit.status === 'cancelled') {
+                      status = 'cancelled';
+                    } else {
+                      // Check if start date is in the future
+                      if (startDate > today) {
+                        status = 'inactive';
+                      } else {
+                        status = 'active';
+                      }
+                    }
+
+                    // Calculate monthly expected amount for update
+                    const monthlyExpectedAmount = calculateMonthlyExpectedAmount(
+                      startDate,
+                      targetDate,
+                      goalToEdit.targetAmount
+                    );
+
                     updateGoalMutation.mutate({
                       id: goalToEdit.id,
                       data: {
                         name: goalToEdit.name,
                         targetAmount: goalToEdit.targetAmount,
+                        startDate: typeof goalToEdit.startDate === 'string' ? goalToEdit.startDate : new Date(goalToEdit.startDate).toISOString(),
+                        targetDate: typeof goalToEdit.targetDate === 'string' ? goalToEdit.targetDate : new Date(goalToEdit.targetDate).toISOString(),
+                        monthlyExpectedAmount,
                         icon: goalToEdit.icon || undefined,
                         color: goalToEdit.color || undefined,
                         accountId: goalToEdit.accountId,
                         toAccountId: goalToEdit.toAccountId,
                         affectTransaction: goalToEdit.affectTransaction,
-                        affectAccountBalance: goalToEdit.affectAccountBalance
+                        affectAccountBalance: goalToEdit.affectAccountBalance,
+                        status
                       }
                     });
                   }
@@ -1475,6 +1900,25 @@ const styles = StyleSheet.create({
     width: 40,
     textAlign: 'right',
   },
+  dateRangeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  dateItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  dateLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  dateValue: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
   goalActions: {
     marginTop: 12,
     flexDirection: 'row',
@@ -1648,6 +2092,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 8,
+    gap: 8,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
   },
   iconGrid: {
     flexDirection: 'row',
@@ -1945,22 +2403,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 18,
   },
-  infoBox: {
-    flexDirection: 'row',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 16,
-    marginBottom: 8,
-  },
   infoIcon: {
     marginRight: 8,
     marginTop: 2,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
   },
   impactContainer: {
     flexDirection: 'row',

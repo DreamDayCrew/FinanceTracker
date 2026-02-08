@@ -29,7 +29,7 @@ export default function CategoryTransactionsScreen() {
   }
 
   const { data: transactions = [], isLoading } = useQuery({
-    queryKey: ['transactions', categoryId, month, year],
+    queryKey: ['/api/transactions'],
     queryFn: api.getTransactions,
   });
 
@@ -64,16 +64,10 @@ export default function CategoryTransactionsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>{categoryName}</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
-            {MONTH_NAMES[month - 1]} {year}
-          </Text>
-        </View>
+      <View style={[styles.monthBadge, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <Text style={[styles.monthText, { color: colors.textMuted }]}>
+          {MONTH_NAMES[month - 1]} {year}
+        </Text>
       </View>
 
       <View style={[styles.summaryCard, { backgroundColor: colors.card }]}>
@@ -139,25 +133,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
-    flexDirection: 'row',
+  monthBadge: {
+    padding: 12,
     alignItems: 'center',
-    padding: 16,
     borderBottomWidth: 1,
   },
-  backButton: {
-    marginRight: 12,
-  },
-  headerContent: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    marginTop: 2,
+  monthText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   summaryCard: {
     margin: 16,

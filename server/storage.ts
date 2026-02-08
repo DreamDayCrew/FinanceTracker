@@ -120,8 +120,8 @@ export interface IStorage {
   // Savings Goals
   getAllSavingsGoals(userId?: number): Promise<SavingsGoal[]>;
   getSavingsGoal(id: number): Promise<SavingsGoal | undefined>;
-  createSavingsGoal(goal: InsertSavingsGoal): Promise<SavingsGoal>;
-  updateSavingsGoal(id: number, goal: Partial<InsertSavingsGoal>): Promise<SavingsGoal | undefined>;
+  createSavingsGoal(goal: InsertSavingsGoal & { startDate: Date; targetDate: Date }): Promise<SavingsGoal>;
+  updateSavingsGoal(id: number, goal: Partial<InsertSavingsGoal> & { startDate?: Date; targetDate?: Date }): Promise<SavingsGoal | undefined>;
   deleteSavingsGoal(id: number): Promise<boolean>;
 
   // Savings Contributions

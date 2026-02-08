@@ -1401,9 +1401,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const validatedData = insertSavingsGoalSchema.parse(goalData);
       console.log("  ✅ Validation passed, creating savings goal...");
+      console.log("  📊 Monthly Expected Amount from validation:", validatedData.monthlyExpectedAmount);
       
-      const goal = await storage.createSavingsGoal(validatedData);
+      // Convert date strings to Date objects for Drizzle
+      const goalToCreate = {
+        ...validatedData,
+        startDate: new Date(validatedData.startDate),
+        targetDate: new Date(validatedData.targetDate),
+      };
+      
+      console.log("  📊 Monthly Expected Amount before DB insert:", goalToCreate.monthlyExpectedAmount);
+      const goal = await storage.createSavingsGoal(goalToCreate);
       console.log("  ✅ Savings goal created successfully:", goal.id);
+      console.log("  📊 Monthly Expected Amount in created goal:", goal.monthlyExpectedAmount);
       
       res.status(201).json(goal);
     } catch (error: any) {
@@ -1444,13 +1454,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/savings-goals/:id", authenticateToken, async (req, res) => {
     try {
-      const goal = await storage.updateSavingsGoal(parseInt(req.params.id), req.body);
+      console.log("🔍 [PATCH savings-goals] Request body:", JSON.stringify(req.body, null, 2));
+      console.log("  📊 Monthly Expected Amount received:", req.body.monthlyExpectedAmount);
+      
+      // Convert date strings to Date objects if present
+      const updateData = { ...req.body };
+      if (updateData.startDate && typeof updateData.startDate === 'string') {
+        updateData.startDate = new Date(updateData.startDate);
+      }
+      if (updateData.targetDate && typeof updateData.targetDate === 'string') {
+        updateData.targetDate = new Date(updateData.targetDate);
+      }
+      
+      console.log("  📊 Monthly Expected Amount before DB update:", updateData.monthlyExpectedAmount);
+      const goal = await storage.updateSavingsGoal(parseInt(req.params.id), updateData);
       if (goal) {
+        console.log("  ✅ Goal updated successfully");
+        console.log("  📊 Monthly Expected Amount in updated goal:", goal.monthlyExpectedAmount);
         res.json(goal);
       } else {
         res.status(404).json({ error: "Savings goal not found" });
       }
     } catch (error) {
+      console.error('[PATCH /api/savings-goals/:id] Error:', error);
       res.status(500).json({ error: "Failed to update savings goal" });
     }
   });
@@ -3878,8 +3904,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes: notes || null
       });
       
-      // Mark the installment as paid
-      await storage.markInstallmentPaid(installmentId, paidAmount, payment.id);
+      let transactionId: number | undefined = undefined;
       
       // Create transaction ONLY if explicitly requested
       if (shouldCreateTransaction && accountId) {
@@ -3895,7 +3920,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        await storage.createTransaction({
+        const transaction = await storage.createTransaction({
           userId: 1,
           accountId,
           categoryId: loanCategory.id,
@@ -3905,7 +3930,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           description: `EMI payment for ${loan?.name || 'Loan'}`,
           transactionDate: paidDate,
         });
+        
+        transactionId = transaction.id;
+        
+        // Update the loan payment to link it to the transaction
+        await storage.updateLoanPayment(payment.id, { transactionId: transaction.id });
       }
+      
+      // Mark the installment as paid with the transaction ID (if created)
+      await storage.markInstallmentPaid(installmentId, paidAmount, transactionId);
 
       // Update account balance ONLY if explicitly requested
       if (shouldAffectBalance && accountId) {

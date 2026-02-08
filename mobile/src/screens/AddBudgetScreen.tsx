@@ -11,6 +11,9 @@ import { MoreStackParamList } from '../../App';
 
 type AddBudgetRouteProp = RouteProp<MoreStackParamList, 'AddBudget'>;
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
 export default function AddBudgetScreen() {
   const navigation = useNavigation();
   const route = useRoute<AddBudgetRouteProp>();
@@ -25,9 +28,10 @@ export default function AddBudgetScreen() {
   const [amount, setAmount] = useState('');
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
 
+  // Use month/year from route params, fallback to current date
   const now = new Date();
-  const month = now.getMonth() + 1;
-  const year = now.getFullYear();
+  const month = route.params?.month ?? now.getMonth() + 1;
+  const year = route.params?.year ?? now.getFullYear();
 
   const { data: categories } = useQuery({
     queryKey: ['/api/categories'],
@@ -35,7 +39,7 @@ export default function AddBudgetScreen() {
   });
 
   const { data: budgets } = useQuery({
-    queryKey: ['budgets', month, year],
+    queryKey: ['/api/budgets', month, year],
     queryFn: () => api.getBudgets(month, year),
     enabled: isEditMode,
   });
@@ -43,7 +47,10 @@ export default function AddBudgetScreen() {
   const createMutation = useMutation({
     mutationFn: api.createBudget,
     onSuccess: () => {
+      // Invalidate all budget queries
       queryClient.invalidateQueries({ queryKey: ['/api/budgets'] });
+      // Invalidate the specific month/year query to ensure immediate update
+      queryClient.invalidateQueries({ queryKey: ['/api/budgets', month, year] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       navigation.goBack();
       Toast.show({
@@ -66,7 +73,10 @@ export default function AddBudgetScreen() {
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: any }) => api.updateBudget(id, data),
     onSuccess: () => {
+      // Invalidate all budget queries
       queryClient.invalidateQueries({ queryKey: ['/api/budgets'] });
+      // Invalidate the specific month/year query to ensure immediate update
+      queryClient.invalidateQueries({ queryKey: ['/api/budgets', month, year] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
       navigation.goBack();
       Toast.show({
@@ -136,6 +146,13 @@ export default function AddBudgetScreen() {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
+      {/* Month/Year Badge */}
+      <View style={[styles.monthBadge, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <Text style={[styles.monthBadgeText, { color: colors.textMuted }]}>
+          Budget for {MONTH_NAMES[month - 1]} {year}
+        </Text>
+      </View>
+
       <View style={styles.field}>
         <Text style={[styles.label, { color: colors.textMuted }]}>Budget Amount</Text>
         <View style={[styles.amountContainer, { backgroundColor: colors.card }]}>
@@ -216,6 +233,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
+  },
+  monthBadge: {
+    padding: 14,
+    alignItems: 'center',
+    borderRadius: 12,
+    marginBottom: 20,
+    borderBottomWidth: 1,
+  },
+  monthBadgeText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   field: {
     marginBottom: 24,

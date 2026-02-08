@@ -111,22 +111,41 @@ export default function ScheduledPaymentsScreen() {
     if (!occurrences || occurrences.length === 0) return;
     
     const fetchBillingAmounts = async () => {
-      const amounts: Record<number, { amount: string; cycleLabel: string }> = {};
+      // Filter credit card bill occurrences
+      const creditCardOccurrences = occurrences.filter(
+        occurrence => occurrence.scheduledPayment?.paymentType === 'credit_card_bill'
+      );
       
-      for (const occurrence of occurrences) {
-        const payment = occurrence.scheduledPayment;
-        if (payment && payment.paymentType === 'credit_card_bill') {
+      if (creditCardOccurrences.length === 0) return;
+      
+      // Fetch all billing amounts in parallel
+      const results = await Promise.allSettled(
+        creditCardOccurrences.map(async (occurrence) => {
+          const payment = occurrence.scheduledPayment;
+          if (!payment) return null;
+          
           try {
             const data = await api.getScheduledPaymentBillingAmount(payment.id);
-            amounts[payment.id] = {
+            return {
+              paymentId: payment.id,
               amount: data.calculatedAmount,
               cycleLabel: data.cycleLabel
             };
           } catch (error) {
             console.error(`Error fetching billing amount for payment ${payment.id}:`, error);
+            return null;
           }
+        })
+      );
+      
+      // Build amounts object from successful results
+      const amounts: Record<number, { amount: string; cycleLabel: string }> = {};
+      results.forEach((result) => {
+        if (result.status === 'fulfilled' && result.value) {
+          const { paymentId, amount, cycleLabel } = result.value;
+          amounts[paymentId] = { amount, cycleLabel };
         }
-      }
+      });
       
       setBillingAmounts(amounts);
     };
