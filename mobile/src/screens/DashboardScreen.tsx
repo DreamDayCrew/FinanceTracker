@@ -44,6 +44,11 @@ export default function DashboardScreen() {
     queryFn: api.getDashboardSummary,
   });
 
+  const { data: savingsGoals } = useQuery({
+    queryKey: ['/api/savings-goals'],
+    queryFn: api.getSavingsGoals,
+  });
+
   const { data: forecast } = useQuery({
     queryKey: ['/api/next-month-forecast'],
     queryFn: api.getNextMonthForecast,
@@ -59,6 +64,7 @@ export default function DashboardScreen() {
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard-summary'] });
       queryClient.invalidateQueries({ queryKey: ['/api/next-month-forecast'] });
       queryClient.invalidateQueries({ queryKey: ['/api/salary-profile'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/savings-goals'] });
     }, [queryClient])
   );
 
@@ -67,6 +73,7 @@ export default function DashboardScreen() {
     await Promise.all([
       queryClient.refetchQueries({ queryKey: ['/api/dashboard-summary'] }),
       queryClient.refetchQueries({ queryKey: ['/api/next-month-forecast'] }),
+      queryClient.refetchQueries({ queryKey: ['/api/savings-goals'] }),
     ]);
     setRefreshing(false);
   }, [queryClient]);
@@ -86,6 +93,11 @@ export default function DashboardScreen() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setForecastAccordion(prev => prev === section ? null : section);
   }, []);
+
+  const activeGoals = useMemo(() => savingsGoals?.filter(g => g.status === 'active') || [], [savingsGoals]);
+  const totalSavings = useMemo(() => activeGoals.reduce((acc, goal) => acc + parseFloat(goal.currentAmount || "0"), 0), [activeGoals]);
+  const monthlyExpectedSavings = useMemo(() => activeGoals.reduce((acc, goal) => acc + parseFloat(goal.monthlyExpectedAmount || "0"), 0), [activeGoals]);
+  const savedThisMonth = 0; // Approximation for now
 
   if (isLoading || !summary) {
     return (
@@ -341,6 +353,15 @@ export default function DashboardScreen() {
                   Bills
                 </Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tab, activeTab === 'savings' && styles.activeTab]}
+                onPress={() => switchTab('savings' as any)}
+                data-testid="button-tab-savings"
+              >
+                <Text style={[styles.tabText, { color: activeTab === 'savings' ? colors.text : colors.textMuted }, activeTab === 'savings' && styles.activeTabText]}>
+                  Savings
+                </Text>
+              </TouchableOpacity>
             </View>
 
             {/* Tab Content */}
@@ -446,6 +467,59 @@ export default function DashboardScreen() {
                         (item) => `${getInsuranceTypeLabel(item.insuranceType)}${item.providerName ? ` \u00B7 ${item.providerName}` : ''}`,
                       )}
                     </>
+                  )}
+                </View>
+              )}
+
+              {activeTab as any === 'savings' && (
+                <View style={styles.tabInner}>
+                  <View style={styles.savingsSummaryRow}>
+                    <View style={styles.savingsStat}>
+                      <Text style={[styles.savingsStatLabel, { color: colors.textMuted }]}>Total</Text>
+                      <Text style={[styles.savingsStatValue, { color: colors.text }]}>{formatCurrency(totalSavings)}</Text>
+                    </View>
+                    <View style={[styles.savingsDivider, { backgroundColor: colors.border }]} />
+                    <View style={styles.savingsStat}>
+                      <Text style={[styles.savingsStatLabel, { color: colors.textMuted }]}>Monthly</Text>
+                      <Text style={[styles.savingsStatValue, { color: colors.text }]}>{formatCurrency(monthlyExpectedSavings)}</Text>
+                    </View>
+                    <View style={[styles.savingsDivider, { backgroundColor: colors.border }]} />
+                    <View style={styles.savingsStat}>
+                      <Text style={[styles.savingsStatLabel, { color: colors.textMuted }]}>Saved</Text>
+                      <Text style={[styles.savingsStatValue, { color: colors.primary }]}>{formatCurrency(savedThisMonth)}</Text>
+                    </View>
+                  </View>
+
+                  <Text style={[styles.savingsListTitle, { color: colors.textMuted }]}>ACTIVE GOALS</Text>
+                  {activeGoals.length > 0 ? (
+                    activeGoals.map((goal) => {
+                      const progress = parseFloat(goal.targetAmount) > 0 ? parseFloat(goal.currentAmount || "0") / parseFloat(goal.targetAmount) : 0;
+                      return (
+                        <View key={goal.id} style={[styles.goalRow, { borderBottomColor: colors.border }]}>
+                          <View style={[styles.goalIconWrap, { backgroundColor: colors.primary + '15' }]}>
+                            <Ionicons name="flag-outline" size={16} color={colors.primary} />
+                          </View>
+                          <View style={styles.goalInfo}>
+                            <View style={styles.goalNameRow}>
+                              <Text style={[styles.goalName, { color: colors.text }]} numberOfLines={1}>{goal.name}</Text>
+                              <Text style={[styles.goalAmt, { color: colors.text }]}>{formatCurrency(parseFloat(goal.currentAmount || "0"))}</Text>
+                            </View>
+                            <View style={styles.goalProgressBg}>
+                              <View style={[styles.goalProgressFill, { width: `${Math.min(progress * 100, 100)}%`, backgroundColor: colors.primary }]} />
+                            </View>
+                            <View style={styles.goalTargetRow}>
+                              <Text style={[styles.goalTargetText, { color: colors.textMuted }]}>Target: {formatCurrency(parseFloat(goal.targetAmount))}</Text>
+                              <Text style={[styles.goalTargetText, { color: colors.textMuted }]}>{Math.round(progress * 100)}%</Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })
+                  ) : (
+                    <View style={styles.emptyState}>
+                      <Ionicons name="leaf-outline" size={20} color={colors.textMuted} />
+                      <Text style={[styles.emptyText, { color: colors.textMuted }]}>No active goals</Text>
+                    </View>
                   )}
                 </View>
               )}
@@ -1007,6 +1081,168 @@ const styles = StyleSheet.create({
   salaryBannerSub: {
     fontSize: 12,
     marginTop: 1,
+  },
+  savingsSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingTop: 4,
+  },
+  savingsStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  savingsStatLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  savingsStatValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  savingsDivider: {
+    width: 1,
+    height: 24,
+  },
+  savingsListTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  goalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  goalIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  goalInfo: {
+    flex: 1,
+  },
+  goalNameRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  goalName: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  goalAmt: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  goalProgressBg: {
+    height: 4,
+    backgroundColor: '#00000010',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  goalProgressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  goalTargetRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goalTargetText: {
+    fontSize: 10,
+  },
+  savingsSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingTop: 4,
+  },
+  savingsStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  savingsStatLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  savingsStatValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  savingsDivider: {
+    width: 1,
+    height: 24,
+  },
+  savingsListTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  goalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  goalIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  goalInfo: {
+    flex: 1,
+  },
+  goalNameRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  goalName: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  goalAmt: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  goalProgressBg: {
+    height: 4,
+    backgroundColor: '#00000010',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  goalProgressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  goalTargetRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goalTargetText: {
+    fontSize: 10,
   },
   mainCardHeader: {
     flexDirection: 'row',
